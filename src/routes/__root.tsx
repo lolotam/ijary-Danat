@@ -130,7 +130,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       // viewport-fit=cover lets standalone (installed) mode draw under the
       // notch; sticky headers pad with env(safe-area-inset-*) to compensate.
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#0e0d0b" },
+      { name: "theme-color", content: "#0b2523" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
@@ -193,7 +193,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Tajawal:wght@400;500;700&display=swap",
       },
     ],
   }),

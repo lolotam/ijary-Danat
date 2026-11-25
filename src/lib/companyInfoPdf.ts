@@ -31,7 +31,7 @@ import type PDFKit from "pdfkit";
 
 import type { Company } from "@/hooks/useCompany";
 
-const GOLD = "#d4af37";
+const BRAND = "#0f766e";
 const INK = "#0f172a";
 const MUTED = "#64748b";
 
@@ -95,7 +95,7 @@ export function layoutCompanyInfoPdf(
   }
 
   doc
-    .fillColor(GOLD)
+    .fillColor(BRAND)
     .fontSize(11)
     .font("Helvetica-Bold")
     .text(labels.docTitle.toUpperCase(), margin + 84, cursorY, { width: contentW - 84 });
@@ -121,7 +121,7 @@ export function layoutCompanyInfoPdf(
 
   // Gold rule under the header
   cursorY = headerBottom + 6;
-  doc.rect(margin, cursorY, contentW, 1.5).fillColor(GOLD).fill();
+  doc.rect(margin, cursorY, contentW, 1.5).fillColor(BRAND).fill();
   cursorY += 18;
 
   // ---- Contact section ----
@@ -158,7 +158,7 @@ export function layoutCompanyInfoPdf(
   if (company.bank_name || company.iban) {
     const boxH = 70;
     doc.rect(margin, cursorY, contentW, boxH).fillColor("#fffbeb").fill();
-    doc.lineWidth(1).strokeColor(GOLD).rect(margin, cursorY, contentW, boxH).stroke();
+    doc.lineWidth(1).strokeColor(BRAND).rect(margin, cursorY, contentW, boxH).stroke();
 
     let bankCursorX = margin + 14;
     if (logos.bank) {

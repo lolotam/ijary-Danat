@@ -17,7 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 
-import { useBrandLogoUrl } from "@/components/BrandLogo";
+import { BrandMark } from "@/components/BrandLogo";
 import {
   Sidebar,
   SidebarContent,
@@ -80,7 +80,6 @@ const secondary: NavItem[] = [
 export function AdminSidebar() {
   const { t, dir } = useI18n();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const logoUrl = useBrandLogoUrl();
 
   const isActive = (to: string) =>
     to === "/admin" ? pathname === "/admin" : pathname === to || pathname.startsWith(`${to}/`);
@@ -89,10 +88,10 @@ export function AdminSidebar() {
     <Sidebar collapsible="icon" side={dir === "rtl" ? "right" : "left"}>
       <SidebarContent>
         <div className="flex items-center gap-2.5 border-b border-sidebar-border px-3 py-5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
-          <img
-            src={logoUrl}
+          <BrandMark
             alt={t("sidebar.danatFuture")}
-            className="size-12 shrink-0 rounded-xl object-contain group-data-[collapsible=icon]:size-9"
+            onDark
+            className="size-12 rounded-xl group-data-[collapsible=icon]:size-9"
           />
           <span className="truncate text-[20px] font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
             {t("sidebar.danatFuture")}

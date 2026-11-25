@@ -71,7 +71,7 @@ export function buildEmailBody(
   const name = companyName(company, locale);
   const lines = [
     `<div dir="${dir}" style="font-family:${EMAIL_FONT_STACK};color:#0f172a;max-width:560px">`,
-    `<h2 style="color:#d4af37;margin:0 0 8px">${escapeHtml(labels.subject)}</h2>`,
+    `<h2 style="color:#0f766e;margin:0 0 8px">${escapeHtml(labels.subject)}</h2>`,
     `<p>${escapeHtml(labels.bodyIntro)}</p>`,
     `<table style="border-collapse:collapse;font-size:14px;margin-top:12px">`,
   ];

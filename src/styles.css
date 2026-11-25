@@ -1,4 +1,4 @@
-/* IBM Plex Sans Arabic is loaded via <link> tags in __root.tsx — a CSS
+/* Inter and Tajawal are loaded via <link> tags in __root.tsx — a CSS
    @import of a remote URL breaks the lightningcss production build. */
 @import "tailwindcss" source(none);
 @source "../src";
@@ -107,85 +107,106 @@
   --color-ink: var(--ink);
   --color-ink-foreground: var(--ink-foreground);
   --color-ink-muted: var(--ink-muted);
+  --color-ink-accent: var(--ink-accent);
+  --color-ink-accent-foreground: var(--ink-accent-foreground);
+  --color-ink-highlight: var(--ink-highlight);
   --color-gold-deep: var(--gold-deep);
   --color-gold-soft: var(--gold-soft);
-  --font-sans: "Outfit", "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+  /* Inter draws Latin and all digits; Tajawal draws Arabic. Only 400, 500 and
+     700 are loaded, so `font-semibold` renders 700 in both scripts. */
+  --font-sans: "Inter", "Tajawal", system-ui, -apple-system, sans-serif;
 }
 
 :root {
-  --radius: 0.875rem;
-  --background: #f7f3ea;
-  --foreground: #171512;
-  --card: #ffffff;
-  --card-foreground: #171512;
-  --popover: #ffffff;
-  --popover-foreground: #171512;
-  --primary: #171512;
-  --primary-foreground: #f5efe0;
-  --secondary: #efe9da;
-  --secondary-foreground: #171512;
-  --muted: #f0ebde;
-  --muted-foreground: #6b6455;
-  --accent: #745817;
-  --accent-foreground: #fffaf0;
-  --gold-deep: #745817;
-  --gold-soft: #cbbf9e;
-  --destructive: oklch(0.55 0.2 27);
-  --destructive-foreground: #fdfbf5;
-  --border: #e7dfc9;
-  --input: #ddd4bc;
-  --ring: #9c7a1e;
-  --chart-1: #d4af37;
-  --chart-2: #171512;
-  --chart-3: #9c7a1e;
-  --chart-4: #6b6455;
-  --chart-5: #cbbf9e;
-  --sidebar: #0e0d0b;
-  --sidebar-foreground: #e8e0cc;
-  --sidebar-primary: #d4af37;
-  --sidebar-primary-foreground: #171204;
-  --sidebar-accent: #1c1913;
-  --sidebar-accent-foreground: #f5efe0;
-  --sidebar-border: rgb(212 175 55 / 22%);
-  --sidebar-ring: #d4af37;
-  --ink: #0e0d0b;
-  --ink-foreground: #f5efe0;
-  --ink-muted: #8d8468;
-  --shadow-soft: 0 1px 2px rgb(55 42 16 / 8%), 0 14px 40px rgb(55 42 16 / 8%);
-  --shadow-raised: 0 2px 4px rgb(55 42 16 / 10%), 0 22px 56px rgb(55 42 16 / 14%);
+  /* IJARY design system (https://claude.ai/artifact/RZFCWmwzjPLkCwYV2sJF5e).
+     Names on the left are the shadcn and legacy Danat variables the components
+     already use; the token each one carries is named on the right. */
+  --radius: 0.5rem; /* radius-md; shadcn derives 4px, 6px, 8px, 12px from it */
+  --background: #f6f8f7; /* canvas */
+  --foreground: #0b2523; /* ink */
+  --card: #ffffff; /* surface */
+  --card-foreground: #0b2523;
+  --popover: #ffffff; /* surface-raised */
+  --popover-foreground: #0b2523;
+  --primary: #0f766e; /* brand */
+  --primary-foreground: #ffffff; /* on-brand */
+  --secondary: #eef2f1; /* surface-sunken */
+  --secondary-foreground: #0b2523;
+  --muted: #eef2f1; /* surface-sunken */
+  --muted-foreground: #52635f; /* ink-muted */
+  /* `accent` is used as a strong emphasis colour with light text on it (58
+     `text-accent`, 42 `bg-accent`), so it carries brand-ink, not brand-subtle:
+     a pale value would make every `text-accent` unreadable on white. */
+  --accent: #134e4a; /* brand-ink */
+  --accent-foreground: #f3f7f6;
+  /* Legacy names from the Danat palette, kept so 40 call sites keep working. */
+  --gold-deep: #134e4a; /* brand-ink */
+  --gold-soft: #e7d9c1; /* sand */
+  --destructive: #b42318; /* danger */
+  --destructive-foreground: #ffffff; /* on-danger */
+  --border: #d5dedc; /* border */
+  --input: #748784; /* border-control: holds 3:1 on surface */
+  --ring: #0f766e; /* focus */
+  --chart-1: #0f766e;
+  --chart-2: #134e4a;
+  --chart-3: #2db5a7;
+  --chart-4: #52635f;
+  --chart-5: #b8a070; /* sand, deepened to stay visible on white */
+  --sidebar: #0b2523;
+  --sidebar-foreground: #e8f0ee;
+  --sidebar-primary: #2db5a7;
+  --sidebar-primary-foreground: #04201d;
+  --sidebar-accent: #12332f;
+  --sidebar-accent-foreground: #e8f0ee;
+  --sidebar-border: rgb(232 240 238 / 12%);
+  --sidebar-ring: #5ccfc3;
+  /* `ink` here is a dark panel colour, and `ink-muted` is muted text ON it. */
+  --ink: #0b2523;
+  --ink-foreground: #e8f0ee;
+  --ink-muted: #9db0ac;
+  --ink-accent: #2db5a7; /* brand on the ink panel: borders, CTA fill */
+  --ink-accent-foreground: #04201d;
+  --ink-highlight: #8ee0d6; /* emphasised text and focus ring on the ink panel */
+  --shadow-soft: 0 1px 2px rgb(11 37 35 / 6%), 0 8px 24px rgb(11 37 35 / 8%);
+  --shadow-raised: 0 2px 4px rgb(11 37 35 / 8%), 0 16px 40px rgb(11 37 35 / 12%);
 }
 
 .dark {
-  --background: #0e0d0b;
-  --foreground: #f5efe0;
-  --card: #141416;
-  --card-foreground: #f5efe0;
-  --popover: #141416;
-  --popover-foreground: #f5efe0;
-  --primary: #d4af37;
-  --primary-foreground: #171204;
-  --secondary: #1c1913;
-  --secondary-foreground: #f5efe0;
-  --muted: #1c1913;
-  --muted-foreground: #8d8468;
-  --accent: #d4af37;
-  --accent-foreground: #171204;
-  --destructive: oklch(0.65 0.19 25);
-  --destructive-foreground: #fdfbf5;
-  --border: rgb(212 175 55 / 22%);
-  --input: rgb(212 175 55 / 30%);
-  --ring: #d4af37;
-  --sidebar: #0e0d0b;
-  --sidebar-foreground: #e8e0cc;
-  --sidebar-primary: #d4af37;
-  --sidebar-primary-foreground: #171204;
-  --sidebar-accent: #1c1913;
-  --sidebar-accent-foreground: #f5efe0;
-  --sidebar-border: rgb(212 175 55 / 22%);
-  --sidebar-ring: #d4af37;
-  --ink: #0e0d0b;
-  --ink-foreground: #f5efe0;
-  --ink-muted: #8d8468;
+  --background: #081514;
+  --foreground: #e8f0ee;
+  --card: #0f1f1d;
+  --card-foreground: #e8f0ee;
+  --popover: #162a27;
+  --popover-foreground: #e8f0ee;
+  --primary: #2db5a7;
+  --primary-foreground: #04201d;
+  --secondary: #162a27;
+  --secondary-foreground: #e8f0ee;
+  --muted: #162a27;
+  --muted-foreground: #9db0ac;
+  --accent: #5ccfc3;
+  --accent-foreground: #04201d;
+  --gold-deep: #8ee0d6;
+  --gold-soft: #4a4130;
+  --destructive: #ff9b8f;
+  --destructive-foreground: #3b0d09;
+  --border: #243a36;
+  --input: #5f7772;
+  --ring: #5ccfc3;
+  --sidebar: #0b2523;
+  --sidebar-foreground: #e8f0ee;
+  --sidebar-primary: #2db5a7;
+  --sidebar-primary-foreground: #04201d;
+  --sidebar-accent: #12332f;
+  --sidebar-accent-foreground: #e8f0ee;
+  --sidebar-border: rgb(232 240 238 / 12%);
+  --sidebar-ring: #5ccfc3;
+  --ink: #0b2523;
+  --ink-foreground: #e8f0ee;
+  --ink-muted: #9db0ac;
+  --ink-accent: #2db5a7; /* brand on the ink panel: borders, CTA fill */
+  --ink-accent-foreground: #04201d;
+  --ink-highlight: #8ee0d6; /* emphasised text and focus ring on the ink panel */
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 25%), 0 16px 44px rgb(0 0 0 / 28%);
   --shadow-raised: 0 2px 4px rgb(0 0 0 / 32%), 0 24px 64px rgb(0 0 0 / 38%);
 }
@@ -209,10 +230,6 @@
 
   body {
     background-color: var(--color-background);
-    background-image:
-      radial-gradient(circle at 15% -10%, rgb(212 175 55 / 9%), transparent 34rem),
-      radial-gradient(circle at 90% 12%, rgb(116 88 23 / 5%), transparent 28rem);
-    background-attachment: fixed;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     overflow-x: hidden;
@@ -221,7 +238,7 @@
   h1,
   h2,
   h3 {
-    letter-spacing: -0.025em;
+    /* No negative tracking: it breaks the joins between Arabic letters. */
     text-wrap: balance;
   }
 
@@ -230,7 +247,7 @@
   }
 
   ::selection {
-    background: rgb(212 175 55 / 34%);
+    background: rgb(15 118 110 / 22%);
     color: var(--color-foreground);
   }
 

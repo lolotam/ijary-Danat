@@ -91,14 +91,14 @@ function AuthPage() {
   ];
 
   return (
-    <div dir={dir} className="relative min-h-dvh overflow-hidden bg-[#0e0d0b] text-white">
+    <div dir={dir} className="relative min-h-dvh overflow-hidden bg-ink text-white">
       <img
         src={backgroundUrl}
         alt=""
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover opacity-50"
       />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(212,175,55,0.14),transparent_30rem),linear-gradient(110deg,rgba(14,13,11,0.72),rgba(14,13,11,0.96)_68%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,181,167,0.14),transparent_30rem),linear-gradient(110deg,rgba(11,37,35,0.72),rgba(11,37,35,0.96)_68%)]" />
 
       <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-6">
         <BrandLogo name={t("brand.name")} onDark />
@@ -107,7 +107,7 @@ function AuthPage() {
           <button
             type="button"
             onClick={toggle}
-            className="min-h-10 rounded-full border border-white/20 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37]"
+            className="min-h-10 rounded-full border border-white/20 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-highlight"
           >
             {t("nav.language")}
           </button>
@@ -119,7 +119,7 @@ function AuthPage() {
         className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-5 pb-16 pt-8 lg:min-h-[calc(100dvh-6rem)] lg:grid-cols-[1.15fr_minmax(0,27rem)] lg:pt-0"
       >
         <section className="max-w-2xl py-8">
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-[#d4af37]/30 bg-[#191919]/80 px-4 py-1.5 text-xs font-semibold tracking-[0.12em] text-[#f2cd60]">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-ink-accent/30 bg-white/5 px-4 py-1.5 text-xs font-semibold text-ink-highlight">
             <Lock className="size-3.5" />
             {t("adminAuth.badge")}
           </span>
@@ -133,9 +133,9 @@ function AuthPage() {
             {perks.map((perk) => (
               <li
                 key={perk}
-                className="flex items-center gap-3 border-s-2 border-[#d4af37]/55 py-2 ps-4 text-sm font-medium leading-6 text-white/80"
+                className="flex items-center gap-3 border-s-2 border-ink-accent/55 py-2 ps-4 text-sm font-medium leading-6 text-white/80"
               >
-                <ShieldCheck className="size-4 shrink-0 text-[#f2cd60]" />
+                <ShieldCheck className="size-4 shrink-0 text-ink-highlight" />
                 {perk}
               </li>
             ))}
@@ -143,7 +143,7 @@ function AuthPage() {
         </section>
 
         <section className="animate-in fade-in slide-in-from-bottom-6 duration-700 motion-reduce:animate-none lg:justify-self-end">
-          <div className="w-full rounded-[24px] border border-[#d4af37]/20 bg-background p-7 text-foreground shadow-[var(--shadow-raised)] sm:p-8">
+          <div className="w-full rounded-xl border border-border bg-background p-7 text-foreground shadow-[var(--shadow-raised)] sm:p-8">
             <div className="flex items-center gap-3">
               <div className="grid size-10 place-items-center rounded-xl bg-accent/10 text-accent">
                 <KeyRound className="size-5" />
@@ -209,11 +209,7 @@ function AuthPage() {
                   </Link>
                 </div>
               )}
-              <Button
-                type="submit"
-                disabled={submitting}
-                className="mt-2 bg-[#171512] py-6 text-[#f5efe0]"
-              >
+              <Button type="submit" disabled={submitting} className="mt-2 py-6">
                 {submitting ? "…" : t("auth.submit")}
               </Button>
             </form>

@@ -110,8 +110,8 @@ function PortalDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[28px] border border-[#d4af37]/20 bg-ink p-6 text-ink-foreground shadow-[var(--shadow-raised)] sm:p-9">
-        <div className="absolute inset-y-0 end-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(212,175,55,0.18),transparent_70%)]" />
+      <section className="relative overflow-hidden rounded-lg border border-ink-accent/20 bg-ink p-6 text-ink-foreground shadow-[var(--shadow-raised)] sm:p-9">
+        <div className="absolute inset-y-0 end-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(45,181,167,0.18),transparent_70%)]" />
         <div className="relative min-w-0">
           <p className="text-sm font-medium text-[#cbbf9e]">{t("portal.dashboard.welcome")}</p>
           <h1 className="mt-2 break-words text-3xl font-bold tracking-[-0.035em] text-white sm:text-5xl">
@@ -120,11 +120,11 @@ function PortalDashboard() {
           <div className="mt-6 max-w-full">
             <ContractSwitcher
               tenantId={tenant.id}
-              className="[&_button]:border-[#d4af37]/50 [&_button]:bg-white/10 [&_button]:text-white [&_button]:backdrop-blur"
+              className="[&_button]:border-ink-accent/50 [&_button]:bg-white/10 [&_button]:text-white [&_button]:backdrop-blur"
             />
           </div>
           {lease.data?.contract ? (
-            <div className="mt-8 grid gap-5 border-t border-[#d4af37]/20 pt-6 text-sm text-[#f5efe0] md:grid-cols-3">
+            <div className="mt-8 grid gap-5 border-t border-ink-accent/20 pt-6 text-sm text-ink-foreground md:grid-cols-3">
               <div className="min-w-0">
                 <p className="text-[#cbbf9e]">{t("portal.lease.unit")}</p>
                 <p className="mt-1 break-words font-semibold">
@@ -151,7 +151,11 @@ function PortalDashboard() {
           ) : (
             <p className="mt-5 text-sm text-[#cbbf9e]">{t("portal.lease.noActive")}</p>
           )}
-          <Button asChild size="lg" className="mt-8 min-h-11 bg-[#d4af37] text-[#171204]">
+          <Button
+            asChild
+            size="lg"
+            className="mt-8 min-h-11 bg-ink-accent text-ink-accent-foreground hover:bg-ink-highlight"
+          >
             {/* Carry `?tenant=` and `?contract=` through: dropping tenant makes the
               portal layout treat a previewing admin as plain staff and bounce
               them to /admin; dropping contract loses the filter on My Invoices. */}

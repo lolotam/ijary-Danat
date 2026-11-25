@@ -62,7 +62,7 @@ export function ContractSwitcher({
       <Select value={contractId ?? undefined} onValueChange={setContractId} dir={dir}>
         <SelectTrigger
           aria-label={t("portal.contract.select")}
-          className="h-11 min-h-11 w-full min-w-0 max-w-full gap-2 border-[#d4af37]/40 bg-background font-semibold shadow-sm sm:w-auto sm:max-w-md"
+          className="h-11 min-h-11 w-full min-w-0 max-w-full gap-2 border-input bg-background font-semibold shadow-sm sm:w-auto sm:max-w-md"
         >
           <span className="shrink-0 text-muted-foreground">{t("portal.contract.label")}:</span>
           <SelectValue className="min-w-0 truncate">

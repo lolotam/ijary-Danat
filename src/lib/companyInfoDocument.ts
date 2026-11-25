@@ -55,7 +55,7 @@ const COMPANY_INFO_CSS = `
     align-items: center;
     justify-content: space-between;
     gap: 18px;
-    border-bottom: 3px solid #d4af37;
+    border-bottom: 3px solid #0f766e;
     padding-bottom: 14px;
     margin-bottom: 16px;
   }
@@ -75,14 +75,14 @@ const COMPANY_INFO_CSS = `
   .ci-logo-fallback {
     width: 92px;
     height: 92px;
-    border: 1.5px solid #d4af37;
+    border: 1.5px solid #0f766e;
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 26px;
     font-weight: 800;
-    color: #d4af37;
+    color: #0f766e;
     background: #fffbeb;
     flex-shrink: 0;
   }
@@ -107,7 +107,7 @@ const COMPANY_INFO_CSS = `
   .ci-stamp .doc-title {
     font-size: 14px;
     font-weight: 800;
-    color: #d4af37;
+    color: #0f766e;
     margin-bottom: 2px;
   }
   .ci-section {
@@ -120,7 +120,7 @@ const COMPANY_INFO_CSS = `
     letter-spacing: 0.5px;
     text-transform: uppercase;
     color: #ffffff;
-    background: linear-gradient(90deg, #d4af37, #b8941f);
+    background: linear-gradient(90deg, #0f766e, #115e59);
     display: inline-block;
     padding: 4px 12px;
     border-radius: 6px;
@@ -143,7 +143,7 @@ const COMPANY_INFO_CSS = `
   .ci-row .value a { color: #0369a1; text-decoration: none; }
   .ci-bank {
     margin-top: 14px;
-    border: 1.5px solid #d4af37;
+    border: 1.5px solid #0f766e;
     border-radius: 10px;
     padding: 12px 14px;
     background: #fffbeb;

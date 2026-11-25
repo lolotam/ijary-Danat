@@ -1,0 +1,248 @@
+
+
+# API Key
+
+## Overview
+
+The API Key is required to authenticate your application with the MyFatoorah API.\
+Use this token in your API requests to ensure secure communication between your system and MyFatoorah services.
+
+## API & Portal URLs
+
+| **Country / Environment**         | **API URL**                       | **Portal URL**                                                                   |
+| --------------------------------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| **Test (Sandbox)**                | <https://apitest.myfatoorah.com/> | [https://demo.myfatoorah.com/](https://demo.myfatoorah.com/En/All/Account/LogIn) |
+| **Kuwait, Bahrain, Jordan, Oman** | <https://api.myfatoorah.com/>     | <https://portal.myfatoorah.com/>                                                                                                 |
+
+## How to Generate Your API Token Key
+
+**You can get your API key as follows:**
+
+* Log in to your MyFatoorah account using your Super Master Account.
+* From the side menu, select **Integration Settings → API Key**
+* Click the Add button to generate a new key.
+* You will be redirected to a page where you can configure the key settings:
+  * **Name:** A custom label for your token.
+  * **Expiry Date:** Define when this key will expire.
+  * **Active Status:** Choose whether the key is active or inactive.
+  * **Permissions:** Select which API endpoints the key can access, and you can assign custom permissions like Super Rules, Create Payments, Update Payments, etc.
+* After filling in the details, scroll down and click Create to generate the new API key.
+* Once created, your key will appear in the list.
+* Click on the Copy icon next to the key to copy it and start using this key in your integration.
+
+![](https://files.readme.io/04f3c4ee07034ca0c83689bf50a43d8cf95313e782bae4dadf7d4347a1085963-newkey.PNG)
+
+![](https://files.readme.io/64708704d4bf88b3109ecb3bc59ad6607d7e5e53d80289c072392e53c28e77b5-image.png)
+
+<Callout icon="🚧" theme="warn">
+  **Important Notes**
+
+* You can **create up to 5 API keys** only.
+
+* If you use a token to access an endpoint **without the required permissions**,\
+  you will receive the following error:\
+  `Status Code: 401
+  , Message: "The token does not have the required permissions!"`
+
+* You can edit an existing API key by clicking the Edit icon next to it. This allows you to update the name, permissions, status, or **delete** the key.
+  </Callout>
+
+<Callout icon="📘" theme="info">
+  **Request Header**
+
+Add **"Authorization": "Bearer token"** to request header. Token of demo configuration can be found [here](https://docs.myfatoorah.com/docs/api-key#test-demo-token). </Callout>
+
+<Callout icon="❗️" theme="error">
+  **Legacy API Key**
+
+If you are using a legacy API Key, it will remain valid until it expires. After that, you will be forced to use the new version of the API Keys.
+
+![](https://files.readme.io/1f16ba20cf7a1ea5c86ced8167fadf0c6673542e4b467e52d8af5ab6182deea1-image.png) </Callout>
+
+<Callout icon="📘" theme="info">
+  **Multi-Country Account**
+
+Each enabled country in your portal account has a different API token key. You have to use the API token key of each country in your integration to allow your customer to pay in their local currency. </Callout>
+
+<Callout icon="❗️" theme="error">
+  **Disable user**
+
+Please, avoid disabling the user who created the token, as it will disable the token key. </Callout>
+
+## Test (Demo) Token
+
+To test your integration without real transactions, create a demo account by registering at <https://registertest.myfatoorah.com/en/> , selecting Kuwait as the country, and skipping the bank details step. After completing the registration, email <tech@myfatoorah.com> to activate your demo account and enable the required features.
+
+**Public Test API Token Key**
+
+You can also use the public test token provided by MyFatoorah.\
+Click the **copy icon** 📋 next to the token box to copy it.
+
+```
+SK_KWT_vVZlnnAqu8jRByOWaRPNId4ShzEDNt256dvnjebuyzo52dXjAfRx2ixW5umjWSUx
+```
+
+<br />
+
+
+
+----------------------------------------------------------------------------------------
+
+
+
+# Invoicing
+
+## Introduction
+
+In this type of integration, we are providing a simple, straightforward integration. It will allow you to generate an invoice link that can be sent by any channel we support.
+
+This will facilitate your collection if you have non-store platforms and would like to introduce a niche to your business. You can decide how are you going to send the payment link either by SMS, email, redirect the customer to the invoice link, or use all of them.
+
+This is so helpful in many business cases. Let's explain an example of such cases that can utilize this integration. In a rent collection case, all you need is to give your customers an invoice link to pay the due rent at their convenience. This simply can be achieved with this type of integration, based on the due dates of the collection, and within your application, you can call this endpoint and send all information and the amount you need to collect, then MyFatoorah will send this payment link via the provided channel. The thing here is that you are giving time to your customers to pay once they can.
+
+## How It Works
+
+### Step 1: Create a Payment Request
+
+To generate an invoice, send a POST request to the endpoint: `POST /v3/payments` ([Create Payment](https://docs.myfatoorah.com/reference/create-payment))
+
+In this request, you don’t need to set the PaymentMethod value. Just specify how the customer should receive the invoice link using the NotificationOption field.
+
+**NotificationOption Values**
+
+| Value     | Behavior                                                                                       | Required Customer Fields                                |
+| --------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **EMAIL** | Sends the invoice link by **email only**                                                       | `Customer.Email`                                        |
+| **SMS**   | Sends the invoice link by **SMS only**                                                         | `Customer.Mobile.CountryCode`, `Customer.Mobile.Number` |
+| **LINK**  | Returns only the invoice link in the API **response**                                          | None                                                    |
+| **ALL**   | Sends the invoice link by **both email and SMS**, and also returns it in the **response body** | Email + Mobile fields                                   |
+
+```json Sample Request
+{
+  "Order": {
+    "Amount": 20
+  },
+  "Customer": {
+    "Mobile": {
+      "CountryCode": "+20",
+      "Number": "1020304050"
+    },
+    "Email": "example@gmail.com"
+  },
+  "IntegrationUrls": {
+    "Redirection": "https://your-website.com/payment-callback"
+  },
+  "NotificationOption": "ALL"
+}
+```
+```json Response
+{
+  "IsSuccess": true,
+  "Message": "",
+  "ValidationErrors": null,
+  "Data": {
+    "InvoiceId": "6323179",
+    "PaymentId": null,
+    "PaymentURL": "https://demo.MyFatoorah.com/KWT/ie/01072632317941-057d0668",
+    "PaymentCompleted": false,
+    "TransactionDetails": null
+  }
+}
+```
+
+### Step 2: Inquire Payment Status
+
+After the customer completes the payment, MyFatoorah will redirect the user back to your Redirection URL, appending a paymentId query parameter.
+
+Example: <https://your-website.com/payment-callback?paymentId=100201923790872553>
+
+You need then call: `GET /v3/payments/{paymentId}` ([Get Payment Details](https://docs.myfatoorah.com/reference/get-payment-details)) to verify the payment and retrieve the full invoice and transaction details.
+
+```Text Request Example
+GET /v3/payments/07076323179317752773
+```
+```json Response
+{
+    "IsSuccess": true,
+    "Message": "",
+    "ValidationErrors": null,
+    "Data": {
+        "Invoice": {
+            "Id": "6389491",
+            "Status": "PAID",
+            "Reference": "2025060917",
+            "CreationDate": "2025-12-24T14:48:17.1230000Z",
+            "ExpirationDate": "2026-06-22T14:48:17.1230000Z",
+            "ExternalIdentifier": null,
+            "UserDefinedField": "",
+            "MetaData": null
+        },
+        "Transaction": {
+            "Id": "102585",
+            "Status": "SUCCESS",
+            "PaymentMethod": "VISA/MASTER",
+            "PaymentId": "07076389491322460173",
+            "ReferenceId": "535814102585",
+            "TrackId": "24-12-2025_3224601",
+            "AuthorizationId": "102585",
+            "TransactionDate": "2025-12-24T14:51:06.5630000Z",
+            "ECI": "02",
+            "IP": {
+                "Address": "41.35.105.183",
+                "Country": "Egypt"
+            },
+            "Error": {
+                "Code": "",
+                "Message": ""
+            },
+            "Card": {
+                "NameOnCard": "das",
+                "Number": "512345xxxxxx0008",
+                "Token": "",
+                "PanHash": "b888aa5f23a817883d4d12c74044bab1ae6ee65dc8d6e11515394aba452b273b",
+                "ExpiryMonth": "12",
+                "ExpiryYear": "34",
+                "Brand": "Mastercard",
+                "Issuer": "Test Bank",
+                "IssuerCountry": "KWT",
+                "FundingMethod": "credit"
+            }
+        },
+        "Customer": {
+            "Reference": "",
+            "Name": "Anonymous",
+            "Mobile": "+201020304050",
+            "Email": "xeraxe9309@fftube.com"
+        },
+        "Amount": {
+            "BaseCurrency": "KWD",
+            "ValueInBaseCurrency": "20",
+            "ServiceCharge": "0.4",
+            "ServiceChargeVAT": "0.06",
+            "ReceivableAmount": "19.54",
+            "DisplayCurrency": "KWD",
+            "ValueInDisplayCurrency": "20",
+            "PayCurrency": "KWD",
+            "ValueInPayCurrency": "20"
+        },
+        "Suppliers": []
+    }
+}
+```
+
+> 👍 Webhook
+>
+> We recommended enabling the [Webhook ](https://docs.myfatoorah.com/edit/webhook)feature to automatically notify your system when a transaction status changes in your application.
+
+> 📘 Note
+>
+> The IntegrationUrls.Redirection field is optional.
+> If omitted, customers will remain on the MyFatoorah result page after completing payment.
+
+> 📘 Old Integration (V2)
+>
+> In case you are using the integration for v2, you can find the documentation here:
+>
+> * [Invoice Link](https://docs.myfatoorah.com/docs/invoice-link)
+> * [SendPayment](https://docs.myfatoorah.com/docs/send-payment)
+> * [Sample Code](https://docs.myfatoorah.com/docs/invoice-link-sample-code)

@@ -1,0 +1,55 @@
+# Dokploy / self-hosted deployment for the ERMP web app only.
+# The Supabase stack (Postgres, GoTrue, PostgREST, Storage, Realtime, Kong)
+# is deployed separately on the same host; point the env vars below at it.
+
+services:
+  ermp-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # These are baked into the client bundle at build time.
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: ${VITE_PUBLIC_POSTHOG_PROJECT_TOKEN:-}
+        VITE_PUBLIC_POSTHOG_HOST: ${VITE_PUBLIC_POSTHOG_HOST:-}
+      # Mounted for the build step only (see the Dockerfile); never a build arg.
+      secrets:
+        - SENTRY_AUTH_TOKEN
+    image: ermp-web:latest
+    container_name: ermp-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Server-only Supabase config (do NOT prefix with VITE_).
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      # MyFatoorah (Phase 3).
+      MYFATOORAH_BASE_URL: ${MYFATOORAH_BASE_URL:-}
+      MYFATOORAH_API_KEY: ${MYFATOORAH_API_KEY:-}
+      MYFATOORAH_WEBHOOK_SECRET: ${MYFATOORAH_WEBHOOK_SECRET:-}
+      # Shared secret for the scheduled-jobs endpoint (POST /api/cron).
+      CRON_SECRET: ${CRON_SECRET:-}
+      # Sentry server DSN. Build args do not reach the runtime stage, so the
+      # documented fallback to VITE_SENTRY_DSN is resolved here, not in the app.
+      SENTRY_DSN: ${SENTRY_DSN:-${VITE_SENTRY_DSN:-}}
+    ports:
+      - "3000:3000"
+    networks:
+      - ermp
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+networks:
+  ermp:
+    driver: bridge
+
+secrets:
+  SENTRY_AUTH_TOKEN:
+    environment: SENTRY_AUTH_TOKEN

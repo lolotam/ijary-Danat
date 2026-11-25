@@ -1,0 +1,11 @@
+# Daily refresh so a new Cloudflare range is allowed before it carries traffic.
+[Unit]
+Description=Refresh the Cloudflare origin allowlist daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

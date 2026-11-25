@@ -1,0 +1,3608 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Technical & Commercial Proposal — Real Estate Management Platform</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+      :root {
+        --bg-dark-base: #0f111a;
+        --bg-dark-surface: #161925;
+        --bg-dark-card: rgba(22, 25, 37, 0.75);
+        --accent-gold: #e2b755;
+        --accent-gold-hover: #c59e3f;
+        --accent-gold-glow: rgba(226, 183, 85, 0.15);
+        --color-text-primary: #f3f4f6;
+        --color-text-secondary: #9ca3af;
+        --color-text-muted: #6b7280;
+        --border-color: rgba(255, 255, 255, 0.08);
+        --border-color-glow: rgba(226, 183, 85, 0.3);
+        --font-english: "Outfit", sans-serif;
+        --font-arabic: "Cairo", sans-serif;
+        --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-quick: all 0.2s ease;
+        --color-critical: #ef4444;
+        --color-high: #f59e0b;
+        --color-medium: #3b82f6;
+        --color-enterprise: #10b981;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent-gold) var(--bg-dark-base);
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background-color: var(--bg-dark-base);
+        color: var(--color-text-primary);
+        font-family: var(--font-english);
+        overflow-x: hidden;
+        line-height: 1.6;
+      }
+      body.lang-ar {
+        font-family: var(--font-arabic);
+        direction: rtl;
+      }
+
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--bg-dark-base);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--accent-gold);
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-gold-hover);
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      .glass-panel {
+        background: var(--bg-dark-card);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      }
+      .gold-glow-hover {
+        transition: var(--transition-smooth);
+      }
+      .gold-glow-hover:hover {
+        border-color: var(--border-color-glow);
+        box-shadow: 0 0 25px var(--accent-gold-glow);
+        transform: translateY(-2px);
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes pulseGlow {
+        0%,
+        100% {
+          opacity: 0.1;
+        }
+        50% {
+          opacity: 0.25;
+        }
+      }
+
+      header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        z-index: 100;
+        background: rgba(15, 17, 26, 0.8);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border-color);
+        transition: var(--transition-smooth);
+      }
+      header.scrolled {
+        padding: 8px 0;
+        background: rgba(15, 17, 26, 0.95);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      }
+      .nav-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 75px;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: var(--color-text-primary);
+        text-decoration: none;
+        transition: var(--transition-quick);
+      }
+      .logo span {
+        color: var(--accent-gold);
+      }
+      .logo-img {
+        height: 38px;
+        width: auto;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+      .nav-actions {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .btn-lang {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+        color: var(--color-text-primary);
+        padding: 8px 16px;
+        border-radius: 30px;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: var(--transition-quick);
+      }
+      .btn-lang:hover {
+        background: rgba(226, 183, 85, 0.1);
+        border-color: var(--accent-gold);
+        color: var(--accent-gold);
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-hover));
+        color: #0f111a;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 30px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        transition: var(--transition-quick);
+      }
+      .btn-primary:hover {
+        box-shadow: 0 0 15px rgba(226, 183, 85, 0.4);
+        transform: translateY(-1px);
+      }
+
+      .hero {
+        position: relative;
+        padding: 150px 0 80px;
+        min-height: 95vh;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        top: -10%;
+        right: -10%;
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(226, 183, 85, 0.12) 0%, transparent 70%);
+        filter: blur(80px);
+        z-index: 0;
+        pointer-events: none;
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        bottom: -10%;
+        left: -10%;
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
+        filter: blur(80px);
+        z-index: 0;
+        pointer-events: none;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr;
+        gap: 60px;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .hero-content {
+        animation: fadeInUp 0.8s ease-out;
+      }
+      .hero-logo-container {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .hero-logo-img {
+        height: 60px;
+        width: auto;
+        border-radius: 10px;
+        border: 1px solid var(--border-color-glow);
+        box-shadow: 0 0 15px var(--accent-gold-glow);
+      }
+      .proposal-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(226, 183, 85, 0.08);
+        border: 1px solid rgba(226, 183, 85, 0.2);
+        color: var(--accent-gold);
+        padding: 6px 14px;
+        border-radius: 30px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .hero h1 {
+        font-size: 2.85rem;
+        font-weight: 800;
+        line-height: 1.2;
+        margin-bottom: 20px;
+      }
+      body.lang-ar .hero h1 {
+        font-size: 3.1rem;
+        line-height: 1.3;
+      }
+      .hero h1 span {
+        background: linear-gradient(to right, var(--accent-gold), #fff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .hero-desc {
+        color: var(--color-text-secondary);
+        font-size: 1.125rem;
+        margin-bottom: 36px;
+        max-width: 580px;
+      }
+      .hero-meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 40px;
+      }
+      .hero-meta-item {
+        padding: 16px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border-color);
+      }
+      .hero-meta-item .label {
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+        display: block;
+        margin-bottom: 4px;
+      }
+      .hero-meta-item .value {
+        font-weight: 600;
+        font-size: 1.05rem;
+        color: var(--color-text-primary);
+      }
+
+      .showcase-container {
+        position: relative;
+        animation: fadeIn 1.2s ease-out;
+      }
+      .main-showcase-card {
+        padding: 24px;
+        position: relative;
+        z-index: 2;
+      }
+      .showcase-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 16px;
+      }
+      .showcase-dots {
+        display: flex;
+        gap: 6px;
+      }
+      .showcase-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .showcase-dot:nth-child(1) {
+        background: #ef4444;
+      }
+      .showcase-dot:nth-child(2) {
+        background: #f59e0b;
+      }
+      .showcase-dot:nth-child(3) {
+        background: #10b981;
+      }
+      .showcase-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        letter-spacing: 0.5px;
+      }
+      .showcase-stat-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .showcase-stat-card {
+        padding: 14px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.015);
+        border: 1px solid var(--border-color);
+        text-align: center;
+      }
+      .showcase-stat-num {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent-gold);
+        margin-bottom: 4px;
+      }
+      .showcase-stat-label {
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .showcase-offers-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .showcase-offer-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        border-left: 3px solid var(--accent-gold);
+        font-size: 0.85rem;
+      }
+      body.lang-ar .showcase-offer-item {
+        border-left: none;
+        border-right: 3px solid var(--accent-gold);
+      }
+      .showcase-offer-item.enterprise {
+        border-left-color: var(--color-enterprise);
+        background: rgba(16, 185, 129, 0.05);
+      }
+      body.lang-ar .showcase-offer-item.enterprise {
+        border-left: none;
+        border-right-color: var(--color-enterprise);
+      }
+      .showcase-badge {
+        padding: 3px 8px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .badge-starter {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+      }
+      .badge-professional {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+      }
+      .badge-enterprise {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+      }
+      .badge-recommended {
+        background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-hover));
+        color: #0f111a;
+        font-weight: 700;
+      }
+
+      .floating-card-1 {
+        position: absolute;
+        top: -20px;
+        left: -30px;
+        padding: 12px 18px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 3;
+        transform: rotate(-3deg);
+      }
+      .floating-card-2 {
+        position: absolute;
+        bottom: -15px;
+        right: -20px;
+        padding: 12px 18px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 3;
+        transform: rotate(3deg);
+      }
+      .floating-icon-wrapper {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(226, 183, 85, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent-gold);
+      }
+
+      .section-title-area {
+        text-align: center;
+        margin-bottom: 50px;
+      }
+      .section-title-area h2 {
+        font-size: 2.25rem;
+        font-weight: 800;
+        margin-bottom: 12px;
+      }
+      .section-title-area p {
+        color: var(--color-text-secondary);
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      .features-section {
+        padding: 80px 0;
+        background: rgba(22, 25, 37, 0.2);
+      }
+      .features-table-card {
+        padding: 30px;
+        overflow-x: auto;
+      }
+
+      .features-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+      body.lang-ar .features-table {
+        text-align: right;
+      }
+      .features-table th {
+        background: rgba(255, 255, 255, 0.015);
+        border-bottom: 2px solid var(--border-color);
+        padding: 14px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        white-space: nowrap;
+      }
+      .features-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+        vertical-align: top;
+        transition: var(--transition-quick);
+      }
+      .features-table tr:hover td {
+        background: rgba(255, 255, 255, 0.015);
+        color: var(--color-text-primary);
+      }
+      .feature-name {
+        font-weight: 600;
+        color: var(--color-text-primary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .importance-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+      }
+      .imp-critical {
+        background: rgba(239, 68, 68, 0.12);
+        color: var(--color-critical);
+      }
+      .imp-high {
+        background: rgba(245, 158, 11, 0.12);
+        color: var(--color-high);
+      }
+      .imp-medium {
+        background: rgba(59, 130, 246, 0.12);
+        color: var(--color-medium);
+      }
+      .category-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 500;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--color-text-muted);
+        white-space: nowrap;
+      }
+      .check-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+      .check-yes {
+        background: rgba(16, 185, 129, 0.12);
+        color: #10b981;
+      }
+      .check-no {
+        background: rgba(239, 68, 68, 0.08);
+        color: #6b7280;
+      }
+
+      .pricing-section {
+        padding: 80px 0;
+      }
+      .pricing-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        align-items: stretch;
+      }
+      .pricing-card {
+        padding: 0;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: var(--transition-smooth);
+      }
+      .pricing-card:hover {
+        transform: translateY(-4px);
+      }
+      .pricing-card.recommended {
+        border-color: var(--accent-gold);
+        box-shadow: 0 0 40px rgba(226, 183, 85, 0.15);
+      }
+      .pricing-card.recommended::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(
+          90deg,
+          var(--accent-gold),
+          var(--accent-gold-hover),
+          var(--accent-gold)
+        );
+      }
+      .pricing-card-header {
+        padding: 32px 28px 20px;
+        border-bottom: 1px solid var(--border-color);
+        text-align: center;
+      }
+      .pricing-card.recommended .pricing-card-header {
+        background: linear-gradient(180deg, rgba(226, 183, 85, 0.06) 0%, transparent 100%);
+      }
+      .pricing-tier-name {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: var(--color-text-muted);
+        margin-bottom: 12px;
+      }
+      .pricing-card.recommended .pricing-tier-name {
+        color: var(--accent-gold);
+      }
+      .pricing-price-value {
+        font-size: 2.8rem;
+        font-weight: 800;
+        color: var(--color-text-primary);
+        line-height: 1;
+        display: flex;
+        align-items: baseline;
+        justify-content: center;
+        gap: 6px;
+      }
+      .pricing-card.recommended .pricing-price-value {
+        color: var(--accent-gold);
+      }
+      .pricing-price-currency {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .pricing-hours-tag {
+        margin-top: 8px;
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
+      .pricing-hours-tag strong {
+        color: var(--accent-gold);
+      }
+      .recommended-ribbon {
+        position: absolute;
+        top: 16px;
+        right: -34px;
+        transform: rotate(45deg);
+        background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-hover));
+        color: #0f111a;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 4px 40px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .pricing-meta-rows {
+        padding: 20px 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .pricing-meta-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.83rem;
+      }
+      .pricing-meta-row .label {
+        color: var(--color-text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .pricing-meta-row .value {
+        font-weight: 600;
+        color: var(--color-text-primary);
+        text-align: right;
+      }
+      body.lang-ar .pricing-meta-row .value {
+        text-align: left;
+      }
+      .pricing-features-list {
+        padding: 20px 28px;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .pricing-feature-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 0.82rem;
+        color: var(--color-text-secondary);
+        line-height: 1.4;
+      }
+      .pricing-feature-row .check-icon {
+        flex-shrink: 0;
+        margin-top: 1px;
+        width: 18px;
+        height: 18px;
+        font-size: 0.7rem;
+      }
+      .pricing-feature-row.included {
+        color: var(--color-text-primary);
+      }
+      .pricing-feature-row.not-included {
+        color: var(--color-text-muted);
+        text-decoration: line-through;
+        text-decoration-color: rgba(239, 68, 68, 0.3);
+      }
+      .pricing-cta {
+        padding: 20px 28px 28px;
+      }
+      .btn-choose {
+        width: 100%;
+        padding: 12px;
+        border-radius: 30px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: var(--transition-quick);
+        font-family: inherit;
+        font-size: 0.9rem;
+      }
+      .btn-choose-starter {
+        background: rgba(239, 68, 68, 0.08);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
+      .btn-choose-starter:hover {
+        background: rgba(239, 68, 68, 0.15);
+      }
+      .btn-choose-professional {
+        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+      }
+      .btn-choose-professional:hover {
+        background: rgba(245, 158, 11, 0.15);
+      }
+      .btn-choose-enterprise {
+        background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-hover));
+        border: none;
+        color: #0f111a;
+      }
+      .btn-choose-enterprise:hover {
+        box-shadow: 0 0 20px rgba(226, 183, 85, 0.4);
+        transform: translateY(-1px);
+      }
+
+      .selling-points-section {
+        padding: 60px 0 80px;
+      }
+      .selling-points-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+      .selling-point-card {
+        padding: 28px;
+        text-align: center;
+      }
+      .selling-point-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: rgba(226, 183, 85, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent-gold);
+        margin: 0 auto 16px;
+      }
+      .selling-point-card h4 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .selling-point-card p {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+        line-height: 1.5;
+      }
+
+      .download-section {
+        padding: 80px 0;
+        text-align: center;
+        background: radial-gradient(circle at center, rgba(226, 183, 85, 0.05) 0%, transparent 60%);
+      }
+      .download-card {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 50px 30px;
+        text-align: center;
+      }
+      .download-card h2 {
+        font-size: 2rem;
+        font-weight: 800;
+        margin-bottom: 16px;
+      }
+      .download-card p {
+        color: var(--color-text-secondary);
+        margin-bottom: 36px;
+        max-width: 500px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .download-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+      .btn-download-word {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border-color);
+        color: var(--color-text-primary);
+        padding: 14px 28px;
+        border-radius: 30px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.95rem;
+        transition: var(--transition-quick);
+        font-family: inherit;
+      }
+      .btn-download-word:hover {
+        background: var(--accent-gold);
+        border-color: var(--accent-gold);
+        color: #0f111a;
+        box-shadow: 0 5px 15px rgba(226, 183, 85, 0.3);
+        transform: translateY(-2px);
+      }
+      .btn-download-word.ar-btn {
+        font-family: var(--font-arabic);
+      }
+
+      footer {
+        border-top: 1px solid var(--border-color);
+        padding: 40px 0;
+        background: #090b10;
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+      }
+      .footer-grid {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 20px;
+      }
+      .footer-links {
+        display: flex;
+        gap: 24px;
+      }
+      .footer-links a {
+        color: var(--color-text-muted);
+        text-decoration: none;
+        transition: var(--transition-quick);
+      }
+      .footer-links a:hover {
+        color: var(--accent-gold);
+      }
+      .admin-login-link {
+        border: 1px dashed var(--border-color);
+        padding: 4px 10px;
+        border-radius: 4px;
+      }
+
+      .btn-theme {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+        color: var(--color-text-primary);
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: var(--transition-quick);
+        flex-shrink: 0;
+      }
+      .btn-theme:hover {
+        background: rgba(226, 183, 85, 0.1);
+        border-color: var(--accent-gold);
+        color: var(--accent-gold);
+      }
+      .btn-theme i {
+        width: 18px;
+        height: 18px;
+      }
+      .btn-theme .icon-sun {
+        display: none;
+      }
+      .btn-theme .icon-moon {
+        display: block;
+      }
+      body.light-mode .btn-theme .icon-sun {
+        display: block;
+      }
+      body.light-mode .btn-theme .icon-moon {
+        display: none;
+      }
+
+      body.light-mode {
+        --bg-dark-base: #f4f5f8;
+        --bg-dark-surface: #ffffff;
+        --bg-dark-card: rgba(255, 255, 255, 0.85);
+        --color-text-primary: #161925;
+        --color-text-secondary: #4b5563;
+        --color-text-muted: #6b7280;
+        --border-color: rgba(0, 0, 0, 0.1);
+        --border-color-glow: rgba(226, 183, 85, 0.45);
+        --accent-gold-glow: rgba(226, 183, 85, 0.2);
+        scrollbar-color: var(--accent-gold) var(--bg-dark-base);
+      }
+      body.light-mode header {
+        background: rgba(255, 255, 255, 0.8);
+      }
+      body.light-mode header.scrolled {
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      }
+      body.light-mode .glass-panel {
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.08);
+      }
+      body.light-mode .features-section {
+        background: rgba(22, 25, 37, 0.03);
+      }
+      body.light-mode .hero::before {
+        background: radial-gradient(circle, rgba(226, 183, 85, 0.18) 0%, transparent 70%);
+      }
+      body.light-mode footer {
+        background: #eceef2;
+      }
+      body.light-mode .hero-meta-item,
+      body.light-mode .showcase-stat-card,
+      body.light-mode .showcase-offer-item,
+      body.light-mode .pricing-meta-row,
+      body.light-mode .features-table th,
+      body.light-mode .features-table tr:hover td,
+      body.light-mode .btn-lang,
+      body.light-mode .btn-theme,
+      body.light-mode .btn-download-word {
+        background-color: rgba(22, 25, 37, 0.025) !important;
+      }
+      body.light-mode .pricing-card.recommended {
+        box-shadow: 0 0 40px rgba(226, 183, 85, 0.2);
+      }
+      body.light-mode .hero h1 span {
+        background: linear-gradient(to right, var(--accent-gold-hover), #161925);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      body.light-mode .download-section {
+        background: radial-gradient(circle at center, rgba(226, 183, 85, 0.08) 0%, transparent 60%);
+      }
+      body.light-mode .selling-point-icon {
+        background: rgba(226, 183, 85, 0.15);
+      }
+
+      @media (max-width: 991px) {
+        .hero {
+          padding: 130px 0 60px;
+        }
+        .hero-grid {
+          grid-template-columns: 1fr;
+          gap: 50px;
+          text-align: center;
+        }
+        .hero-logo-container {
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+        .hero-desc {
+          margin-left: auto;
+          margin-right: auto;
+        }
+        .hero-meta-grid {
+          max-width: 580px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+        .showcase-container {
+          max-width: 500px;
+          margin: 0 auto;
+        }
+        .floating-card-1 {
+          left: -10px;
+        }
+        .floating-card-2 {
+          right: -10px;
+        }
+        .pricing-grid {
+          grid-template-columns: 1fr;
+          max-width: 480px;
+          margin: 0 auto;
+        }
+        .selling-points-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 768px) {
+        .container {
+          padding: 0 18px;
+        }
+        header {
+          padding: 0;
+        }
+        .nav-container {
+          height: auto;
+          flex-wrap: wrap;
+          padding: 12px 0;
+          gap: 10px;
+          justify-content: center;
+        }
+        .logo {
+          font-size: 1.05rem;
+        }
+        .logo-img {
+          height: 32px;
+        }
+        .nav-actions {
+          gap: 10px;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+        .btn-lang,
+        .btn-primary {
+          padding: 8px 14px;
+          font-size: 0.85rem;
+        }
+        .hero {
+          padding: 140px 0 50px;
+          min-height: auto;
+        }
+        .hero h1 {
+          font-size: 2.2rem;
+        }
+        body.lang-ar .hero h1 {
+          font-size: 2.3rem;
+        }
+        .hero-desc {
+          font-size: 1rem;
+        }
+        .hero-logo-img {
+          height: 50px;
+        }
+        .hero-meta-grid {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        .section-title-area h2 {
+          font-size: 1.75rem;
+        }
+        .section-title-area {
+          margin-bottom: 35px;
+        }
+        .features-section,
+        .pricing-section,
+        .download-section,
+        .selling-points-section {
+          padding: 55px 0;
+        }
+        .features-table-card {
+          padding: 18px;
+        }
+        .features-table th,
+        .features-table td {
+          padding: 10px 8px;
+          font-size: 0.78rem;
+        }
+        .pricing-card-header {
+          padding: 24px 20px 16px;
+        }
+        .pricing-price-value {
+          font-size: 2.2rem;
+        }
+        .pricing-meta-rows,
+        .pricing-features-list,
+        .pricing-cta {
+          padding: 16px 20px;
+        }
+        .download-card {
+          padding: 35px 20px;
+        }
+        .download-card h2 {
+          font-size: 1.6rem;
+        }
+        .download-buttons {
+          gap: 14px;
+        }
+        .btn-download-word {
+          width: 100%;
+          justify-content: center;
+          padding: 13px 20px;
+          font-size: 0.9rem;
+        }
+        .floating-card-1,
+        .floating-card-2 {
+          padding: 10px 12px;
+          position: relative;
+          top: auto;
+          bottom: auto;
+          left: auto;
+          right: auto;
+          margin: 8px auto;
+          transform: none;
+          display: inline-flex;
+          max-width: 90%;
+        }
+        .showcase-container {
+          width: 100%;
+        }
+        .footer-grid {
+          flex-direction: column;
+          text-align: center;
+          gap: 14px;
+        }
+        .footer-links {
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 16px;
+        }
+        .showcase-stat-grid {
+          gap: 8px;
+        }
+        .showcase-stat-card {
+          padding: 10px;
+        }
+        .showcase-stat-num {
+          font-size: 1.25rem;
+        }
+      }
+      @media (max-width: 576px) {
+        .container {
+          padding: 0 14px;
+        }
+        .hero {
+          padding: 130px 0 40px;
+        }
+        .hero h1 {
+          font-size: 1.85rem;
+          line-height: 1.25;
+        }
+        body.lang-ar .hero h1 {
+          font-size: 1.95rem;
+        }
+        .hero-desc {
+          font-size: 0.95rem;
+          margin-bottom: 28px;
+        }
+        .hero-logo-container {
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+        .proposal-tag {
+          font-size: 0.75rem;
+          padding: 5px 10px;
+        }
+        .nav-container {
+          padding: 10px 0;
+          gap: 8px;
+        }
+        .logo {
+          font-size: 0.95rem;
+          gap: 8px;
+        }
+        .logo-img {
+          height: 28px;
+        }
+        .btn-lang,
+        .btn-primary {
+          padding: 7px 12px;
+          font-size: 0.8rem;
+          gap: 6px;
+        }
+        .section-title-area h2 {
+          font-size: 1.5rem;
+          line-height: 1.3;
+        }
+        .section-title-area p {
+          font-size: 0.9rem;
+        }
+        .features-section,
+        .pricing-section,
+        .download-section,
+        .selling-points-section {
+          padding: 45px 0;
+        }
+        .features-table-card {
+          padding: 14px;
+        }
+        .features-table th,
+        .features-table td {
+          padding: 8px 6px;
+          font-size: 0.72rem;
+        }
+        .download-card {
+          padding: 28px 16px;
+        }
+        .download-card h2 {
+          font-size: 1.35rem;
+        }
+        .download-card p {
+          font-size: 0.88rem;
+        }
+        .btn-download-word {
+          padding: 12px 16px;
+          font-size: 0.85rem;
+        }
+        footer {
+          padding: 28px 0;
+          font-size: 0.78rem;
+        }
+        .footer-links {
+          gap: 12px;
+        }
+        .footer-links a {
+          font-size: 0.78rem;
+        }
+        .showcase-stat-num {
+          font-size: 1.15rem;
+        }
+        .showcase-offer-item {
+          padding: 10px;
+          font-size: 0.78rem;
+        }
+        .main-showcase-card {
+          padding: 18px;
+        }
+        .pricing-price-value {
+          font-size: 1.8rem;
+        }
+      }
+      @media (max-width: 380px) {
+        .hero h1 {
+          font-size: 1.6rem;
+        }
+        body.lang-ar .hero h1 {
+          font-size: 1.7rem;
+        }
+        .nav-actions {
+          flex-direction: column;
+          gap: 6px;
+        }
+        .btn-lang,
+        .btn-primary {
+          width: 100%;
+          justify-content: center;
+        }
+        .price-value {
+          font-size: 1.9rem;
+        }
+        .section-title-area h2 {
+          font-size: 1.3rem;
+        }
+      }
+
+      /* Print styling to generate high-fidelity A4 PDFs matching the designed webpage look */
+      @media print {
+        @page {
+          size: A4 portrait;
+          margin: 0;
+        }
+
+        html,
+        body {
+          width: 210mm;
+          margin: 0;
+          padding: 0;
+          background-color: #ffffff !important;
+          color: #161925 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        /* Hide web-only controls and download elements */
+        header,
+        footer,
+        .btn-theme,
+        #langToggleBtn,
+        .btn-primary,
+        .btn-choose,
+        .download-buttons,
+        .download-section,
+        .web-only-bg-glow {
+          display: none !important;
+        }
+
+        /* Disable backdrop-filter rendering overlays on print */
+        .glass-panel,
+        .pricing-card,
+        .main-showcase-card,
+        .floating-card-1,
+        .floating-card-2,
+        .selling-point-card {
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          background-color: #ffffff !important;
+          border: 1px solid rgba(0, 0, 0, 0.12) !important;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04) !important;
+        }
+
+        .pricing-card.recommended {
+          border: 1px solid var(--accent-gold) !important;
+        }
+
+        /* Disable pseudo-element background gradients in print */
+        .hero::before,
+        .hero::after {
+          display: none !important;
+        }
+
+        /* Full Mode Page Container */
+        .container {
+          max-width: 190mm !important;
+          padding: 0 !important;
+          margin: 0 auto !important;
+        }
+
+        .section-title-area {
+          margin-bottom: 5mm !important;
+        }
+
+        .section-title-area h2 {
+          font-size: 1.8rem !important;
+          margin-bottom: 2mm !important;
+          color: #161925 !important;
+        }
+
+        .section-title-area p {
+          font-size: 0.88rem !important;
+          max-width: 95% !important;
+          color: #4b5563 !important;
+        }
+
+        /* Page 1: Hero and Showcase */
+        .hero {
+          height: 297mm;
+          min-height: 297mm !important;
+          box-sizing: border-box;
+          padding: 25mm 15mm 15mm 15mm !important;
+          margin: 0 !important;
+          page-break-after: always;
+          page-break-inside: avoid;
+          display: block !important;
+          background: #ffffff !important;
+        }
+
+        .hero-grid {
+          display: grid !important;
+          grid-template-columns: 1.25fr 1fr !important;
+          gap: 15mm !important;
+          align-items: start !important;
+        }
+
+        .hero h1 {
+          font-size: 2.5rem !important;
+          line-height: 1.25 !important;
+          margin-bottom: 6mm !important;
+        }
+
+        .hero h1 span {
+          background: none !important;
+          -webkit-background-clip: initial !important;
+          -webkit-text-fill-color: initial !important;
+          color: var(--accent-gold) !important;
+        }
+
+        body.lang-ar .hero h1 {
+          font-size: 2.8rem !important;
+          line-height: 1.3 !important;
+        }
+
+        .hero-desc {
+          font-size: 1.05rem !important;
+          margin-bottom: 8mm !important;
+          color: #4b5563 !important;
+        }
+
+        .hero-meta-grid {
+          grid-template-columns: 1fr 1fr !important;
+          gap: 4mm !important;
+          margin-bottom: 0 !important;
+        }
+
+        .hero-meta-item {
+          padding: 4mm !important;
+          border-radius: 10px !important;
+          background-color: #f9fafb !important;
+          border: 1px solid rgba(0, 0, 0, 0.08) !important;
+        }
+
+        .hero-meta-item .label {
+          color: #6b7280 !important;
+        }
+
+        .hero-meta-item .value {
+          color: #161925 !important;
+        }
+
+        .showcase-container {
+          margin-top: 15mm !important;
+          width: 100% !important;
+        }
+
+        .main-showcase-card {
+          padding: 6mm !important;
+          border-radius: 14px !important;
+          background-color: #ffffff !important;
+        }
+
+        .showcase-stat-card {
+          background-color: #f9fafb !important;
+          border: 1px solid rgba(0, 0, 0, 0.08) !important;
+        }
+
+        .showcase-stat-label {
+          color: #4b5563 !important;
+        }
+
+        .showcase-offer-item {
+          background-color: #f9fafb !important;
+          border: 1px solid rgba(0, 0, 0, 0.08) !important;
+        }
+
+        .showcase-offer-item.enterprise {
+          background: rgba(16, 185, 129, 0.08) !important;
+          border-color: rgba(16, 185, 129, 0.2) !important;
+        }
+
+        .floating-card-1 {
+          top: -10mm !important;
+          left: -15mm !important;
+          padding: 3mm 4mm !important;
+          background-color: #ffffff !important;
+        }
+
+        .floating-card-2 {
+          bottom: -8mm !important;
+          right: -10mm !important;
+          padding: 3mm 4mm !important;
+          background-color: #ffffff !important;
+        }
+
+        /* Page 2 & 3: Features comparison matrix */
+        .features-section {
+          box-sizing: border-box;
+          padding: 20mm 15mm !important;
+          background: #ffffff !important;
+          page-break-after: always;
+        }
+
+        .features-table-card {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin-top: 8mm !important;
+        }
+
+        .features-table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+        }
+
+        .features-table th {
+          background: #f9fafb !important;
+          border-bottom: 2px solid var(--accent-gold) !important;
+          padding: 3mm 2.5mm !important;
+          font-size: 0.8rem !important;
+          color: #161925 !important;
+        }
+
+        .features-table td {
+          padding: 2.5mm 2.5mm !important;
+          font-size: 0.76rem !important;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+          color: #4b5563 !important;
+        }
+
+        .feature-name {
+          color: #161925 !important;
+        }
+
+        .category-badge {
+          background: #f3f4f6 !important;
+          color: #4b5563 !important;
+        }
+
+        .features-table tr {
+          page-break-inside: avoid !important;
+        }
+
+        .features-table thead {
+          display: table-header-group !important;
+        }
+
+        /* Pages 4, 5, 6: Pricing Section (Stacked cards for complete data display) */
+        .pricing-section {
+          box-sizing: border-box;
+          padding: 20mm 15mm !important;
+          background: #ffffff !important;
+        }
+
+        .pricing-grid {
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 10mm !important;
+          margin-top: 8mm !important;
+        }
+
+        .pricing-card {
+          width: 100% !important;
+          border-radius: 12px !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          height: auto !important;
+          background-color: #ffffff !important;
+          page-break-inside: avoid !important;
+          page-break-after: always !important; /* Forces each card to start on its own A4 page */
+        }
+
+        .pricing-card-header {
+          padding: 8mm 6mm 5mm !important;
+        }
+
+        .pricing-price-value {
+          font-size: 2.6rem !important;
+          color: #161925 !important;
+        }
+
+        .pricing-card.recommended .pricing-price-value {
+          color: var(--accent-gold) !important;
+        }
+
+        .pricing-hours-tag {
+          font-size: 0.85rem !important;
+          color: #4b5563 !important;
+        }
+
+        .pricing-meta-rows {
+          padding: 6mm 6mm !important;
+          gap: 3mm !important;
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+          background-color: #f9fafb !important;
+        }
+
+        .pricing-meta-row {
+          font-size: 0.83rem !important;
+          padding: 1mm 0 !important;
+        }
+
+        .pricing-meta-row .label {
+          color: #6b7280 !important;
+        }
+
+        .pricing-meta-row .value {
+          color: #161925 !important;
+        }
+
+        /* Complete Checklist layout inside pricing card: 2 columns for space efficiency */
+        .pricing-features-list {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          gap: 2.5mm 6mm !important;
+          padding: 6mm 8mm 8mm 8mm !important;
+          background-color: #ffffff !important;
+        }
+
+        .pricing-feature-row {
+          font-size: 0.78rem !important;
+          line-height: 1.4 !important;
+        }
+
+        .pricing-feature-row.included {
+          color: #161925 !important;
+        }
+
+        .pricing-feature-row.not-included {
+          color: #9ca3af !important;
+        }
+
+        .pricing-feature-row .check-icon {
+          width: 18px !important;
+          height: 18px !important;
+          font-size: 0.7rem !important;
+        }
+
+        .pricing-cta {
+          display: none !important;
+        }
+
+        .recommended-ribbon {
+          font-size: 0.7rem !important;
+          padding: 4px 40px !important;
+          right: -34px !important;
+          top: 16px !important;
+        }
+
+        /* Page 7: Why Enterprise & Closing appreciation with signature */
+        .selling-points-section {
+          height: 297mm;
+          min-height: 297mm !important;
+          box-sizing: border-box;
+          padding: 20mm 15mm !important;
+          background: #ffffff !important;
+          page-break-inside: avoid;
+          page-break-after: avoid;
+        }
+
+        .selling-points-grid {
+          display: grid !important;
+          grid-template-columns: repeat(3, 1fr) !important;
+          gap: 5mm !important;
+          margin-top: 8mm !important;
+          margin-bottom: 10mm !important;
+        }
+
+        .selling-point-card {
+          padding: 4mm !important;
+          border-radius: 10px !important;
+          background-color: #ffffff !important;
+        }
+
+        .selling-point-icon {
+          width: 12mm !important;
+          height: 12mm !important;
+          margin-bottom: 4mm !important;
+          background-color: rgba(226, 183, 85, 0.12) !important;
+        }
+
+        .selling-point-card h4 {
+          font-size: 0.9rem !important;
+          margin-bottom: 2mm !important;
+          color: #161925 !important;
+        }
+
+        .selling-point-card p {
+          font-size: 0.72rem !important;
+          line-height: 1.4 !important;
+          color: #4b5563 !important;
+        }
+
+        #closing {
+          padding: 0 !important;
+          margin-top: 5mm !important;
+        }
+
+        #closing .glass-panel {
+          padding: 8mm !important;
+          max-width: 100% !important;
+          border-radius: 12px !important;
+          box-shadow: none !important;
+          background-color: #f9fafb !important;
+        }
+
+        #closing p {
+          font-size: 0.95rem !important;
+          line-height: 1.6 !important;
+          margin-bottom: 4mm !important;
+          color: #161925 !important;
+        }
+
+        .print-only-signature-block {
+          display: block !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      class="web-only-bg-glow"
+      style="
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: url(&quot;data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%221%22 fill=%22%23E2B755%22 opacity=%220.15%22/></svg>&quot;);
+        opacity: 0.3;
+        pointer-events: none;
+        z-index: 0;
+        animation: pulseGlow 10s infinite;
+      "
+    ></div>
+
+    <header id="header">
+      <div class="container nav-container">
+        <a href="#" class="logo">
+          <img src="./assets/logo.png" alt="Pro Life Technical Logo" class="logo-img" />
+          PRO LIFE <span>TECHNICAL</span>
+        </a>
+        <div class="nav-actions">
+          <button
+            class="btn-theme"
+            onclick="toggleTheme()"
+            id="themeToggleBtn"
+            aria-label="Toggle theme"
+          >
+            <i data-lucide="sun" class="icon-sun"></i>
+            <i data-lucide="moon" class="icon-moon"></i>
+          </button>
+          <button
+            class="btn-lang"
+            onclick="toggleLanguage()"
+            id="langToggleBtn"
+            style="display: none"
+          >
+            <i data-lucide="languages"></i>
+            <span>العربية</span>
+          </button>
+          <a href="#download" class="btn-primary">
+            <i data-lucide="download"></i>
+            <span data-localize="nav_get_proposal">Get Word Proposal</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-content">
+          <div class="hero-logo-container">
+            <img src="./assets/logo.png" alt="Pro Life Logo" class="hero-logo-img" />
+            <div class="proposal-tag">
+              <i data-lucide="file-text" style="width: 16px; height: 16px"></i>
+              <span data-localize="hero_tag">Technical & Commercial Offer</span>
+            </div>
+          </div>
+          <h1 id="heroTitle">Real Estate <span>Management</span> Platform Proposal</h1>
+          <p class="hero-desc" data-localize="hero_desc">
+            A high-performance bilingual (AR/EN) software ecosystem designed for property
+            operations, secure tenant billing, automated WhatsApp collections, and bulletproof audit
+            controls. Three flexible plans tailored to your needs.
+          </p>
+
+          <div class="hero-meta-grid">
+            <div class="hero-meta-item">
+              <span class="label" data-localize="meta_client_lbl">Client</span>
+              <span class="value" data-localize="meta_client_val"
+                >Danat Al Mustaqbal Real Estate</span
+              >
+            </div>
+            <div class="hero-meta-item">
+              <span class="label" data-localize="meta_date_lbl">Date</span>
+              <span class="value" data-localize="meta_date_val">July 2026</span>
+            </div>
+            <div class="hero-meta-item">
+              <span class="label" data-localize="meta_validity_lbl">Validity</span>
+              <span class="value" data-localize="meta_validity_val"
+                >30 Days (Valid until August 2026)</span
+              >
+            </div>
+            <div class="hero-meta-item">
+              <span class="label" data-localize="meta_offers_lbl">Available Offers</span>
+              <span class="value" data-localize="meta_offers_val"
+                >3 Tiers (2000 / 2500 / 3000 KWD)</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <div class="showcase-container">
+          <div class="glass-panel floating-card-1 gold-glow-hover">
+            <div class="floating-icon-wrapper">
+              <i data-lucide="shield-check"></i>
+            </div>
+            <div>
+              <div
+                style="font-size: 0.65rem; color: var(--color-text-muted)"
+                data-localize="floating_security"
+              >
+                Enterprise Security
+              </div>
+              <div
+                style="font-size: 0.8rem; font-weight: 700; color: #10b981"
+                data-localize="floating_security_val"
+              >
+                RBAC + RLS + Audit
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-panel floating-card-2 gold-glow-hover">
+            <div
+              class="floating-icon-wrapper"
+              style="background: rgba(16, 185, 129, 0.1); color: #10b981"
+            >
+              <i data-lucide="trending-up"></i>
+            </div>
+            <div>
+              <div
+                style="font-size: 0.65rem; color: var(--color-text-muted)"
+                data-localize="floating_value"
+              >
+                Best Value
+              </div>
+              <div style="font-size: 0.8rem; font-weight: 700" data-localize="floating_value_val">
+                Enterprise Plan
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-panel main-showcase-card gold-glow-hover">
+            <div class="showcase-header">
+              <div class="showcase-dots">
+                <span class="showcase-dot"></span>
+                <span class="showcase-dot"></span>
+                <span class="showcase-dot"></span>
+              </div>
+              <div class="showcase-title">ERMP PRICING OVERVIEW</div>
+              <i
+                data-lucide="refresh-cw"
+                style="width: 14px; height: 14px; color: var(--color-text-muted); cursor: pointer"
+              ></i>
+            </div>
+
+            <div class="showcase-stat-grid">
+              <div class="showcase-stat-card">
+                <div class="showcase-stat-num">3</div>
+                <div class="showcase-stat-label" data-localize="showcase_offers">Offers</div>
+              </div>
+              <div class="showcase-stat-card">
+                <div class="showcase-stat-num" style="color: #10b981">35+</div>
+                <div class="showcase-stat-label" data-localize="showcase_features">Features</div>
+              </div>
+              <div class="showcase-stat-card">
+                <div class="showcase-stat-num">400</div>
+                <div class="showcase-stat-label" data-localize="showcase_hrs">Max Hours</div>
+              </div>
+            </div>
+
+            <div class="showcase-offers-list" id="showcaseOffers"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features-section" id="features">
+      <div class="container">
+        <div class="section-title-area">
+          <h2 data-localize="features_title">Platform Features & Importance Matrix</h2>
+          <p data-localize="features_subtitle">
+            35 core platform capabilities ranked by business importance. Review what each feature
+            delivers before comparing our three tailored offers below.
+          </p>
+        </div>
+
+        <div class="glass-panel features-table-card">
+          <table class="features-table" id="featuresTable"></table>
+        </div>
+      </div>
+    </section>
+
+    <section class="pricing-section" id="pricing">
+      <div class="container">
+        <div class="section-title-area">
+          <h2 data-localize="pricing_title">Choose Your Plan</h2>
+          <p data-localize="pricing_subtitle">
+            Three tiers engineered for different business needs. The Enterprise plan unlocks the
+            full platform with payment gateway, WhatsApp automation, enterprise security, and 12
+            months of free maintenance.
+          </p>
+        </div>
+
+        <div class="pricing-grid" id="pricingGrid"></div>
+      </div>
+    </section>
+
+    <section class="selling-points-section">
+      <div class="container">
+        <div class="section-title-area">
+          <h2 data-localize="selling_title">Why Choose Enterprise?</h2>
+          <p data-localize="selling_subtitle">
+            The Enterprise tier delivers unmatched value — here is what makes it the smartest
+            investment.
+          </p>
+        </div>
+        <div class="selling-points-grid" id="sellingPoints"></div>
+      </div>
+    </section>
+
+    <section class="download-section" id="download">
+      <div class="container">
+        <div class="glass-panel download-card">
+          <h2 data-localize="download_title">Export & Download Proposal Document</h2>
+          <p data-localize="download_subtitle">
+            Generate and download the formal version of this commercial and technical proposal
+            directly as fully-formatted Microsoft Word files.
+          </p>
+
+          <div class="download-buttons">
+            <button class="btn-download-word" onclick="triggerDownload('en')">
+              <i data-lucide="file-text"></i>
+              Download English Proposal (Word)
+            </button>
+            <button
+              class="btn-download-word ar-btn"
+              onclick="triggerDownload('ar')"
+              style="display: none"
+            >
+              <i data-lucide="file-text"></i>
+              تحميل عرض السعر بالعربية (Word)
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing-section" id="closing" style="padding: 60px 0 20px">
+      <div class="container">
+        <div
+          class="glass-panel gold-glow-hover"
+          style="max-width: 800px; margin: 0 auto; padding: 40px; text-align: center"
+        >
+          <div
+            style="
+              font-size: 1.8rem;
+              font-weight: 800;
+              color: var(--accent-gold);
+              margin-bottom: 24px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 10px;
+            "
+          >
+            <i data-lucide="award" style="width: 28px; height: 28px"></i>
+            <span data-localize="closing_title">Word of Appreciation</span>
+          </div>
+          <p
+            style="
+              font-size: 1.125rem;
+              line-height: 1.8;
+              color: var(--color-text-primary);
+              font-style: italic;
+              margin-bottom: 24px;
+            "
+            data-localize="closing_body"
+          >
+            "It is a great honor for Pro Life to initiate this project in collaboration with Dana.
+            We are confident that this partnership will be a remarkable and fruitful step for both
+            parties, and we look forward with great optimism to the coming period, hoping to always
+            live up to your expectations."
+          </p>
+          <div
+            style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 20px"
+          >
+            <div
+              style="font-weight: 700; font-size: 1.15rem; color: var(--color-text-primary)"
+              data-localize="ceo_name"
+            >
+              Ebraheem Al Orf
+            </div>
+            <div
+              style="font-size: 0.85rem; color: var(--color-text-muted)"
+              data-localize="ceo_title"
+            >
+              CEO, Danat Al Mustaqbal Real Estate
+            </div>
+          </div>
+
+          <!-- Print-only signature block -->
+          <div
+            class="print-only-signature-block"
+            style="
+              display: none;
+              margin-top: 35px;
+              border-top: 1px solid var(--border-color);
+              padding-top: 25px;
+            "
+          >
+            <div
+              style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; text-align: start"
+            >
+              <div>
+                <div
+                  style="
+                    font-weight: 700;
+                    font-size: 0.95rem;
+                    margin-bottom: 8px;
+                    color: var(--accent-gold);
+                  "
+                  data-localize="sig_prolife"
+                >
+                  For Pro Life Technical:
+                </div>
+                <div
+                  style="
+                    height: 50px;
+                    border-bottom: 1px dashed var(--color-text-muted);
+                    margin-bottom: 10px;
+                  "
+                ></div>
+                <div
+                  style="font-size: 0.8rem; color: var(--color-text-secondary)"
+                  data-localize="sig_prolife_role"
+                >
+                  Authorized Signature & Seal
+                </div>
+              </div>
+              <div>
+                <div
+                  style="
+                    font-weight: 700;
+                    font-size: 0.95rem;
+                    margin-bottom: 8px;
+                    color: var(--accent-gold);
+                  "
+                  data-localize="sig_client"
+                >
+                  For Danat Al Mustaqbal Real Estate:
+                </div>
+                <div
+                  style="
+                    height: 50px;
+                    border-bottom: 1px dashed var(--color-text-muted);
+                    margin-bottom: 10px;
+                  "
+                ></div>
+                <div
+                  style="font-size: 0.8rem; color: var(--color-text-secondary)"
+                  data-localize="sig_client_role"
+                >
+                  Ebraheem Al Orf, CEO
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="container footer-grid">
+        <div>&copy; 2026 Pro Life Technical. All Rights Reserved.</div>
+        <div class="footer-links">
+          <a href="#features" data-localize="foot_features">Features</a>
+          <a href="#pricing" data-localize="foot_pricing">Pricing</a>
+          <a href="#download" data-localize="foot_download">Download</a>
+          <a href="#" class="admin-login-link">Admin Portal Login</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      const translations = {
+        en: {
+          lang_switch: "العربية",
+          nav_get_proposal: "Get Word Proposal",
+          hero_tag: "Technical & Commercial Offer",
+          hero_title: "Real Estate <span>Management</span> Platform Proposal",
+          hero_desc:
+            "A high-performance bilingual (AR/EN) software ecosystem designed for property operations, secure tenant billing, automated WhatsApp collections, and bulletproof audit controls. Three flexible plans tailored to your needs.",
+          meta_client_lbl: "Client",
+          meta_client_val: "Danat Al Mustaqbal Real Estate",
+          meta_date_lbl: "Date",
+          meta_date_val: "July 2026",
+          meta_validity_lbl: "Validity",
+          meta_validity_val: "30 Days (Valid until August 2026)",
+          meta_offers_lbl: "Available Offers",
+          meta_offers_val: "3 Tiers (2000 / 2500 / 3000 KWD)",
+          floating_security: "Enterprise Security",
+          floating_security_val: "RBAC + RLS + Audit",
+          floating_value: "Best Value",
+          floating_value_val: "Enterprise Plan",
+          showcase_offers: "Offers",
+          showcase_features: "Features",
+          showcase_hrs: "Max Hours",
+          features_title: "Platform Features & Importance Matrix",
+          features_subtitle:
+            "35 core platform capabilities ranked by business importance. Review what each feature delivers before comparing our three tailored offers below.",
+          pricing_title: "Choose Your Plan",
+          pricing_subtitle:
+            "Three tiers engineered for different business needs. The Enterprise plan unlocks the full platform with payment gateway, WhatsApp automation, enterprise security, and 12 months of free maintenance.",
+          selling_title: "Why Choose Enterprise?",
+          selling_subtitle:
+            "The Enterprise tier delivers unmatched value — here is what makes it the smartest investment.",
+          download_title: "Export & Download Proposal Document",
+          download_subtitle:
+            "Generate and download the formal version of this commercial and technical proposal directly as fully-formatted Microsoft Word files.",
+          foot_features: "Features",
+          foot_pricing: "Pricing",
+          foot_download: "Download",
+          closing_title: "Word of Appreciation",
+          closing_body:
+            '"It is a great honor for Pro Life to initiate this project in collaboration with Dana. We are confident that this partnership will be a remarkable and fruitful step for both parties, and we look forward with great optimism to the coming period, hoping to always live up to your expectations."',
+          ceo_name: "Ebraheem Al Orf",
+          ceo_title: "CEO, Danat Al Mustaqbal Real Estate",
+          sig_prolife: "For Pro Life Technical:",
+          sig_prolife_role: "Authorized Signature & Seal",
+          sig_client: "For Danat Al Mustaqbal Real Estate:",
+          sig_client_role: "Ebraheem Al Orf, CEO",
+        },
+        ar: {
+          lang_switch: "English",
+          nav_get_proposal: "تحميل العرض المالي",
+          hero_tag: "العرض الفني والمالي المتكامل",
+          hero_title: "منصة إدارة عقارات <span>دانة المستقبل</span>",
+          hero_desc:
+            "نظام برمجي متكامل ومخصص ثنائي اللغة (عربي/إنجليزي) لإدارة شؤون العقارات، وإصدار الفواتير، والتحصيل عبر الواتساب التلقائي، والتحقق المالي الصارم. ثلاث باقات مرنة تناسب احتياجاتك.",
+          meta_client_lbl: "العميل",
+          meta_client_val: "شركة دانة المستقبل العقارية",
+          meta_date_lbl: "التاريخ",
+          meta_date_val: "يوليو 2026",
+          meta_validity_lbl: "صلاحية العرض",
+          meta_validity_val: "30 يوماً (ينتهي في أغسطس 2026)",
+          meta_offers_lbl: "العروض المتاحة",
+          meta_offers_val: "3 باقات (2000 / 2500 / 3000 د.ك)",
+          floating_security: "حماية المؤسسات",
+          floating_security_val: "RBAC + RLS + تدقيق",
+          floating_value: "أفضل قيمة",
+          floating_value_val: "الباقة المؤسسية",
+          showcase_offers: "العروض",
+          showcase_features: "الميزات",
+          showcase_hrs: "أقصى ساعات",
+          features_title: "مصفوفة ميزات المنصة وأهميتها",
+          features_subtitle:
+            "35 ميزة أساسية مرتبة حسب الأهمية للأعمال. راجع ما تقدمه كل ميزة قبل مقارنة عروضنا الثلاثة أدناه.",
+          pricing_title: "اختر باقتك",
+          pricing_subtitle:
+            "ثلاث باقات مصممة لاحتياجات أعمال مختلفة. الباقة المؤسسية تفتح المنصة بالكامل مع بوابة الدفع وأتمتة الواتساب والحماية المتقدمة و12 شهراً من الصيانة المجانية.",
+          selling_title: "لماذا تختار الباقة المؤسسية؟",
+          selling_subtitle:
+            "الباقة المؤسسية تقدم قيمة لا مثيل لها — إليك ما يجعلها الاستثمار الأذكى.",
+          download_title: "تحميل وتصدير مستند عرض السعر",
+          download_subtitle:
+            "قم بتحميل النسخة الرسمية الفاخرة من العرض المالي والفني مباشرة بصيغة ملف Word مهيأ بالكامل للطباعة والاعتماد.",
+          foot_features: "الميزات",
+          foot_pricing: "الأسعار",
+          foot_download: "التحميل",
+          closing_title: "كلمة شكر وتقدير",
+          closing_body:
+            '«إنه لشرف كبير لشركة "برو لايف" أن تبدأ هذا المشروع بالتعاون مع شركة "دانا"، ونحن على ثقة بأن هذا التعاون سيكون خطوة مميزة ومثمرة للطرفين، ونتطلع بتفاؤل كبير إلى الفترة القادمة، آملين أن نكون دائماً عند حسن ظنكم بنا.»',
+          ceo_name: "إبراهيم العرف",
+          ceo_title: "الرئيس التنفيذي، شركة دانات المستقبل العقارية",
+          sig_prolife: "عن مؤسسة برو لايف تكنيكال:",
+          sig_prolife_role: "التوقيع والختم المعتمد",
+          sig_client: "عن شركة دانات المستقبل العقارية:",
+          sig_client_role: "إبراهيم العرف، الرئيس التنفيذي",
+        },
+      };
+
+      const featuresData = {
+        en: [
+          {
+            name: "Responsive Web Application",
+            category: "Core Platform",
+            importance: "Critical",
+            desc: "Cross-device web app accessible from desktop, tablet, and mobile",
+          },
+          {
+            name: "Corporate Landing Page",
+            category: "Core Platform",
+            importance: "High",
+            desc: "Bilingual public site with branding, video, contact form, and social links",
+          },
+          {
+            name: "Admin Dashboard & Analytics",
+            category: "Core Platform",
+            importance: "Critical",
+            desc: "Centralized control panel with KPIs, alerts, and operational overviews",
+          },
+          {
+            name: "Bilingual AR/EN Interface",
+            category: "Core Platform",
+            importance: "Critical",
+            desc: "Full Arabic (RTL) and English (LTR) support across all screens",
+          },
+          {
+            name: "Company & Branding Settings",
+            category: "Core Platform",
+            importance: "High",
+            desc: "Configurable company profile, logo, colors, banking, and invoice footers",
+          },
+          {
+            name: "Property & Compound Management",
+            category: "Property Mgmt",
+            importance: "Critical",
+            desc: "Create and manage compounds, properties, locations, areas, and images",
+          },
+          {
+            name: "Building Management",
+            category: "Property Mgmt",
+            importance: "Critical",
+            desc: "Building records with commercial categories, documents, and status tracking",
+          },
+          {
+            name: "Unit Management & Status",
+            category: "Property Mgmt",
+            importance: "Critical",
+            desc: "Unit CRUD with occupancy status, meter ownership, filters, and import/export",
+          },
+          {
+            name: "Private Document Storage",
+            category: "Property Mgmt",
+            importance: "High",
+            desc: "Secure file buckets with UUID paths, MIME validation, and expiring links",
+          },
+          {
+            name: "Data Import/Export (CSV/XLSX)",
+            category: "Property Mgmt",
+            importance: "High",
+            desc: "Bulk import/export with validation, preview, and error reporting",
+          },
+          {
+            name: "Tenant Management & DANA Codes",
+            category: "Tenants",
+            importance: "Critical",
+            desc: "Auto-generated unique tenant codes, profiles, categories, and lifecycle",
+          },
+          {
+            name: "Lease & Investment Contracts",
+            category: "Tenants",
+            importance: "Critical",
+            desc: "Contract types, auto end-date calculation, renewals, freeze, and audit overrides",
+          },
+          {
+            name: "Concessions & Free Periods",
+            category: "Tenants",
+            importance: "High",
+            desc: "Dedicated concession entity for free months, percentage/fixed discounts",
+          },
+          {
+            name: "Contract Expiry Reminders",
+            category: "Tenants",
+            importance: "Medium",
+            desc: "Automated reminders at 4/3/2/1 months before expiry via WhatsApp/email",
+          },
+          {
+            name: "Monthly Invoice Engine",
+            category: "Billing",
+            importance: "Critical",
+            desc: "Idempotent cron-based invoice generation with safety locks and recurring scheduling",
+          },
+          {
+            name: "Overdue & Grace Period Engine",
+            category: "Billing",
+            importance: "Critical",
+            desc: "Daily job to mark overdue invoices, trigger alerts, and enforce grace policies",
+          },
+          {
+            name: "Manual Payments Ledger",
+            category: "Billing",
+            importance: "Critical",
+            desc: "Record cash, cheque, transfer, KNET payments with allocations and audit trail",
+          },
+          {
+            name: "Payment Reversal Tracking",
+            category: "Billing",
+            importance: "High",
+            desc: "Immutable reversal records linked to original payments with reason and actor",
+          },
+          {
+            name: "PDF Receipt Generator",
+            category: "Billing",
+            importance: "Critical",
+            desc: "Professional PDF receipts with legal wording and company branding",
+          },
+          {
+            name: "Bank Deposits Tracking",
+            category: "Billing",
+            importance: "High",
+            desc: "Deposit records with bank, amount, proof document, and reconciliation reports",
+          },
+          {
+            name: "Expenses Management",
+            category: "Billing",
+            importance: "High",
+            desc: "Recurring and one-time expenses with categories, cost centers, and attachments",
+          },
+          {
+            name: "Tenant Self-Service Portal",
+            category: "Portal",
+            importance: "High",
+            desc: "Restricted portal for tenants to view lease, invoices, payments, and receipts",
+          },
+          {
+            name: "Chronological Payment Enforcement",
+            category: "Portal",
+            importance: "Critical",
+            desc: "Backend-enforced rule: overdue first, then consecutive months only",
+          },
+          {
+            name: "MyFatoorah Payment Gateway",
+            category: "Payments",
+            importance: "Critical",
+            desc: "KNET, Apple Pay, Google Pay integration with hosted checkout flow",
+          },
+          {
+            name: "Secure Webhook Verification",
+            category: "Payments",
+            importance: "Critical",
+            desc: "Signature verification, replay protection, idempotency, and automated posting",
+          },
+          {
+            name: "WhatsApp Cloud API Integration",
+            category: "Comms",
+            importance: "High",
+            desc: "Official Meta API for automated reminders, receipts, and template messaging",
+          },
+          {
+            name: "Email Notifications (SMTP/Resend)",
+            category: "Comms",
+            importance: "High",
+            desc: "Transactional emails with bilingual templates for payment and contract events",
+          },
+          {
+            name: "Notification Pool & Retry Queue",
+            category: "Comms",
+            importance: "Medium",
+            desc: "Centralized log of all outbound messages with retry logic and failure tracking",
+          },
+          {
+            name: "Scheduled Management Reports",
+            category: "Reports",
+            importance: "High",
+            desc: "Daily/weekly/monthly HTML email reports with collections, expenses, and overdue",
+          },
+          {
+            name: "Excel/CSV/PDF Export",
+            category: "Reports",
+            importance: "High",
+            desc: "Export any table or report to multiple formats with permission controls",
+          },
+          {
+            name: "Roles & Permissions (RBAC)",
+            category: "Security",
+            importance: "Critical",
+            desc: "Granular permission system: admin, accountant, collector, read-only, tenant",
+          },
+          {
+            name: "Audit Logs (Append-Only)",
+            category: "Security",
+            importance: "Critical",
+            desc: "Immutable audit trail for all financial and operational actions",
+          },
+          {
+            name: "Row-Level Security (RLS)",
+            category: "Security",
+            importance: "Critical",
+            desc: "Database-level tenant data isolation preventing cross-tenant access",
+          },
+          {
+            name: "Backup & Disaster Recovery",
+            category: "Delivery",
+            importance: "High",
+            desc: "Daily encrypted DB backups, storage backups, and restore drill procedures",
+          },
+          {
+            name: "Free 12-Month Maintenance & Training",
+            category: "Delivery",
+            importance: "High",
+            desc: "Bug fixing, server monitoring, documentation, and staff training for 12 months",
+          },
+        ],
+        ar: [
+          {
+            name: "تطبيق ويب متجاوب",
+            category: "النواة",
+            importance: "Critical",
+            desc: "تطبيق ويب يعمل عبر الأجهزة (كمبيوتر، لوحي، جوال)",
+          },
+          {
+            name: "الصفحة التعريفية للشركة",
+            category: "النواة",
+            importance: "High",
+            desc: "موقع عام ثنائي اللغة بهوية الشركة وفيديو ونموذج تواصل وروابط",
+          },
+          {
+            name: "لوحة التحكم والتحليلات",
+            category: "النواة",
+            importance: "Critical",
+            desc: "لوحة مركزية للمؤشرات والتنبيهات والعمليات",
+          },
+          {
+            name: "واجهة ثنائية اللغة (عربي/إنجليزي)",
+            category: "النواة",
+            importance: "Critical",
+            desc: "دعم كامل للعربية (RTL) والإنجليزية (LTR) في كل الشاشات",
+          },
+          {
+            name: "إعدادات الشركة والهوية",
+            category: "النواة",
+            importance: "High",
+            desc: "ملف الشركة، الشعار، الألوان، البنوك، وتذييلات الفواتير",
+          },
+          {
+            name: "إدارة العقارات والمجمعات",
+            category: "إدارة العقارات",
+            importance: "Critical",
+            desc: "إنشاء وإدارة المجمعات والعقارات والمواقع والمساحات والصور",
+          },
+          {
+            name: "إدارة المباني",
+            category: "إدارة العقارات",
+            importance: "Critical",
+            desc: "سجلات المباني مع التصنيفات التجارية والمستندات والحالات",
+          },
+          {
+            name: "إدارة الوحدات والحالات",
+            category: "إدارة العقارات",
+            importance: "Critical",
+            desc: "إضافة وتعديل الوحدات مع حالات الإشغال وملكية العدادات والفلترة",
+          },
+          {
+            name: "التخزين الآمن للمستندات",
+            category: "إدارة العقارات",
+            importance: "High",
+            desc: "مخزن ملفات مشفر بمسارات UUID مع تحقق من النوع وروابط مؤقتة",
+          },
+          {
+            name: "استيراد/تصدير البيانات (CSV/XLSX)",
+            category: "إدارة العقارات",
+            importance: "High",
+            desc: "استيراد/تصدير جماعي مع معاينة وتحقق وتقارير أخطاء",
+          },
+          {
+            name: "إدارة المستأجرين وأكواد DANA",
+            category: "المستأجرون",
+            importance: "Critical",
+            desc: "توليد أكواد مستأجر فريدة تلقائياً، الملفات، التصنيفات، ودورة الحياة",
+          },
+          {
+            name: "عقود الإيجار والاستثمار",
+            category: "المستأجرون",
+            importance: "Critical",
+            desc: "أنواع العقود، حساب تاريخ الانتهاء تلقائياً، التجديد، التجميد والتدقيق",
+          },
+          {
+            name: "الإعفاءات وفترات السماح",
+            category: "المستأجرون",
+            importance: "High",
+            desc: "كيان مخصص للإعفاءات والخصومات المئوية أو الثابتة",
+          },
+          {
+            name: "تذكيرات انتهاء العقود",
+            category: "المستأجرون",
+            importance: "Medium",
+            desc: "تذكيرات تلقائية قبل 4/3/2/1 شهر من الانتهاء عبر الواتساب/البريد",
+          },
+          {
+            name: "محرك الفواتير الشهري",
+            category: "الفواتير",
+            importance: "Critical",
+            desc: "توليد فواتير مجدول مع أقفال أمان ومنع تكرار (Idempotency)",
+          },
+          {
+            name: "نظام المتأخرات وفترات السماح",
+            category: "الفواتير",
+            importance: "Critical",
+            desc: "تحديث يومي للفواتير المتأخرة وإطلاق التنبيهات",
+          },
+          {
+            name: "دفتر السداد اليدوي",
+            category: "الفواتير",
+            importance: "Critical",
+            desc: "تسجيل نقدي/شيك/تحويل/KNET مع توزيع وسجل تدقيق",
+          },
+          {
+            name: "تتبع عمليات التراجع المالي",
+            category: "الفواتير",
+            importance: "High",
+            desc: "سجلات تراجع غير قابلة للحذف مرتبطة بالدفعة الأصلية",
+          },
+          {
+            name: "مولد سندات PDF",
+            category: "الفواتير",
+            importance: "Critical",
+            desc: "سندات احترافية بالصياغة القانونية وهوية الشركة",
+          },
+          {
+            name: "تتبع الودائع البنكية",
+            category: "الفواتير",
+            importance: "High",
+            desc: "سجلات الودائع مع البنك والمبلغ وإثبات ومطابقة",
+          },
+          {
+            name: "إدارة المصروفات",
+            category: "الفواتير",
+            importance: "High",
+            desc: "مصروفات دورية ومرة واحدة بتصنيفات ومراكز تكلفة ومرفقات",
+          },
+          {
+            name: "بوابة المستأجر الذاتية",
+            category: "البوابة",
+            importance: "High",
+            desc: "بوابة محدودة لعرض العقد والفواتير والمدفوعات والسندات",
+          },
+          {
+            name: "إلزام السداد الترتيبي",
+            category: "البوابة",
+            importance: "Critical",
+            desc: "قاعدة على مستوى الخادم: المتأخر أولاً ثم الأشهر المتتالية فقط",
+          },
+          {
+            name: "بوابة الدفع (MyFatoorah)",
+            category: "المدفوعات",
+            importance: "Critical",
+            desc: "تكامل KNET و Apple Pay و Google Pay مع صفحة دفع مستضافة",
+          },
+          {
+            name: "التحقق الآمن من Webhooks",
+            category: "المدفوعات",
+            importance: "Critical",
+            desc: "تحقق التوقيع، منع إعادة التشغيل، وتحديث تلقائي للفواتير",
+          },
+          {
+            name: "ربط WhatsApp Cloud API",
+            category: "المراسلات",
+            importance: "High",
+            desc: "واجهة Meta الرسمية للتذكيرات والسندات والقوالب المعتمدة",
+          },
+          {
+            name: "إشعارات البريد (SMTP/Resend)",
+            category: "المراسلات",
+            importance: "High",
+            desc: "بريد المعاملات بقوالب ثنائية اللغة لأحداث الدفع والعقود",
+          },
+          {
+            name: "حوض الإشعارات وإعادة المحاولة",
+            category: "المراسلات",
+            importance: "Medium",
+            desc: "سجل مركزي لكل الرسائل الصادرة مع منطق إعادة المحاولة",
+          },
+          {
+            name: "التقارير الإدارية المجدولة",
+            category: "التقارير",
+            importance: "High",
+            desc: "تقارير يومية/أسبوعية/شهرية بالبريد بجدول HTML منسق",
+          },
+          {
+            name: "تصدير Excel/CSV/PDF",
+            category: "التقارير",
+            importance: "High",
+            desc: "تصدير أي جدول أو تقرير لصيغ متعددة مع صلاحيات",
+          },
+          {
+            name: "الأدوار والصلاحيات (RBAC)",
+            category: "الحماية",
+            importance: "Critical",
+            desc: "نظام صلاحيات دقيق: مدير، محاسب، محصل، قراءة فقط، مستأجر",
+          },
+          {
+            name: "سجلات التدقيق (Append-Only)",
+            category: "الحماية",
+            importance: "Critical",
+            desc: "مسار تدقيق غير قابل للتعديل لكل العمليات المالية والإدارية",
+          },
+          {
+            name: "أمان مستوى الصفوف (RLS)",
+            category: "الحماية",
+            importance: "Critical",
+            desc: "عزل بيانات المستأجرين على مستوى قاعدة البيانات",
+          },
+          {
+            name: "النسخ الاحتياطي والتعافي",
+            category: "التسليم",
+            importance: "High",
+            desc: "نسخ احتياطي يومي مشفر وإجراءات استعادة",
+          },
+          {
+            name: "صيانة وتدريب مجاني 12 شهراً",
+            category: "التسليم",
+            importance: "High",
+            desc: "إصلاح الأخطاء، مراقبة الخادم، توثيق، وتدريب الموظفين لمدة سنة",
+          },
+        ],
+      };
+
+      const pricingTiersData = {
+        en: [
+          {
+            id: "starter",
+            name: "Starter",
+            price: "2,000",
+            currency: "KWD",
+            hours: 267,
+            rate: "7.500 KWD/hr",
+            delivery: "1 Month",
+            stack: "PHP + MySQL",
+            stackDesc:
+              "Traditional server-rendered PHP with MySQL database. Functional but limited scalability and code quality.",
+            security: "Basic (HTTPS only)",
+            db: "MySQL (phpMyAdmin)",
+            isRecommended: false,
+            badgeClass: "badge-starter",
+            btnClass: "btn-choose-starter",
+            features: [
+              { name: "Responsive Web Application", included: true },
+              { name: "Corporate Landing Page", included: true },
+              { name: "Admin Dashboard & Analytics", included: true },
+              { name: "Bilingual AR/EN Interface", included: true },
+              { name: "Company & Branding Settings", included: true },
+              { name: "Property & Compound Management", included: true },
+              { name: "Building Management", included: true },
+              { name: "Unit Management & Status", included: true },
+              { name: "Private Document Storage", included: false },
+              { name: "Data Import/Export (CSV/XLSX)", included: true },
+              { name: "Tenant Management & DANA Codes", included: true },
+              { name: "Lease & Investment Contracts", included: true },
+              { name: "Concessions & Free Periods", included: false },
+              { name: "Contract Expiry Reminders", included: false },
+              { name: "Monthly Invoice Engine", included: true },
+              { name: "Overdue & Grace Period Engine", included: true },
+              { name: "Manual Payments Ledger", included: true },
+              { name: "Payment Reversal Tracking", included: false },
+              { name: "PDF Receipt Generator", included: true },
+              { name: "Bank Deposits Tracking", included: false },
+              { name: "Expenses Management", included: false },
+              { name: "Tenant Self-Service Portal", included: false },
+              { name: "Chronological Payment Enforcement", included: false },
+              { name: "MyFatoorah Payment Gateway", included: false },
+              { name: "Secure Webhook Verification", included: false },
+              { name: "WhatsApp Cloud API Integration", included: false },
+              { name: "Email Notifications (SMTP/Resend)", included: false },
+              { name: "Notification Pool & Retry Queue", included: false },
+              { name: "Scheduled Management Reports", included: false },
+              { name: "Excel/CSV/PDF Export", included: true },
+              { name: "Roles & Permissions (RBAC)", included: false },
+              { name: "Audit Logs (Append-Only)", included: false },
+              { name: "Row-Level Security (RLS)", included: false },
+              { name: "Backup & Disaster Recovery", included: false },
+              { name: "Free 12-Month Maintenance & Training", included: false },
+            ],
+          },
+          {
+            id: "professional",
+            name: "Professional",
+            price: "2,500",
+            currency: "KWD",
+            hours: 333,
+            rate: "7.500 KWD/hr",
+            delivery: "2 Months",
+            stack: "Laravel + Vue.js + MySQL",
+            stackDesc:
+              "Modern MVC framework with reactive frontend. Better code structure, middleware, and ORM capabilities.",
+            security: "Standard (RBAC + Audit)",
+            db: "MySQL (Eloquent ORM)",
+            isRecommended: false,
+            badgeClass: "badge-professional",
+            btnClass: "btn-choose-professional",
+            features: [
+              { name: "Responsive Web Application", included: true },
+              { name: "Corporate Landing Page", included: true },
+              { name: "Admin Dashboard & Analytics", included: true },
+              { name: "Bilingual AR/EN Interface", included: true },
+              { name: "Company & Branding Settings", included: true },
+              { name: "Property & Compound Management", included: true },
+              { name: "Building Management", included: true },
+              { name: "Unit Management & Status", included: true },
+              { name: "Private Document Storage", included: true },
+              { name: "Data Import/Export (CSV/XLSX)", included: true },
+              { name: "Tenant Management & DANA Codes", included: true },
+              { name: "Lease & Investment Contracts", included: true },
+              { name: "Concessions & Free Periods", included: true },
+              { name: "Contract Expiry Reminders", included: true },
+              { name: "Monthly Invoice Engine", included: true },
+              { name: "Overdue & Grace Period Engine", included: true },
+              { name: "Manual Payments Ledger", included: true },
+              { name: "Payment Reversal Tracking", included: true },
+              { name: "PDF Receipt Generator", included: true },
+              { name: "Bank Deposits Tracking", included: true },
+              { name: "Expenses Management", included: true },
+              { name: "Tenant Self-Service Portal", included: true },
+              { name: "Chronological Payment Enforcement", included: false },
+              { name: "MyFatoorah Payment Gateway", included: false },
+              { name: "Secure Webhook Verification", included: false },
+              { name: "WhatsApp Cloud API Integration", included: false },
+              { name: "Email Notifications (SMTP/Resend)", included: true },
+              { name: "Notification Pool & Retry Queue", included: true },
+              { name: "Scheduled Management Reports", included: true },
+              { name: "Excel/CSV/PDF Export", included: true },
+              { name: "Roles & Permissions (RBAC)", included: true },
+              { name: "Audit Logs (Append-Only)", included: true },
+              { name: "Row-Level Security (RLS)", included: false },
+              { name: "Backup & Disaster Recovery", included: true },
+              { name: "Free 12-Month Maintenance & Training", included: true },
+            ],
+          },
+          {
+            id: "enterprise",
+            name: "Enterprise",
+            price: "3,000",
+            currency: "KWD",
+            hours: 400,
+            rate: "7.500 KWD/hr",
+            delivery: "1 Month (Priority)",
+            stack: "Next.js + Supabase (PostgreSQL)",
+            stackDesc:
+              "Enterprise-grade React SSR with PostgreSQL, real-time subscriptions, Edge Functions, and RLS.",
+            security: "Enterprise (RBAC + RLS + Audit + HTTPS)",
+            db: "PostgreSQL (Supabase)",
+            isRecommended: true,
+            badgeClass: "badge-enterprise",
+            btnClass: "btn-choose-enterprise",
+            features: [
+              { name: "Responsive Web Application", included: true },
+              { name: "Corporate Landing Page", included: true },
+              { name: "Admin Dashboard & Analytics", included: true },
+              { name: "Bilingual AR/EN Interface", included: true },
+              { name: "Company & Branding Settings", included: true },
+              { name: "Property & Compound Management", included: true },
+              { name: "Building Management", included: true },
+              { name: "Unit Management & Status", included: true },
+              { name: "Private Document Storage", included: true },
+              { name: "Data Import/Export (CSV/XLSX)", included: true },
+              { name: "Tenant Management & DANA Codes", included: true },
+              { name: "Lease & Investment Contracts", included: true },
+              { name: "Concessions & Free Periods", included: true },
+              { name: "Contract Expiry Reminders", included: true },
+              { name: "Monthly Invoice Engine", included: true },
+              { name: "Overdue & Grace Period Engine", included: true },
+              { name: "Manual Payments Ledger", included: true },
+              { name: "Payment Reversal Tracking", included: true },
+              { name: "PDF Receipt Generator", included: true },
+              { name: "Bank Deposits Tracking", included: true },
+              { name: "Expenses Management", included: true },
+              { name: "Tenant Self-Service Portal", included: true },
+              { name: "Chronological Payment Enforcement", included: true },
+              { name: "MyFatoorah Payment Gateway", included: true },
+              { name: "Secure Webhook Verification", included: true },
+              { name: "WhatsApp Cloud API Integration", included: true },
+              { name: "Email Notifications (SMTP/Resend)", included: true },
+              { name: "Notification Pool & Retry Queue", included: true },
+              { name: "Scheduled Management Reports", included: true },
+              { name: "Excel/CSV/PDF Export", included: true },
+              { name: "Roles & Permissions (RBAC)", included: true },
+              { name: "Audit Logs (Append-Only)", included: true },
+              { name: "Row-Level Security (RLS)", included: true },
+              { name: "Backup & Disaster Recovery", included: true },
+              { name: "Free 12-Month Maintenance & Training", included: true },
+            ],
+          },
+        ],
+        ar: [
+          {
+            id: "starter",
+            name: "الباقة الأساسية",
+            price: "2,000",
+            currency: "د.ك",
+            hours: 267,
+            rate: "7.500 د.ك/ساعة",
+            delivery: "شهر واحد",
+            stack: "PHP + MySQL",
+            stackDesc: "PHP تقليدي مع قاعدة MySQL. وظيفي لكن بقدرات ومرونة وجودة كود محدودة.",
+            security: "أساسي (HTTPS فقط)",
+            db: "MySQL (phpMyAdmin)",
+            isRecommended: false,
+            badgeClass: "badge-starter",
+            btnClass: "btn-choose-starter",
+            features: [
+              { name: "تطبيق ويب متجاوب", included: true },
+              { name: "الصفحة التعريفية للشركة", included: true },
+              { name: "لوحة التحكم والتحليلات", included: true },
+              { name: "واجهة ثنائية اللغة (عربي/إنجليزي)", included: true },
+              { name: "إعدادات الشركة والهوية", included: true },
+              { name: "إدارة العقارات والمجمعات", included: true },
+              { name: "إدارة المباني", included: true },
+              { name: "إدارة الوحدات والحالات", included: true },
+              { name: "التخزين الآمن للمستندات", included: false },
+              { name: "استيراد/تصدير البيانات (CSV/XLSX)", included: true },
+              { name: "إدارة المستأجرين وأكواد DANA", included: true },
+              { name: "عقود الإيجار والاستثمار", included: true },
+              { name: "الإعفاءات وفترات السماح", included: false },
+              { name: "تذكيرات انتهاء العقود", included: false },
+              { name: "محرك الفواتير الشهري", included: true },
+              { name: "نظام المتأخرات وفترات السماح", included: true },
+              { name: "دفتر السداد اليدوي", included: true },
+              { name: "تتبع عمليات التراجع المالي", included: false },
+              { name: "مولد سندات PDF", included: true },
+              { name: "تتبع الودائع البنكية", included: false },
+              { name: "إدارة المصروفات", included: false },
+              { name: "بوابة المستأجر الذاتية", included: false },
+              { name: "إلزام السداد الترتيبي", included: false },
+              { name: "بوابة الدفع (MyFatoorah)", included: false },
+              { name: "التحقق الآمن من Webhooks", included: false },
+              { name: "ربط WhatsApp Cloud API", included: false },
+              { name: "إشعارات البريد (SMTP/Resend)", included: false },
+              { name: "حوض الإشعارات وإعادة المحاولة", included: false },
+              { name: "التقارير الإدارية المجدولة", included: false },
+              { name: "تصدير Excel/CSV/PDF", included: true },
+              { name: "الأدوار والصلاحيات (RBAC)", included: false },
+              { name: "سجلات التدقيق (Append-Only)", included: false },
+              { name: "أمان مستوى الصفوف (RLS)", included: false },
+              { name: "النسخ الاحتياطي والتعافي", included: false },
+              { name: "صيانة وتدريب مجاني 12 شهراً", included: false },
+            ],
+          },
+          {
+            id: "professional",
+            name: "الباقة الاحترافية",
+            price: "2,500",
+            currency: "د.ك",
+            hours: 333,
+            rate: "7.500 د.ك/ساعة",
+            delivery: "شهران",
+            stack: "Laravel + Vue.js + MySQL",
+            stackDesc: "إطار MVC حديث مع واجهة تفاعلية. بنية كود أفضل و ORM و middleware.",
+            security: "قياسي (RBAC + تدقيق)",
+            db: "MySQL (Eloquent ORM)",
+            isRecommended: false,
+            badgeClass: "badge-professional",
+            btnClass: "btn-choose-professional",
+            features: [
+              { name: "تطبيق ويب متجاوب", included: true },
+              { name: "الصفحة التعريفية للشركة", included: true },
+              { name: "لوحة التحكم والتحليلات", included: true },
+              { name: "واجهة ثنائية اللغة (عربي/إنجليزي)", included: true },
+              { name: "إعدادات الشركة والهوية", included: true },
+              { name: "إدارة العقارات والمجمعات", included: true },
+              { name: "إدارة المباني", included: true },
+              { name: "إدارة الوحدات والحالات", included: true },
+              { name: "التخزين الآمن للمستندات", included: true },
+              { name: "استيراد/تصدير البيانات (CSV/XLSX)", included: true },
+              { name: "إدارة المستأجرين وأكواد DANA", included: true },
+              { name: "عقود الإيجار والاستثمار", included: true },
+              { name: "الإعفاءات وفترات السماح", included: true },
+              { name: "تذكيرات انتهاء العقود", included: true },
+              { name: "محرك الفواتير الشهري", included: true },
+              { name: "نظام المتأخرات وفترات السماح", included: true },
+              { name: "دفتر السداد اليدوي", included: true },
+              { name: "تتبع عمليات التراجع المالي", included: true },
+              { name: "مولد سندات PDF", included: true },
+              { name: "تتبع الودائع البنكية", included: true },
+              { name: "إدارة المصروفات", included: true },
+              { name: "بوابة المستأجر الذاتية", included: true },
+              { name: "إلزام السداد الترتيبي", included: false },
+              { name: "بوابة الدفع (MyFatoorah)", included: false },
+              { name: "التحقق الآمن من Webhooks", included: false },
+              { name: "ربط WhatsApp Cloud API", included: false },
+              { name: "إشعارات البريد (SMTP/Resend)", included: true },
+              { name: "حوض الإشعارات وإعادة المحاولة", included: true },
+              { name: "التقارير الإدارية المجدولة", included: true },
+              { name: "تصدير Excel/CSV/PDF", included: true },
+              { name: "الأدوار والصلاحيات (RBAC)", included: true },
+              { name: "سجلات التدقيق (Append-Only)", included: true },
+              { name: "أمان مستوى الصفوف (RLS)", included: false },
+              { name: "النسخ الاحتياطي والتعافي", included: true },
+              { name: "صيانة وتدريب مجاني 12 شهراً", included: true },
+            ],
+          },
+          {
+            id: "enterprise",
+            name: "الباقة المؤسسية",
+            price: "3,000",
+            currency: "د.ك",
+            hours: 400,
+            rate: "7.500 د.ك/ساعة",
+            delivery: "شهر واحد (أولوية)",
+            stack: "Next.js + Supabase (PostgreSQL)",
+            stackDesc:
+              "تقنية مؤسسية: React SSR مع PostgreSQL و Edge Functions و RLS واشتراكات لحظية.",
+            security: "متقدم (RBAC + RLS + تدقيق + HTTPS)",
+            db: "PostgreSQL (Supabase)",
+            isRecommended: true,
+            badgeClass: "badge-enterprise",
+            btnClass: "btn-choose-enterprise",
+            features: [
+              { name: "تطبيق ويب متجاوب", included: true },
+              { name: "الصفحة التعريفية للشركة", included: true },
+              { name: "لوحة التحكم والتحليلات", included: true },
+              { name: "واجهة ثنائية اللغة (عربي/إنجليزي)", included: true },
+              { name: "إعدادات الشركة والهوية", included: true },
+              { name: "إدارة العقارات والمجمعات", included: true },
+              { name: "إدارة المباني", included: true },
+              { name: "إدارة الوحدات والحالات", included: true },
+              { name: "التخزين الآمن للمستندات", included: true },
+              { name: "استيراد/تصدير البيانات (CSV/XLSX)", included: true },
+              { name: "إدارة المستأجرين وأكواد DANA", included: true },
+              { name: "عقود الإيجار والاستثمار", included: true },
+              { name: "الإعفاءات وفترات السماح", included: true },
+              { name: "تذكيرات انتهاء العقود", included: true },
+              { name: "محرك الفواتير الشهري", included: true },
+              { name: "نظام المتأخرات وفترات السماح", included: true },
+              { name: "دفتر السداد اليدوي", included: true },
+              { name: "تتبع عمليات التراجع المالي", included: true },
+              { name: "مولد سندات PDF", included: true },
+              { name: "تتبع الودائع البنكية", included: true },
+              { name: "إدارة المصروفات", included: true },
+              { name: "بوابة المستأجر الذاتية", included: true },
+              { name: "إلزام السداد الترتيبي", included: true },
+              { name: "بوابة الدفع (MyFatoorah)", included: true },
+              { name: "التحقق الآمن من Webhooks", included: true },
+              { name: "ربط WhatsApp Cloud API", included: true },
+              { name: "إشعارات البريد (SMTP/Resend)", included: true },
+              { name: "حوض الإشعارات وإعادة المحاولة", included: true },
+              { name: "التقارير الإدارية المجدولة", included: true },
+              { name: "تصدير Excel/CSV/PDF", included: true },
+              { name: "الأدوار والصلاحيات (RBAC)", included: true },
+              { name: "سجلات التدقيق (Append-Only)", included: true },
+              { name: "أمان مستوى الصفوف (RLS)", included: true },
+              { name: "النسخ الاحتياطي والتعافي", included: true },
+              { name: "صيانة وتدريب مجاني 12 شهراً", included: true },
+            ],
+          },
+        ],
+      };
+
+      const sellingPointsData = {
+        en: [
+          {
+            icon: "shield-check",
+            title: "Enterprise-Grade Security",
+            desc: "Row-Level Security (RLS) at the database level, RBAC with granular permissions, append-only audit logs, and HTTPS enforcement. Your financial data is protected like a bank.",
+          },
+          {
+            icon: "credit-card",
+            title: "Online Payment Gateway",
+            desc: "MyFatoorah integration with KNET, Apple Pay, and Google Pay. Tenants pay online with automatic invoice reconciliation via verified webhooks.",
+          },
+          {
+            icon: "message-square",
+            title: "WhatsApp Automation",
+            desc: "Official Meta Cloud API integration for automated rent reminders, payment confirmations, and receipt delivery — all with bilingual templates.",
+          },
+          {
+            icon: "headphones",
+            title: "12 Months Free Support",
+            desc: "Bug fixing, server monitoring, operational guidance, and staff training — all included free for a full year after go-live. No hidden fees.",
+          },
+          {
+            icon: "zap",
+            title: "Faster Delivery",
+            desc: "Despite being the most feature-rich plan, the Enterprise tier delivers in just 1 month thanks to Next.js SSR and Supabase's managed infrastructure.",
+          },
+          {
+            icon: "trending-up",
+            title: "Best ROI",
+            desc: "Only 500 KWD more than Starter, but unlocks 20+ additional features including payment gateway, WhatsApp, portal, and enterprise security. The smartest investment.",
+          },
+        ],
+        ar: [
+          {
+            icon: "shield-check",
+            title: "حماية بمستوى المؤسسات",
+            desc: "أمان مستوى الصفوف (RLS) على مستوى قاعدة البيانات، صلاحيات دقيقة، سجلات تدقيق غير قابلة للتعديل، و HTTPS. بياناتك المالية محمية كالبنك.",
+          },
+          {
+            icon: "credit-card",
+            title: "بوابة الدفع الإلكتروني",
+            desc: "تكامل MyFatoorah مع KNET و Apple Pay و Google Pay. المستأجرون يدفعون إلكترونياً مع مطابقة تلقائية عبر Webhooks موثقة.",
+          },
+          {
+            icon: "message-square",
+            title: "أتمتة الواتساب",
+            desc: "تكامل رسمي مع Meta Cloud API للتذكيرات التلقائية وتأكيدات الدفع وإرسال السندات — كلها بقوالب ثنائية اللغة.",
+          },
+          {
+            icon: "headphones",
+            title: "دعم مجاني 12 شهراً",
+            desc: "إصلاح الأخطاء، مراقبة الخادم، استشارات تشغيلية، وتدريب الموظفين — كله مجاني لمدة سنة كاملة بعد التشغيل. بدون رسوم خفية.",
+          },
+          {
+            icon: "zap",
+            title: "تسليم أسرع",
+            desc: "رغم أنها الباقة الأغنى بالميزات، تُسلَّم الباقة المؤسسية في شهر واحد فقط بفضل Next.js و Supabase.",
+          },
+          {
+            icon: "trending-up",
+            title: "أفضل عائد استثمار",
+            desc: "فقط 500 د.ك أكثر من الأساسية، لكنها تفتح أكثر من 20 ميزة إضافية بما فيها بوابة الدفع والواتساب والبوابة والحماية. الاستثمار الأذكى.",
+          },
+        ],
+      };
+
+      // Read URL query parameters to support PDF generation targeting specific states
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlLang = urlParams.get("lang");
+      const urlTheme = urlParams.get("theme");
+
+      let currentLanguage = urlLang === "ar" || urlLang === "en" ? urlLang : "en";
+
+      function toggleTheme() {
+        document.body.classList.toggle("light-mode");
+        const isLight = document.body.classList.contains("light-mode");
+        try {
+          localStorage.setItem("plt-theme", isLight ? "light" : "dark");
+        } catch (e) {}
+      }
+      (function initTheme() {
+        if (urlTheme === "light") {
+          document.body.classList.add("light-mode");
+        } else if (urlTheme === "dark") {
+          document.body.classList.remove("light-mode");
+        } else {
+          try {
+            if (localStorage.getItem("plt-theme") === "light") {
+              document.body.classList.add("light-mode");
+            }
+          } catch (e) {}
+        }
+      })();
+
+      document.addEventListener("DOMContentLoaded", () => {
+        // Force language initial layout setup based on currentLanguage
+        const body = document.body;
+        const langBtnSpan = document.querySelector("#langToggleBtn span");
+        if (currentLanguage === "ar") {
+          body.classList.add("lang-ar");
+          body.style.fontFamily = "var(--font-arabic)";
+          if (langBtnSpan) langBtnSpan.textContent = "English";
+        } else {
+          body.classList.remove("lang-ar");
+          body.style.fontFamily = "var(--font-english)";
+          if (langBtnSpan) langBtnSpan.textContent = "العربية";
+        }
+
+        lucide.createIcons();
+        renderFeaturesTable();
+        renderPricingCards();
+        renderShowcaseOffers();
+        renderSellingPoints();
+        applyTranslations();
+        window.addEventListener("scroll", () => {
+          const header = document.getElementById("header");
+          if (window.scrollY > 50) {
+            header.classList.add("scrolled");
+          } else {
+            header.classList.remove("scrolled");
+          }
+        });
+      });
+
+      function toggleLanguage() {
+        currentLanguage = currentLanguage === "en" ? "ar" : "en";
+        const body = document.body;
+        const langBtnSpan = document.querySelector("#langToggleBtn span");
+        if (currentLanguage === "ar") {
+          body.classList.add("lang-ar");
+          body.style.fontFamily = "var(--font-arabic)";
+          langBtnSpan.textContent = "English";
+        } else {
+          body.classList.remove("lang-ar");
+          body.style.fontFamily = "var(--font-english)";
+          langBtnSpan.textContent = "العربية";
+        }
+        applyTranslations();
+        renderFeaturesTable();
+        renderPricingCards();
+        renderShowcaseOffers();
+        renderSellingPoints();
+      }
+
+      function applyTranslations() {
+        const dict = translations[currentLanguage];
+        document.querySelectorAll("[data-localize]").forEach((el) => {
+          const key = el.getAttribute("data-localize");
+          if (dict[key]) {
+            el.textContent = dict[key];
+          }
+        });
+        const heroTitle = document.getElementById("heroTitle");
+        if (currentLanguage === "ar") {
+          heroTitle.innerHTML = "منصة إدارة عقارات <span>دانة المستقبل</span>";
+        } else {
+          heroTitle.innerHTML = "Real Estate <span>Management</span> Platform Proposal";
+        }
+      }
+
+      function renderShowcaseOffers() {
+        const container = document.getElementById("showcaseOffers");
+        const tiers = pricingTiersData[currentLanguage];
+        const labels =
+          currentLanguage === "ar"
+            ? { hrs: "ساعة", delivery: "تسليم" }
+            : { hrs: "hrs", delivery: "Delivery" };
+
+        let html = "";
+        tiers.forEach((tier) => {
+          const cls =
+            tier.id === "enterprise" ? "showcase-offer-item enterprise" : "showcase-offer-item";
+          const ribbon = tier.isRecommended
+            ? `<span class="showcase-badge badge-recommended">${currentLanguage === "ar" ? "موصى به" : "Recommended"}</span>`
+            : `<span class="showcase-badge ${tier.badgeClass}">${tier.name}</span>`;
+          html += `
+          <div class="${cls}">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <strong>${tier.name}</strong>
+              <span style="color: var(--color-text-muted); font-size: 0.78rem;">${tier.hours} ${labels.hrs}</span>
+            </div>
+            ${ribbon}
+          </div>
+        `;
+        });
+        container.innerHTML = html;
+      }
+
+      function renderFeaturesTable() {
+        const table = document.getElementById("featuresTable");
+        const data = featuresData[currentLanguage];
+        const tiers = pricingTiersData[currentLanguage];
+
+        const headers =
+          currentLanguage === "ar"
+            ? {
+                name: "الميزة",
+                category: "التصنيف",
+                importance: "الأهمية",
+                desc: "الوصف",
+                s: "أساسية",
+                p: "احترافية",
+                e: "مؤسسية",
+              }
+            : {
+                name: "Feature",
+                category: "Category",
+                importance: "Importance",
+                desc: "Description",
+                s: "Starter",
+                p: "Pro",
+                e: "Enterprise",
+              };
+
+        const impLabels =
+          currentLanguage === "ar"
+            ? { Critical: "حرجة", High: "عالية", Medium: "متوسطة" }
+            : { Critical: "Critical", High: "High", Medium: "Medium" };
+
+        let rowsHTML = `
+        <thead>
+          <tr>
+            <th style="width: 22%">${headers.name}</th>
+            <th style="width: 12%">${headers.category}</th>
+            <th style="width: 10%">${headers.importance}</th>
+            <th style="width: 36%">${headers.desc}</th>
+            <th style="width: 6.6%; text-align:center;">${headers.s}</th>
+            <th style="width: 6.6%; text-align:center;">${headers.p}</th>
+            <th style="width: 6.6%; text-align:center;">${headers.e}</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+
+        data.forEach((feat, idx) => {
+          const tierFeats = tiers.map((t) => t.features[idx]);
+          const impClass =
+            feat.importance === "Critical"
+              ? "imp-critical"
+              : feat.importance === "High"
+                ? "imp-high"
+                : "imp-medium";
+          const impLabel = impLabels[feat.importance] || feat.importance;
+          const iconMap = {
+            "Core Platform": "layers",
+            "Property Mgmt": "building",
+            Tenants: "users",
+            Billing: "receipt",
+            Portal: "monitor",
+            Payments: "credit-card",
+            Comms: "message-square",
+            Reports: "bar-chart",
+            Security: "shield",
+            Delivery: "truck",
+            النواة: "layers",
+            "إدارة العقارات": "building",
+            المستأجرون: "users",
+            الفواتير: "receipt",
+            البوابة: "monitor",
+            المدفوعات: "credit-card",
+            المراسلات: "message-square",
+            التقارير: "bar-chart",
+            الحماية: "shield",
+            التسليم: "truck",
+          };
+          const icon = iconMap[feat.category] || "circle";
+
+          rowsHTML += `
+          <tr>
+            <td>
+              <div class="feature-name">
+                <i data-lucide="${icon}" style="color: var(--accent-gold); width: 15px; height: 15px; flex-shrink: 0;"></i>
+                ${feat.name}
+              </div>
+            </td>
+            <td><span class="category-badge">${feat.category}</span></td>
+            <td><span class="importance-badge ${impClass}">${impLabel}</span></td>
+            <td>${feat.desc}</td>
+            <td style="text-align:center;">${tierFeats[0].included ? '<span class="check-icon check-yes">&#10003;</span>' : '<span class="check-icon check-no">&times;</span>'}</td>
+            <td style="text-align:center;">${tierFeats[1].included ? '<span class="check-icon check-yes">&#10003;</span>' : '<span class="check-icon check-no">&times;</span>'}</td>
+            <td style="text-align:center;">${tierFeats[2].included ? '<span class="check-icon check-yes">&#10003;</span>' : '<span class="check-icon check-no">&times;</span>'}</td>
+          </tr>
+        `;
+        });
+
+        rowsHTML += `</tbody>`;
+        table.innerHTML = rowsHTML;
+        lucide.createIcons();
+      }
+
+      function renderPricingCards() {
+        const container = document.getElementById("pricingGrid");
+        const tiers = pricingTiersData[currentLanguage];
+
+        const labels =
+          currentLanguage === "ar"
+            ? {
+                hours: "ساعة عمل",
+                delivery: "مدة التسليم",
+                stack: "التقنية",
+                security: "الحماية",
+                db: "قاعدة البيانات",
+                features: "الميزات المشمولة",
+                choose: "اختر هذه الباقة",
+                recommended: "موصى به",
+                months: "شهر",
+                monthsTwo: "شهران",
+              }
+            : {
+                hours: "Working Hours",
+                delivery: "Delivery Time",
+                stack: "Tech Stack",
+                security: "Security Level",
+                db: "Database",
+                features: "Included Features",
+                choose: "Choose This Plan",
+                recommended: "Recommended",
+                months: "Month",
+                monthsTwo: "Months",
+              };
+
+        let html = "";
+        tiers.forEach((tier) => {
+          const recClass = tier.isRecommended ? " recommended" : "";
+          const ribbon = tier.isRecommended
+            ? `<div class="recommended-ribbon">${labels.recommended}</div>`
+            : "";
+
+          let featHTML = "";
+          tier.features.forEach((f) => {
+            const cls = f.included
+              ? "pricing-feature-row included"
+              : "pricing-feature-row not-included";
+            const icon = f.included
+              ? '<span class="check-icon check-yes">&#10003;</span>'
+              : '<span class="check-icon check-no">&times;</span>';
+            featHTML += `<div class="${cls}">${icon}<span>${f.name}</span></div>`;
+          });
+
+          html += `
+          <div class="glass-panel pricing-card${recClass}">
+            ${ribbon}
+            <div class="pricing-card-header">
+              <div class="pricing-tier-name">${tier.name}</div>
+              <div class="pricing-price-value">${tier.price} <span class="pricing-price-currency">${tier.currency}</span></div>
+              <div class="pricing-hours-tag"><strong>${tier.hours}</strong> ${labels.hours} &mdash; ${tier.rate}</div>
+            </div>
+            <div class="pricing-meta-rows">
+              <div class="pricing-meta-row">
+                <span class="label"><i data-lucide="clock" style="width:14px; color:var(--accent-gold);"></i> ${labels.delivery}</span>
+                <span class="value">${tier.delivery}</span>
+              </div>
+              <div class="pricing-meta-row">
+                <span class="label"><i data-lucide="code-2" style="width:14px; color:var(--accent-gold);"></i> ${labels.stack}</span>
+                <span class="value">${tier.stack}</span>
+              </div>
+              <div class="pricing-meta-row">
+                <span class="label"><i data-lucide="database" style="width:14px; color:var(--accent-gold);"></i> ${labels.db}</span>
+                <span class="value">${tier.db}</span>
+              </div>
+              <div class="pricing-meta-row">
+                <span class="label"><i data-lucide="shield" style="width:14px; color:var(--accent-gold);"></i> ${labels.security}</span>
+                <span class="value">${tier.security}</span>
+              </div>
+            </div>
+            <div class="pricing-features-list">
+              ${featHTML}
+            </div>
+            <div class="pricing-cta">
+              <a href="#download" class="btn-choose ${tier.btnClass}">
+                <i data-lucide="check-circle" style="width:16px; height:16px;"></i>
+                ${labels.choose}
+              </a>
+            </div>
+          </div>
+        `;
+        });
+
+        container.innerHTML = html;
+        lucide.createIcons();
+      }
+
+      function renderSellingPoints() {
+        const container = document.getElementById("sellingPoints");
+        const points = sellingPointsData[currentLanguage];
+        let html = "";
+        points.forEach((p) => {
+          html += `
+          <div class="glass-panel selling-point-card gold-glow-hover">
+            <div class="selling-point-icon">
+              <i data-lucide="${p.icon}" style="width: 24px; height: 24px;"></i>
+            </div>
+            <h4>${p.title}</h4>
+            <p>${p.desc}</p>
+          </div>
+        `;
+        });
+        container.innerHTML = html;
+        lucide.createIcons();
+      }
+
+      function triggerDownload(lang) {
+        const dict = translations[lang];
+        const tiers = pricingTiersData[lang];
+        const features = featuresData[lang];
+        const selling = sellingPointsData[lang];
+
+        const title =
+          lang === "ar"
+            ? "العرض الفني والمالي المتكامل لتنفيذ النظام"
+            : "Technical & Commercial Software Proposal";
+        const preparedFor =
+          lang === "ar"
+            ? "مقدم لصالح: شركة دانة المستقبل العقارية"
+            : "Prepared For: Danat Al Mustaqbal Real Estate";
+        const preparedBy =
+          lang === "ar"
+            ? "مقدم من: مؤسسة برو لايف تكنيكال (Pro Life Technical)"
+            : "Prepared By: Pro Life Technical";
+        const dateText = lang === "ar" ? "تاريخ العرض: يوليو 2026" : "Date: July 2026";
+        const validityText =
+          lang === "ar"
+            ? "صلاحية العرض: 30 يوماً من تاريخ التقديم"
+            : "Validity: 30 Days from date of submission";
+
+        const overviewHeader = lang === "ar" ? "نظرة عامة على المشروع" : "Project Overview";
+        const overviewBody =
+          lang === "ar"
+            ? "يسر مؤسسة برو لايف تكنيكال تقديم هذا العرض لتصميم وتطوير وتدشين منصة إدارة عقارات دانة المستقبل (ERMP). نقدم ثلاث باقات مرنة تناسب احتياجات وميزانية العميل، مع التوصية بالباقة المؤسسية لما تقدمه من قيمة شاملة وحماية متقدمة."
+            : "Pro Life Technical is pleased to submit this proposal for a secure, integrated real-estate management platform. We offer three flexible tiers tailored to different needs and budgets, with the Enterprise plan recommended for its comprehensive value and advanced security.";
+
+        const featuresHeader =
+          lang === "ar" ? "ميزات المنصة ومصفوفة الأهمية" : "Platform Features & Importance Matrix";
+
+        const impLabels =
+          lang === "ar"
+            ? { Critical: "حرجة", High: "عالية", Medium: "متوسطة" }
+            : { Critical: "Critical", High: "High", Medium: "Medium" };
+        const colHdrs =
+          lang === "ar"
+            ? {
+                name: "الميزة",
+                cat: "التصنيف",
+                imp: "الأهمية",
+                desc: "الوصف",
+                s: "أساسية",
+                p: "احترافية",
+                e: "مؤسسية",
+              }
+            : {
+                name: "Feature",
+                cat: "Category",
+                imp: "Importance",
+                desc: "Description",
+                s: "Starter",
+                p: "Pro",
+                e: "Enterprise",
+              };
+
+        let featRowsHTML = "";
+        features.forEach((feat, idx) => {
+          const tierFeats = tiers.map((t) => t.features[idx]);
+          const impLabel = impLabels[feat.importance] || feat.importance;
+          featRowsHTML += `
+          <tr>
+            <td style="border:1px solid #D1D5DB; padding:6px; font-weight:bold; background:#FFF;">${feat.name}</td>
+            <td style="border:1px solid #D1D5DB; padding:6px;">${feat.category}</td>
+            <td style="border:1px solid #D1D5DB; padding:6px; font-weight:bold; color:${feat.importance === "Critical" ? "#EF4444" : feat.importance === "High" ? "#F59E0B" : "#3B82F6"};">${impLabel}</td>
+            <td style="border:1px solid #D1D5DB; padding:6px;">${feat.desc}</td>
+            <td style="border:1px solid #D1D5DB; padding:6px; text-align:center; font-weight:bold; color:${tierFeats[0].included ? "#10B981" : "#9CA3AF"};">${tierFeats[0].included ? "&#10003;" : "&times;"}</td>
+            <td style="border:1px solid #D1D5DB; padding:6px; text-align:center; font-weight:bold; color:${tierFeats[1].included ? "#10B981" : "#9CA3AF"};">${tierFeats[1].included ? "&#10003;" : "&times;"}</td>
+            <td style="border:1px solid #D1D5DB; padding:6px; text-align:center; font-weight:bold; color:${tierFeats[2].included ? "#10B981" : "#9CA3AF"};">${tierFeats[2].included ? "&#10003;" : "&times;"}</td>
+          </tr>
+        `;
+        });
+
+        const pricingHeader = lang === "ar" ? "العروض والأسعار" : "Pricing & Offers";
+        let pricingCardsHTML = "";
+        tiers.forEach((tier) => {
+          const recTag = tier.isRecommended
+            ? lang === "ar"
+              ? ' <strong style="color:#E2B755;">(موصى به)</strong>'
+              : ' <strong style="color:#E2B755;">(Recommended)</strong>'
+            : "";
+          const lblHrs = lang === "ar" ? "ساعة عمل" : "Hours";
+          const lblDel = lang === "ar" ? "التسليم" : "Delivery";
+          const lblStack = lang === "ar" ? "التقنية" : "Stack";
+          const lblSec = lang === "ar" ? "الحماية" : "Security";
+          const lblDb = lang === "ar" ? "قاعدة البيانات" : "Database";
+
+          pricingCardsHTML += `
+          <h3 style="margin-top:20px; font-size:13pt; color:${tier.isRecommended ? "#C59E3F" : "#161925"};">${tier.name} &mdash; ${tier.price} ${tier.currency}${recTag}</h3>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:16px; font-size:10pt;">
+            <tbody>
+              <tr><td style="border:1px solid #D1D5DB; padding:8px; background:#F9FAFB; font-weight:bold; width:30%;">${lblHrs}</td><td style="border:1px solid #D1D5DB; padding:8px;">${tier.hours} (${tier.rate})</td></tr>
+              <tr><td style="border:1px solid #D1D5DB; padding:8px; background:#F9FAFB; font-weight:bold;">${lblDel}</td><td style="border:1px solid #D1D5DB; padding:8px;">${tier.delivery}</td></tr>
+              <tr><td style="border:1px solid #D1D5DB; padding:8px; background:#F9FAFB; font-weight:bold;">${lblStack}</td><td style="border:1px solid #D1D5DB; padding:8px;">${tier.stack} &mdash; ${tier.stackDesc}</td></tr>
+              <tr><td style="border:1px solid #D1D5DB; padding:8px; background:#F9FAFB; font-weight:bold;">${lblDb}</td><td style="border:1px solid #D1D5DB; padding:8px;">${tier.db}</td></tr>
+              <tr><td style="border:1px solid #D1D5DB; padding:8px; background:#F9FAFB; font-weight:bold;">${lblSec}</td><td style="border:1px solid #D1D5DB; padding:8px;">${tier.security}</td></tr>
+            </tbody>
+          </table>
+        `;
+        });
+
+        const sellingHeader = lang === "ar" ? "لماذا الباقة المؤسسية؟" : "Why Choose Enterprise?";
+        let sellingHTML = "";
+        selling.forEach((p) => {
+          sellingHTML += `<li><strong>${p.title}:</strong> ${p.desc}</li>`;
+        });
+
+        const exHeader =
+          lang === "ar" ? "تكاليف وإجراءات تشغيلية يتحملها العميل" : "Third-Party Costs Excluded";
+        const exItems =
+          lang === "ar"
+            ? `
+        <li>رسوم الخادم السحابي الاستضافي (VPS Server)، وشهادات الحماية SSL، وحجوزات الخوادم.</li>
+        <li>عمولة المعاملات المالية لبوابة الدفع الإلكتروني MyFatoorah ورسوم فتح الحساب التجاري (للباقة المؤسسية فقط).</li>
+        <li>تكاليف إرسال رسائل الواتساب الصادرة Meta Cloud API أو Twilio (للباقة المؤسسية فقط).</li>
+        <li>رسوم حسابات المطورين لنشر التطبيق في متجر آبل ستور وجوجل بلاي.</li>
+        <li>رسوم وتكاليف اشتراكات نطاق الموقع (Domain Registration & Subscriptions).</li>
+      `
+            : `
+        <li>Server, domain registration, SSL certificates, and any paid hosting infrastructure charges.</li>
+        <li>MyFatoorah gateway merchant account activation fees and per-transaction commission rates (Enterprise plan only).</li>
+        <li>WhatsApp Business API provider transaction fees — Meta Cloud API or Twilio (Enterprise plan only).</li>
+        <li>Apple Developer and Google Play Developer fees if mobile store publication is required.</li>
+        <li>Domain Registration & Subscription Expenses.</li>
+      `;
+
+        const termsHeader =
+          lang === "ar" ? "الشروط والافتراضات العامة للبدء" : "Terms & Assumptions";
+        const termsItems =
+          lang === "ar"
+            ? `
+        <li>تبدأ فترة التنفيذ فور توقيع واعتماد العرض وتوفير الوصول إلى الخوادم وبوابات الربط والبيانات المطلوبة.</li>
+        <li>يرتبط الالتزام بالجدول الزمني بسرعة ردود العميل واعتماد التصاميم وتوفير حسابات بوابات الدفع وقوالب الواتساب.</li>
+        <li>يتم نقل بيانات الإكسيل التاريخية القديمة يدوياً وتدقيقها ومطابقتها قبل تفعيل المنصة رسمياً.</li>
+        <li>يتعهد العميل بتوفير الصيغ القانونية والموافقة على صياغة (قيمة استثمار).</li>
+        <li>يعتبر عرض السعر الحالي صالحاً للاعتماد والتوقيع خلال فترة 30 يوماً من تاريخ التقديم.</li>
+      `
+            : `
+        <li>The delivery target starts after proposal approval and receipt of required data, branding, and service access.</li>
+        <li>Timeline depends on timely approval of screens, Excel data, MyFatoorah credentials, and WhatsApp templates (Enterprise plan).</li>
+        <li>Historical Excel data will be manually entered, reviewed, and reconciled before go-live.</li>
+        <li>Client provides final legal content and approval of the "Investment Value, Not Rent" wording.</li>
+        <li>This proposal is valid for 30 days from issue date.</li>
+      `;
+
+        const sigHeader =
+          lang === "ar" ? "التوقيع والاعتماد الرسمي للمستند" : "Proposal Acceptance";
+        const sigBody =
+          lang === "ar"
+            ? "تلتزم مؤسسة برو لايف تكنيكال بتقديم حلول برمجية احترافية ذات جودة عالية ودرجة حماية وتدقيق مالي متطورة. ونحن على استعداد تام للبدء في مرحلة التحليل والتصميم الفوري بمجرد توقيع هذا المستند."
+            : "Pro Life Technical is committed to delivering a professional, scalable solution focused on financial accuracy, security, and operational simplicity. We are ready to begin discovery and design upon acceptance.";
+
+        const sigTable =
+          lang === "ar"
+            ? `
+        <tr><td style="width:30%; padding:8px; border:1px solid #CCCCCC; background:#F9FAFB; font-weight:bold;">التاريخ</td><td style="padding:8px; border:1px solid #CCCCCC;">____________________________</td></tr>
+        <tr><td style="padding:8px; border:1px solid #CCCCCC; background:#F9FAFB; font-weight:bold;">التوقيع والختم</td><td style="padding:8px; border:1px solid #CCCCCC;">____________________________</td></tr>
+        <tr><td style="padding:8px; border:1px solid #CCCCCC; background:#F9FAFB; font-weight:bold;">اسم العميل / المفوض</td><td style="padding:8px; border:1px solid #CCCCCC;">____________________________</td></tr>
+      `
+            : `
+        <tr><td style="width:30%; padding:8px; border:1px solid #CCCCCC; background:#F9FAFB; font-weight:bold;">Client Name</td><td style="padding:8px; border:1px solid #CCCCCC;">____________________________</td></tr>
+        <tr><td style="padding:8px; border:1px solid #CCCCCC; background:#F9FAFB; font-weight:bold;">Signature</td><td style="padding:8px; border:1px solid #CCCCCC;">____________________________</td></tr>
+        <tr><td style="padding:8px; border:1px solid #CCCCCC; background:#F9FAFB; font-weight:bold;">Date</td><td style="padding:8px; border:1px solid #CCCCCC;">____________________________</td></tr>
+      `;
+
+        const closingHeader = lang === "ar" ? "كلمة شكر وتقدير" : "Word of Appreciation";
+        const closingBody =
+          lang === "ar"
+            ? 'إنه لشرف كبير لشركة "برو لايف" أن تبدأ هذا المشروع بالتعاون مع شركة "دانا"، ونحن على ثقة بأن هذا التعاون سيكون خطوة مميزة ومثمرة للطرفين، ونتطلع بتفاؤل كبير إلى الفترة القادمة، آملين أن نكون دائماً عند حسن ظنكم بنا.'
+            : "It is a great honor for Pro Life to initiate this project in collaboration with Dana. We are confident that this partnership will be a remarkable and fruitful step for both parties, and we look forward with great optimism to the coming period, hoping to always live up to your expectations.";
+        const ceoText =
+          lang === "ar"
+            ? "الرئيس التنفيذي، شركة دانات المستقبل العقارية: إبراهيم العرف"
+            : "CEO, Danat Al Mustaqbal Real Estate: Ebraheem Al Orf";
+
+        const htmlDoc = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: ${lang === "ar" ? "'Cairo', 'Arial'" : "'Arial', sans-serif"}; line-height: 1.5; color: #333333; direction: ${lang === "ar" ? "rtl" : "ltr"}; }
+            h1 { color: #C59E3F; font-size: 24pt; text-align: center; margin-top: 30pt; }
+            h2 { color: #161925; font-size: 16pt; border-bottom: 2px solid #C59E3F; padding-bottom: 6px; margin-top: 24pt; }
+            h3 { color: #161925; font-size: 13pt; margin-top: 18pt; }
+            p { font-size: 11pt; margin-bottom: 12pt; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #CCCCCC; padding: 8px; font-size: 10.5pt; }
+            ul { font-size: 11pt; margin-bottom: 12pt; }
+            li { margin-bottom: 6px; }
+          </style>
+        </head>
+        <body>
+          <h1>${title}</h1>
+          <p style="text-align: center; color: #666666; font-size: 12pt;">
+            ${preparedFor}<br>${preparedBy}<br>${dateText}<br>${validityText}
+          </p>
+          <br><hr style="border:0; border-top:1px solid #CCCCCC;"><br>
+
+          <h2>${overviewHeader}</h2>
+          <p>${overviewBody}</p>
+
+          <h2>${featuresHeader}</h2>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:9pt;">
+            <thead>
+              <tr style="background:#161925; color:#FFF;">
+                <th style="border:1px solid #D1D5DB; padding:8px; text-align:${lang === "ar" ? "right" : "left"};">${colHdrs.name}</th>
+                <th style="border:1px solid #D1D5DB; padding:8px;">${colHdrs.cat}</th>
+                <th style="border:1px solid #D1D5DB; padding:8px;">${colHdrs.imp}</th>
+                <th style="border:1px solid #D1D5DB; padding:8px; text-align:${lang === "ar" ? "right" : "left"};">${colHdrs.desc}</th>
+                <th style="border:1px solid #D1D5DB; padding:8px; text-align:center;">${colHdrs.s}</th>
+                <th style="border:1px solid #D1D5DB; padding:8px; text-align:center;">${colHdrs.p}</th>
+                <th style="border:1px solid #D1D5DB; padding:8px; text-align:center;">${colHdrs.e}</th>
+              </tr>
+            </thead>
+            <tbody>${featRowsHTML}</tbody>
+          </table>
+
+          <h2>${pricingHeader}</h2>
+          ${pricingCardsHTML}
+
+          <h2>${sellingHeader}</h2>
+          <ul>${sellingHTML}</ul>
+
+          <h2>${exHeader}</h2>
+          <ul>${exItems}</ul>
+
+          <h2>${termsHeader}</h2>
+          <ul>${termsItems}</ul>
+
+          <h2>${closingHeader}</h2>
+          <p style="font-style: italic; background-color: #F9FAFB; padding: 12px; border-left: 3px solid #C59E3F;">"${closingBody}"</p>
+          <p style="text-align: ${lang === "ar" ? "right" : "left"}; font-weight: bold; margin-top: 10px;">${ceoText}</p>
+          <br>
+
+          <h2>${sigHeader}</h2>
+          <p>${sigBody}</p>
+          <br>
+          <table style="width:70%; margin:0 auto; font-size:11pt;"><tbody>${sigTable}</tbody></table>
+        </body>
+        </html>
+      `;
+
+        const blob = new Blob(["\ufeff" + htmlDoc], { type: "application/msword" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download =
+          lang === "ar"
+            ? "Pro_Life_Technical_Proposal_AR.doc"
+            : "Pro_Life_Technical_Proposal_EN.doc";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    </script>
+  </body>
+</html>

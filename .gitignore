@@ -1,0 +1,93 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+.output
+.vinxi
+.tanstack/**
+.nitro
+*.local
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Codex delegate working artifacts
+.codex-briefs/
+
+# Dev server scratch output
+*.err
+
+# Codex delegate scratch
+.codex/
+
+# Temporary SSH
+tmp_ssh/
+
+
+# Browser automation scratch
+.playwright-mcp/
+
+# Local TestSprite setup and credentials
+.testsprite/
+testsprite_tests/
+
+# Generated knowledge graph output — regenerate locally with `graphify update .`
+graphify-out/
+
+# Local media assets
+/media/
+contract_sample/
+src/integrations/supabase/database.types.generated.ts
+
+# Third-party skills checkout, cloned here for local use — its own git repo
+# (github.com/Security-Phoenix-demo/security-skills-claude-code, MIT). Ignored
+# rather than committed: `git add` on a directory containing its own .git
+# records a bare gitlink, so every clone of this repo — Lovable included — would
+# get an empty folder that looks committed. Update it with `git pull` inside it.
+/security-skills-claude-code/
+
+# Auto Claude data directory
+.auto-claude/
+
+# Auto Claude generated files
+.auto-claude-security.json
+.auto-claude-status
+.claude_settings.json
+.worktrees/
+.security-key
+logs/security/
+
+# npm writes this on every `npm install`; bun.lock is the lockfile Docker uses.
+package-lock.json
+
+# Per-machine agent tooling (delegate skills), not part of the product.
+.agents/
+.claude/
+.kilo/
+skills-lock.json
+

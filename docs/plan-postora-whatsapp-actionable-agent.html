@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>الوكيل المالي التفاعلي الذكي · دانة المستقبل × Postora AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --bg: #070a12; --card-bg: rgba(16, 22, 36, 0.78); --card-border: rgba(255, 255, 255, 0.08);
+        --primary: #38bdf8; --primary-light: #7dd3fc; --primary-glow: rgba(56, 189, 248, 0.25);
+        --emerald: #10b981; --emerald-glow: rgba(16, 185, 129, 0.35); --amber: #f59e0b; --rose: #f43f5e;
+        --text-main: #f8fafc; --text-muted: #94a3b8; --phone-bg: #111b21; --phone-border: #202c33;
+        --wa-dark: #0b141a; --wa-header: #202c33; --wa-bubble-bot: #202c33; --wa-bubble-user: #005c4b;
+        --wa-text: #e9edef; --wa-subtext: #8696a0; --tab-bg: rgba(255, 255, 255, 0.04);
+        --flow-bg: rgba(16, 22, 36, 0.9); --hero-grad: linear-gradient(135deg, #ffffff 30%, #38bdf8 100%);
+        --radius: 20px; --radius-sm: 14px;
+      }
+      [data-theme="light"] {
+        --bg: #f8fafc; --card-bg: rgba(255, 255, 255, 0.95); --card-border: rgba(15, 23, 42, 0.09);
+        --primary: #0284c7; --primary-light: #0369a1; --primary-glow: rgba(2, 132, 199, 0.16);
+        --emerald: #059669; --emerald-glow: rgba(5, 150, 105, 0.16); --amber: #d97706; --rose: #e11d48;
+        --text-main: #0f172a; --text-muted: #64748b; --phone-bg: #ffffff; --phone-border: #e2e8f0;
+        --wa-dark: #efeae2; --wa-header: #008069; --wa-bubble-bot: #ffffff; --wa-bubble-user: #d9fdd3;
+        --wa-text: #111b21; --wa-subtext: #667781; --tab-bg: #f1f5f9; --flow-bg: #ffffff;
+        --hero-grad: linear-gradient(135deg, #0f172a 30%, #0284c7 100%);
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: 'Cairo', system-ui, -apple-system, sans-serif; background-color: var(--bg); color: var(--text-main); line-height: 1.6; overflow-x: hidden;
+        background-image: radial-gradient(circle at 10% 10%, rgba(56, 189, 248, 0.12) 0%, transparent 40%), radial-gradient(circle at 90% 40%, rgba(16, 185, 129, 0.1) 0%, transparent 40%);
+        transition: background 0.3s ease, color 0.3s ease;
+      }
+      .container { max-width: 1220px; margin: 0 auto; padding: 30px 20px 110px; }
+      .top-nav { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+      .theme-btn {
+        display: inline-flex; align-items: center; gap: 8px; background: var(--card-bg); border: 1px solid var(--card-border);
+        color: var(--text-main); padding: 8px 18px; border-radius: 9999px; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: all 0.25s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+      }
+      .theme-btn:hover { transform: translateY(-2px); border-color: var(--primary); }
+      .hero { text-align: center; margin-bottom: 46px; position: relative; }
+      .pill-badge {
+        display: inline-flex; align-items: center; gap: 10px; padding: 6px 18px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35);
+        color: var(--primary-light); border-radius: 9999px; font-size: 0.88rem; font-weight: 700; margin-bottom: 18px; box-shadow: 0 0 25px var(--primary-glow);
+      }
+      .pill-badge .dot { width: 8px; height: 8px; background: var(--emerald); border-radius: 50%; box-shadow: 0 0 10px var(--emerald); animation: pulse 1.8s infinite; }
+      @keyframes pulse { 0%, 100% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.3); opacity: 1; } }
+      .hero h1 { font-size: 3.1rem; font-weight: 900; line-height: 1.25; background: var(--hero-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 14px; letter-spacing: -0.5px; }
+      .hero p { font-size: 1.15rem; color: var(--text-muted); max-width: 820px; margin: 0 auto; line-height: 1.8; }
+      .glass-card { background: var(--card-bg); border: 1px solid var(--card-border); backdrop-filter: blur(18px); border-radius: var(--radius); padding: 30px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25); margin-bottom: 44px; }
+      .section-title { display: flex; align-items: center; gap: 12px; font-size: 1.65rem; font-weight: 900; margin-bottom: 24px; color: var(--text-main); }
+      .section-title .icon-cube { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary) 0%, #0369a1 100%); color: #fff; font-size: 1.25rem; box-shadow: 0 8px 20px var(--primary-glow); flex-shrink: 0; }
+      /* KPI Flow Track with Sequential Arrows */
+      .kpi-flow { display: flex; align-items: stretch; justify-content: space-between; gap: 8px; margin-top: 14px; }
+      @media (max-width: 900px) { .kpi-flow { flex-direction: column; gap: 12px; } }
+      .kpi-card { flex: 1; background: var(--flow-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 22px 14px; text-align: center; transition: all 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275); opacity: 0.35; transform: scale(0.96); }
+      .kpi-card.active-step { opacity: 1; transform: translateY(-6px) scale(1.04); border-color: var(--emerald); box-shadow: 0 12px 30px rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08); }
+      .kpi-card.completed-step { opacity: 0.92; transform: scale(1); border-color: rgba(16, 185, 129, 0.5); }
+      .kpi-val { font-size: 2.3rem; font-weight: 900; font-family: 'Inter', sans-serif; color: var(--primary); margin-bottom: 4px; }
+      .kpi-val.emerald { color: var(--emerald); }
+      .kpi-h { font-size: 0.95rem; font-weight: 800; color: var(--text-main); margin-bottom: 4px; }
+      .kpi-p { font-size: 0.82rem; color: var(--text-muted); }
+      .flow-arrow { display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.15); font-size: 1.5rem; font-weight: 900; flex-shrink: 0; width: 28px; transition: all 0.35s ease; }
+      [data-theme="light"] .flow-arrow { color: #cbd5e1; }
+      .flow-arrow.active-arrow { color: var(--emerald); }
+      .flow-arrow.active-arrow .arrow-glyph { animation: arrowSlideRtl 0.6s infinite alternate cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.9)); transform: scale(1.3); }
+      @keyframes arrowSlideRtl { 0% { transform: translateX(3px) scale(1.15); } 100% { transform: translateX(-6px) scale(1.35); } }
+      @media (max-width: 900px) { .flow-arrow { transform: rotate(90deg); margin: 2px auto; height: 22px; width: 100%; } }
+      /* Showcase Grid & WhatsApp Phone Mockup */
+      .showcase-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 32px; align-items: start; }
+      @media (max-width: 890px) { .showcase-grid { grid-template-columns: 1fr; } }
+      .phone-mockup { width: 100%; max-width: 440px; margin: 0 auto; background: var(--phone-bg); border-radius: 36px; border: 8px solid var(--phone-border); box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6); overflow: hidden; position: relative; }
+      .phone-header { background: var(--wa-header); padding: 14px 16px; display: flex; align-items: center; gap: 12px; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.06); }
+      .phone-avatar { width: 42px; height: 42px; border-radius: 50%; background: #25D366; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; }
+      .phone-title h4 { font-size: 0.95rem; font-weight: 700; color: #fff; }
+      .chat-status { font-size: 0.74rem; color: #8696a0; display: block; transition: color 0.3s; }
+      .chat-status.typing { color: #25D366 !important; font-weight: 800; }
+      .chat-body { background: var(--wa-dark); padding: 18px 14px; min-height: 440px; max-height: 480px; overflow-y: auto; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 12px; position: relative; }
+      .msg-bubble { max-width: 86%; padding: 10px 14px; border-radius: 12px; font-size: 0.88rem; line-height: 1.5; opacity: 0; transform: translateY(12px) scale(0.96); transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: none; }
+      .msg-bubble.visible { display: block; opacity: 1; transform: translateY(0) scale(1); animation: popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+      @keyframes popIn { 0% { opacity: 0; transform: translateY(14px) scale(0.92); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+      .msg-user { align-self: flex-start; background: var(--wa-bubble-user); color: var(--wa-text); border-top-right-radius: 2px; }
+      .msg-bot { align-self: flex-end; background: var(--wa-bubble-bot); color: var(--wa-text); border-top-left-radius: 2px; }
+      .msg-time { font-size: 0.68rem; color: var(--wa-subtext); margin-top: 4px; text-align: left; }
+      .typing-indicator-bubble { display: none; padding: 10px 16px; background: var(--wa-bubble-bot); border-radius: 14px; width: fit-content; align-self: flex-end; }
+      .typing-dots { display: inline-flex; align-items: center; gap: 5px; }
+      .typing-dots span { width: 6px; height: 6px; background: var(--wa-subtext); border-radius: 50%; animation: typingBounce 1.4s infinite ease-in-out both; }
+      .typing-dots span:nth-child(2) { animation-delay: 0.2s; } .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes typingBounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1.15); opacity: 1; } }
+      .chat-completion-badge { opacity: 0; transform: translateY(10px); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: none; align-items: center; justify-content: center; gap: 8px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: #34d399; font-size: 0.8rem; font-weight: 700; padding: 9px 12px; border-radius: 12px; text-align: center; margin-top: 8px; }
+      .chat-completion-badge.visible { display: flex; opacity: 1; transform: translateY(0); }
+      .hand-cursor { position: absolute; font-size: 32px; pointer-events: none; z-index: 99; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5)); transition: all 0.9s cubic-bezier(0.25, 1, 0.5, 1); opacity: 0; }
+      .hand-cursor.clicking { transform: scale(0.8) rotate(-14deg); }
+      .pdf-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.15); color: var(--primary); padding: 4px 10px; border-radius: 8px; font-weight: 700; cursor: pointer; text-decoration: underline; margin-top: 4px; border: 1px solid rgba(56, 189, 248, 0.3); }
+      /* Tabs & Impact Box */
+      .tabs-bar { display: flex; gap: 8px; background: var(--tab-bg); padding: 6px; border-radius: 14px; border: 1px solid var(--card-border); margin-bottom: 24px; }
+      .tab-btn { flex: 1; padding: 12px 14px; background: transparent; border: none; color: var(--text-muted); font-family: inherit; font-size: 0.95rem; font-weight: 700; border-radius: 10px; cursor: pointer; transition: all 0.25s ease; text-align: center; }
+      .tab-btn.active { background: linear-gradient(135deg, var(--primary) 0%, #0284c7 100%); color: #fff; box-shadow: 0 6px 18px var(--primary-glow); }
+      .impact-item { display: flex; gap: 16px; margin-bottom: 20px; opacity: 0; transform: translateY(16px); transition: all 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
+      .impact-item.revealed { opacity: 1; transform: translateY(0); }
+      .impact-icon { width: 44px; height: 44px; border-radius: 12px; background: rgba(56, 189, 248, 0.12); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+      .impact-item.green .impact-icon { background: rgba(16, 185, 129, 0.12); color: var(--emerald); }
+      .impact-item.rose .impact-icon { background: rgba(244, 63, 94, 0.12); color: var(--rose); }
+      .impact-h { font-size: 15.5px; font-weight: 800; color: var(--text-main); margin-bottom: 4px; }
+      .impact-p { font-size: 13.5px; color: var(--text-muted); }
+      /* Workflow Flow Track */
+      .workflow-flow { display: flex; align-items: stretch; justify-content: space-between; gap: 8px; margin-top: 18px; }
+      @media (max-width: 900px) { .workflow-flow { flex-direction: column; gap: 12px; } }
+      .flow-step-box { flex: 1; background: var(--flow-bg); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 20px 12px; text-align: center; position: relative; opacity: 0.35; transform: scale(0.96); transition: all 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+      .flow-step-box.active-step { opacity: 1; transform: translateY(-6px) scale(1.04); border-color: var(--emerald); box-shadow: 0 12px 30px rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08); }
+      .flow-step-box.completed-step { opacity: 0.92; transform: scale(1); border-color: rgba(16, 185, 129, 0.5); }
+      .step-num-badge { width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: var(--text-muted); display: flex; align-items: center; justify-content: center; font-size: 0.9rem; font-weight: 900; margin: 0 auto 10px; }
+      .flow-step-box.active-step .step-num-badge { background: var(--emerald); color: #fff; box-shadow: 0 0 14px var(--emerald); }
+      .flow-step-box h4 { font-size: 0.95rem; font-weight: 800; color: var(--text-main); margin-bottom: 4px; }
+      .flow-step-box p { font-size: 0.8rem; color: var(--text-muted); line-height: 1.45; }
+      /* Comparison Infographic */
+      .info-cards { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+      .info-row { background: var(--flow-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 15px 20px; display: grid; grid-template-columns: 240px 1fr 40px 1fr; align-items: center; gap: 14px; opacity: 0; transform: translateX(20px); transition: all 0.9s cubic-bezier(0.16, 1, 0.3, 1); }
+      .info-row.revealed { opacity: 1; transform: translateX(0); }
+      @media (max-width: 860px) { .info-row { grid-template-columns: 1fr; gap: 10px; } }
+      .info-row:hover { border-color: var(--primary); transform: translateX(-3px); }
+      .info-dim { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 14px; color: var(--text-main); }
+      .info-before { background: rgba(244, 63, 94, 0.08); border: 1px dashed rgba(244, 63, 94, 0.3); border-radius: 12px; padding: 10px 14px; color: var(--text-main); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+      .info-arrow { text-align: center; font-size: 18px; color: var(--primary); font-weight: bold; }
+      @media (max-width: 860px) { .info-arrow { display: none; } }
+      .info-after { background: rgba(16, 185, 129, 0.09); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 12px; padding: 10px 14px; color: var(--text-main); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+      .tag-bad { background: rgba(244, 63, 94, 0.2); color: var(--rose); padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+      .tag-good { background: rgba(16, 185, 129, 0.2); color: var(--emerald); padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+      /* PDF Modal */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(8px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }
+      .modal-overlay.active { display: flex; }
+      .receipt-paper { background: #ffffff; color: #0f172a; width: 100%; max-width: 480px; border-radius: 20px; padding: 26px; box-shadow: 0 25px 60px rgba(0,0,0,0.6); position: relative; border: 1px solid #e2e8f0; }
+      .receipt-header { border-bottom: 2px dashed #cbd5e1; padding-bottom: 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
+      .receipt-logo { font-size: 16.5px; font-weight: 900; color: #0284c7; }
+      .receipt-sub { font-size: 11px; color: #64748b; font-weight: 600; }
+      .receipt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; font-size: 12.5px; }
+      .receipt-label { font-size: 11px; color: #64748b; font-weight: 700; }
+      .receipt-val { font-weight: 800; color: #0f172a; margin-top: 2px; }
+      .receipt-amount-box { background: #f1f5f9; border-radius: 12px; padding: 10px; text-align: center; margin-bottom: 18px; border: 1px solid #e2e8f0; }
+      .receipt-stamp { display: inline-block; border: 2px solid #059669; color: #059669; font-weight: 900; font-size: 13px; padding: 4px 12px; border-radius: 8px; text-transform: uppercase; transform: rotate(-5deg); box-shadow: 0 0 10px rgba(5,150,105,0.15); }
+      .receipt-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+      .modal-close-btn { background: #0284c7; color: white; border: none; padding: 8px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+      /* Floating Auto-Tour Control Bar */
+      .tour-control-bar {
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 99998;
+        background: rgba(16, 22, 36, 0.94); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(20px);
+        padding: 10px 22px; border-radius: 9999px; display: flex; align-items: center; gap: 16px;
+        box-shadow: 0 14px 45px rgba(0, 0, 0, 0.55); max-width: 95vw;
+      }
+      [data-theme="light"] .tour-control-bar { background: rgba(255, 255, 255, 0.95); border-color: rgba(15, 23, 42, 0.14); color: #0f172a; box-shadow: 0 14px 45px rgba(15, 23, 42, 0.15); }
+      .tour-status-info { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; font-weight: 700; color: #f1f5f9; white-space: nowrap; }
+      [data-theme="light"] .tour-status-info { color: #0f172a; }
+      .tour-live-dot { width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 12px #10b981; animation: pulseDot 1.2s infinite ease-in-out; }
+      .tour-live-dot.paused { background: #f59e0b; box-shadow: 0 0 12px #f59e0b; animation: none; }
+      @keyframes pulseDot { 0%, 100% { transform: scale(0.85); opacity: 0.7; } 50% { transform: scale(1.25); opacity: 1; } }
+      .tour-controls-btns { display: flex; align-items: center; gap: 8px; }
+      .tour-btn {
+        background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: #fff;
+        padding: 6px 14px; border-radius: 9999px; font-family: 'Cairo', sans-serif; font-size: 0.82rem;
+        font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s ease;
+      }
+      [data-theme="light"] .tour-btn { background: #f1f5f9; border-color: #cbd5e1; color: #334155; }
+      .tour-btn:hover { background: rgba(255, 255, 255, 0.18); transform: translateY(-2px); border-color: var(--primary); }
+      .tour-btn-primary { background: var(--primary); border-color: var(--primary-light); }
+      @media (max-width: 640px) { .tour-control-bar { bottom: 12px; padding: 8px 14px; gap: 8px; } .tour-status-info { font-size: 0.76rem; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <nav class="top-nav">
+        <button id="themeToggleBtn" class="theme-btn" onclick="toggleTheme()" aria-label="تبديل وضع الإضاءة">
+          <span id="themeIcon">☀️</span><span id="themeText">وضع الإضاءة</span>
+        </button>
+      </nav>
+
+      <header class="hero">
+        <div class="pill-badge"><span class="dot"></span>المستقبل وصل · دانة المستقبل × بوستورا AI 2026</div>
+        <h1>الوكيل المالي التفاعلي الذكي (Actionable AI)</h1>
+        <p>نقلة استراتيجية نوعية تحوّل واتساب دانة من مجرد شات للردود إلى <strong>نظام تحصيل وإصدار إيصالات ذاتي 24/7</strong> بأعلى معايير الأمان المصرفي.</p>
+      </header>
+
+      <!-- Section 1: KPI Flow Track with Sequential Glowing Arrows -->
+      <div class="glass-card" id="section-kpis">
+        <div class="section-title"><div class="icon-cube">⚡</div><span>مؤشرات الأداء المباشرة (Key Performance Indicators)</span></div>
+        <div class="kpi-flow" id="kpiFlowContainer">
+          <div class="kpi-card" id="kpi-card-1"><div class="kpi-val emerald">10 ثوانٍ</div><div class="kpi-h">سرعة استخراج الرابط</div><div class="kpi-p">بدلاً من انتظار الموظف لساعات</div></div>
+          <div class="flow-arrow" id="kpi-arrow-1"><span class="arrow-glyph">←</span></div>
+          <div class="kpi-card" id="kpi-card-2"><div class="kpi-val">100%</div><div class="kpi-h">أمان مصرفي تام</div><div class="kpi-p">صفر تسريب لكلمات المرور نهائياً</div></div>
+          <div class="flow-arrow" id="kpi-arrow-2"><span class="arrow-glyph">←</span></div>
+          <div class="kpi-card" id="kpi-card-3"><div class="kpi-val emerald">24/7</div><div class="kpi-h">تحصيل آلي مستمر</div><div class="kpi-p">في العطلات وخارج ساعات العمل</div></div>
+          <div class="flow-arrow" id="kpi-arrow-3"><span class="arrow-glyph">←</span></div>
+          <div class="kpi-card" id="kpi-card-4"><div class="kpi-val">0 د.ك</div><div class="kpi-h">تكلفة موظفين إضافيين</div><div class="kpi-p">توفير جهد وإرهاق فريق التحصيل</div></div>
+        </div>
+      </div>
+
+      <!-- Section 2: Interactive Showcase Scenarios -->
+      <div class="glass-card" id="section-showcases">
+        <div class="section-title"><div class="icon-cube">💬</div><span>محاكاة الشات الحية وحالات الاستخدام (Live Chat Scenarios)</span></div>
+        <div class="showcase-grid">
+          <div class="phone-mockup">
+            <div class="phone-header">
+              <div class="phone-avatar">🏢</div>
+              <div class="phone-title"><h4>دانة المستقبل العقارية</h4><span class="chat-status" id="agentStatus">متصل الآن (الوكيل الذكي)</span></div>
+            </div>
+            <div class="chat-body" id="chatContainer">
+              <div class="msg-bubble msg-bot typing-indicator-bubble" id="typingBubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>
+              <div class="chat-completion-badge" id="chatBadge"><span>⚡ تم تنفيذ العملية وتسجيلها بنجاح</span></div>
+            </div>
+            <div id="handCursor" class="hand-cursor">👆</div>
+          </div>
+
+          <div class="showcase-details">
+            <div class="tabs-bar">
+              <button class="tab-btn active" id="tab1" onclick="userSelectTab(1)">1. طلب رابط كي نت</button>
+              <button class="tab-btn" id="tab2" onclick="userSelectTab(2)">2. إيصال شهر مدفوع</button>
+              <button class="tab-btn" id="tab3" onclick="userSelectTab(3)">3. فحص غير مسدد</button>
+            </div>
+            <h3 style="font-size:1.4rem;font-weight:900;color:var(--text-main);margin-bottom:18px;">🌟 لماذا تُعد هذه الميزة حاسمة للمشروع؟</h3>
+            <div class="impact-item green" id="impact1"><div class="impact-icon">🚀</div><div><div class="impact-h">مضاعفة سرعة التحصيل (Instant Collection)</div><div class="impact-p">المستأجر يدفع في نفس اللحظة التي يفكر فيها بالسداد؛ لا ينتظر محاسباً يفتح اللاب توب ليولد الرابط، مما يقضي على أعذار التأخير.</div></div></div>
+            <div class="impact-item" id="impact2"><div class="impact-icon">🛡️</div><div><div class="impact-h">تأكيد الهوية بدون كلمات مرور (Passwordless Auth)</div><div class="impact-p">التعرف الفوري على رقم هاتف المستأجر ومطالبته فقط بآخر 4 أرقام من بطاقته المدنية، مع جلسة عمل مؤقتة تمنع أي تطفل.</div></div></div>
+            <div class="impact-item rose" id="impact3"><div class="impact-icon">⚖️</div><div><div class="impact-h">انضباط مالي وقانوني صارم (Zero Hallucination)</div><div class="impact-p">الذكاء الاصطناعي لا يؤلف إيصالات؛ دالة الـ Backend ترفض إصدار الإيصال قطعياً إلا إذا كانت الفاتورة مسددة في قاعدة البيانات بالفعل.</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: End-to-End Workflow with Animated Step Arrows -->
+      <div class="glass-card" id="section-workflow">
+        <div class="section-title"><div class="icon-cube">🔄</div><span>مسار المعالجة التفاعلية اللحظية (End-to-End Workflow)</span></div>
+        <p style="color:var(--text-muted);font-size:0.95rem;margin-bottom:12px;">سلسلة من 5 خطوات برمجية مؤتمتة تنفذ العملية من رسالة الواتساب حتى إصدار القيود المحاسبية:</p>
+        <div class="workflow-flow" id="workflowContainer">
+          <div class="flow-step-box" id="step-box-1"><div class="step-num-badge">1</div><h4>1. رسالة واتساب</h4><p>المستأجر يطلب الرابط أو الإيصال بأسلوبه الطبيعي.</p></div>
+          <div class="flow-arrow" id="flow-arrow-1"><span class="arrow-glyph">←</span></div>
+          <div class="flow-step-box" id="step-box-2"><div class="step-num-badge">2</div><h4>2. فحص الهوية</h4><p>مطابقة رقم الهاتف وطلب آخر 4 أرقام مدنية.</p></div>
+          <div class="flow-arrow" id="flow-arrow-2"><span class="arrow-glyph">←</span></div>
+          <div class="flow-step-box" id="step-box-3"><div class="step-num-badge">3</div><h4>3. جلسة مؤقتة</h4><p>إنشاء Session Cache لمدة 15 دقيقة بأمان تام.</p></div>
+          <div class="flow-arrow" id="flow-arrow-3"><span class="arrow-glyph">←</span></div>
+          <div class="flow-step-box" id="step-box-4"><div class="step-num-badge">4</div><h4>4. استدعاء الأداة</h4><p>استدعاء دوال KNET أو استخراج الإيصال المعتمد.</p></div>
+          <div class="flow-arrow" id="flow-arrow-4"><span class="arrow-glyph">←</span></div>
+          <div class="flow-step-box" id="step-box-5"><div class="step-num-badge">5</div><h4>5. التنفيذ الفوري</h4><p>تسليم الرابط وتسجيل العملية في Audit Log.</p></div>
+        </div>
+      </div>
+
+      <!-- Section 4: Infographic Comparison (Before vs After) -->
+      <div class="glass-card" id="section-comparison">
+        <div class="section-title"><div class="icon-cube">📊</div><span>إنفوجرافيك المقارنة الشاملة: النظام اليدوي مقابل الوكيل التفاعلي الذكي</span></div>
+        <p style="color:var(--text-muted);font-size:0.95rem;">رصد دقيق للتحول التشغيلي والمالي: كيف كانت الإدارة العقارية سابقاً وماذا أصبحت الآن مع Postora AI</p>
+        <div class="info-cards" id="infoCardsContainer">
+          <div class="info-row" id="infoRow1"> <div class="info-dim">⚡ زمن إصدار روابط الدفع</div> <div class="info-before"><span class="tag-bad">سابقاً</span>انتظار من ساعتين إلى 6 ساعات حتى يفتح المحاسب الجهاز</div> <div class="info-arrow">➔</div> <div class="info-after"><span class="tag-good">الآن</span><strong>10 ثوانٍ لحظياً</strong> برابط كي نت مباشر 24/7</div> </div>
+          <div class="info-row" id="infoRow2"> <div class="info-dim">🕐 أوقات التوفر والسداد</div> <div class="info-before"><span class="tag-bad">سابقاً</span>محصورة بـ 8 ساعات دوام مكتبي (توقف تام بالعطلات)</div> <div class="info-arrow">➔</div> <div class="info-after"><span class="tag-good">الآن</span><strong>خدمة ذاتية 24 ساعة</strong> طوال أيام الأسبوع بلا توقف</div> </div>
+          <div class="info-row" id="infoRow3"> <div class="info-dim">🛡️ أمان الحسابات والسرية</div> <div class="info-before"><span class="tag-bad">سابقاً</span>مخاطرة طلب كلمات المرور في الشات ومكشوفة للموظفين</div> <div class="info-arrow">➔</div> <div class="info-after"><span class="tag-good">الآن</span><strong>0% كلمات مرور</strong> (تحقق بالهاتف والمدنية وأمان بنكي)</div> </div>
+          <div class="info-row" id="infoRow4"> <div class="info-dim">🧾 إصدار وتوثيق الإيصالات</div> <div class="info-before"><span class="tag-bad">سابقاً</span>إعداد يدوي متأخر وإرسال مجتزأ يسبب خلافات مع المستأجر</div> <div class="info-arrow">➔</div> <div class="info-after"><span class="tag-good">الآن</span><strong>إيصال PDF معتمد فوراً</strong> ومحفوظ في السجلات تلقائياً</div> </div>
+          <div class="info-row" id="infoRow5"> <div class="info-dim">📉 الأخطاء وتكلفة الموظفين</div> <div class="info-before"><span class="tag-bad">سابقاً</span>15% أخطاء مبالغ وروابط + ضغط وإرهاق متواصل لفريق العمل</div> <div class="info-arrow">➔</div> <div class="info-after"><span class="tag-good">الآن</span><strong>صفر أخطاء</strong> وتوفير 85% من جهد فريق التحصيل والمحاسبة</div> </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Realistic PDF Receipt Modal -->
+    <div id="receiptModal" class="modal-overlay" onclick="closeReceiptModalOnBackdrop(event)">
+      <div class="receipt-paper">
+        <div class="receipt-header">
+          <div><div class="receipt-logo">🏢 دانة المستقبل العقارية</div><div class="receipt-sub">DANAT AL-MUSTAKBAL REAL ESTATE W.L.L</div></div>
+          <div style="text-align:left;"><div class="receipt-stamp">PAID · معتمد</div></div>
+        </div>
+        <div style="font-size:15px;font-weight:900;margin-bottom:14px;color:#0284c7;text-align:center;">إيصال سداد إيجار رسمي (OFFICIAL RENT RECEIPT)</div>
+        <div class="receipt-grid">
+          <div><div class="receipt-label">رقم الإيصال</div><div class="receipt-val">#REC-2026-08-302</div></div>
+          <div><div class="receipt-label">تاريخ ووقت السداد</div><div class="receipt-val">2026-08-28 10:45 ص</div></div>
+          <div><div class="receipt-label">اسم المستأجر</div><div class="receipt-val">أحمد فهد الدوسري</div></div>
+          <div><div class="receipt-label">الوحدة / العقار</div><div class="receipt-val">برج دانة 1 · شقة 302</div></div>
+          <div><div class="receipt-label">البيان</div><div class="receipt-val">إيجار شهر أغسطس 2026</div></div>
+          <div><div class="receipt-label">بوابة الدفع (KNET)</div><div class="receipt-val">Ref: KNT-9821544</div></div>
+        </div>
+        <div class="receipt-amount-box">
+          <div class="receipt-label">المبلغ الإجمالي المسدد</div>
+          <div style="font-size:26px;font-weight:900;color:#059669;">450.000 د.ك</div>
+          <div style="font-size:11.5px;color:#64748b;margin-top:2px;">فقط أربعمائة وخمسون ديناراً كويتياً لا غير</div>
+        </div>
+        <div class="receipt-footer">
+          <div style="font-size:11px;color:#64748b;">🔒 معتمد ومطابق للقيود المحاسبية الآلية · Postora AI Engine</div>
+          <button class="modal-close-btn" onclick="closeReceiptModal()">إغلاق المعاينة ✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Auto-Tour Control Bar -->
+    <div class="tour-control-bar" id="tourControlBar">
+      <div class="tour-status-info">
+        <span class="tour-live-dot" id="tourLiveDot"></span>
+        <span id="tourStepText">الخطوة 1 من 4: استعراض مؤشرات الأداء المتتالية ⚡</span>
+      </div>
+      <div class="tour-controls-btns">
+        <button class="tour-btn" id="tourPlayPauseBtn" onclick="toggleTourPlayPause()"><span id="tourPlayPauseIcon">⏸️</span><span id="tourPlayPauseText">إيقاف مؤقت</span></button>
+        <button class="tour-btn" onclick="nextTourStep()"><span>⏭️</span><span>التالي</span></button>
+        <button class="tour-btn tour-btn-primary" onclick="restartTour()"><span>🔄</span><span>من البداية</span></button>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+      /** تبديل نسق الألوان بين الفاتح والداكن وحفظه بالذاكرة */
+      function toggleTheme() {
+        const target = (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', target);
+        localStorage.setItem('danat_theme_pref', target);
+        updateThemeUI(target === 'light');
+      }
+
+      /** تحديث أيقونة وعنوان زر التبديل اللوني */
+      function updateThemeUI(isLight) {
+        document.getElementById('themeIcon').textContent = isLight ? '🌙' : '☀️';
+        document.getElementById('themeText').textContent = isLight ? 'الوضع الداكن' : 'وضع الإضاءة';
+      }
+
+      (function initTheme() {
+        if (localStorage.getItem('danat_theme_pref') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          updateThemeUI(true);
+        }
+      })();
+
+      /** محرك الجولة التلقائية التفاعلية (Master Auto-Tour State Machine) */
+      let tourRunning = true, currentTourStep = 1, tourTimers = [];
+      function clearAllTourTimers() { tourTimers.forEach(id => clearTimeout(id)); tourTimers = []; hideHandCursor(); }
+      function addTourTimer(fn, delay) { const id = setTimeout(() => { if (tourRunning) fn(); }, delay); tourTimers.push(id); return id; }
+
+      function updateTourBar(stepNum, stepTitle) {
+        currentTourStep = stepNum;
+        const textEl = document.getElementById('tourStepText'), dotEl = document.getElementById('tourLiveDot');
+        if (textEl) textEl.textContent = stepTitle;
+        if (dotEl) { if (tourRunning) dotEl.classList.remove('paused'); else dotEl.classList.add('paused'); }
+      }
+
+      function toggleTourPlayPause() {
+        tourRunning = !tourRunning;
+        const icon = document.getElementById('tourPlayPauseIcon'), text = document.getElementById('tourPlayPauseText'), dotEl = document.getElementById('tourLiveDot');
+        if (!tourRunning) {
+          if (icon) icon.textContent = '▶️'; if (text) text.textContent = 'استئناف';
+          if (dotEl) dotEl.classList.add('paused'); clearAllTourTimers();
+        } else {
+          if (icon) icon.textContent = '⏸️'; if (text) text.textContent = 'إيقاف مؤقت';
+          if (dotEl) dotEl.classList.remove('paused'); runTourStep(currentTourStep);
+        }
+      }
+
+      function restartTour() {
+        tourRunning = true;
+        const icon = document.getElementById('tourPlayPauseIcon'), text = document.getElementById('tourPlayPauseText');
+        if (icon) icon.textContent = '⏸️'; if (text) text.textContent = 'إيقاف مؤقت';
+        clearAllTourTimers(); runTourStep(1);
+      }
+
+      function nextTourStep() {
+        clearAllTourTimers();
+        let nextStep = currentTourStep + 1;
+        if (nextStep > 4) nextStep = 1;
+        runTourStep(nextStep);
+      }
+
+      /** تشغيل خطوة محددة في دورة الجولة الكاملة */
+      function runTourStep(stepNum) {
+        if (!tourRunning) return;
+        clearAllTourTimers(); currentTourStep = stepNum;
+        switch(stepNum) {
+          case 1: runKpiTour(() => runTourStep(2)); break;
+          case 2: runShowcasesTour(() => runTourStep(3)); break;
+          case 3: runWorkflowTour(() => runTourStep(4)); break;
+          case 4: runComparisonTour(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            addTourTimer(() => runTourStep(1), 1200);
+          }); break;
+          default: runTourStep(1);
+        }
+      }
+
+      /** الخطوة 1: استعراض كروت المقاييس العلوية وسهم كل كارت بالتتابع */
+      function runKpiTour(onDone) {
+        updateTourBar(1, 'الخطوة 1 من 4: مؤشرات الأداء المتتالية مع تدفق الأسهم ⚡');
+        const sec = document.getElementById('section-kpis');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const cards = [document.getElementById('kpi-card-1'), document.getElementById('kpi-card-2'), document.getElementById('kpi-card-3'), document.getElementById('kpi-card-4')];
+        const arrows = [document.getElementById('kpi-arrow-1'), document.getElementById('kpi-arrow-2'), document.getElementById('kpi-arrow-3')];
+        cards.forEach(c => { if (c) c.classList.remove('active-step', 'completed-step'); });
+        arrows.forEach(a => { if (a) a.classList.remove('active-arrow'); });
+
+        addTourTimer(() => { if (cards[0]) cards[0].classList.add('active-step'); if (arrows[0]) arrows[0].classList.add('active-arrow'); }, 300);
+        addTourTimer(() => {
+          if (cards[0]) { cards[0].classList.remove('active-step'); cards[0].classList.add('completed-step'); }
+          if (arrows[0]) arrows[0].classList.remove('active-arrow');
+          if (cards[1]) cards[1].classList.add('active-step'); if (arrows[1]) arrows[1].classList.add('active-arrow');
+        }, 1400);
+        addTourTimer(() => {
+          if (cards[1]) { cards[1].classList.remove('active-step'); cards[1].classList.add('completed-step'); }
+          if (arrows[1]) arrows[1].classList.remove('active-arrow');
+          if (cards[2]) cards[2].classList.add('active-step'); if (arrows[2]) arrows[2].classList.add('active-arrow');
+        }, 2500);
+        addTourTimer(() => {
+          if (cards[2]) { cards[2].classList.remove('active-step'); cards[2].classList.add('completed-step'); }
+          if (arrows[2]) arrows[2].classList.remove('active-arrow');
+          if (cards[3]) cards[3].classList.add('active-step');
+        }, 3600);
+        addTourTimer(() => {
+          if (cards[3]) { cards[3].classList.remove('active-step'); cards[3].classList.add('completed-step'); }
+          if (onDone) onDone();
+        }, 4800);
+      }
+
+      /** بيانات السيناريوهات الثلاثة للشات */
+      const scenariosData = {
+        1: [
+          { role: 'user', text: 'السلام عليكم، ممكن رابط دفع إيجار شهر سبتمبر؟', time: '10:14 ص', delay: 400 },
+          { role: 'bot', text: 'أهلاً بك يا بو فهد في دانة المستقبل! 🏢<br>لتأكيد هويتك وحماية بياناتك، يرجى تزويدي بـ <strong>آخر 4 أرقام من بطاقتك المدنية</strong>.', time: '10:14 ص', delay: 1800, reveal: 1 },
+          { role: 'user', text: '4521', time: '10:15 ص', delay: 3200 },
+          { role: 'bot', text: 'تم التحقق بنجاح ✅<br>فاتورة شهر سبتمبر لشقتك (302) بقيمة <strong>450 د.ك</strong> جاهزة.<br>رابط كي نت المباشر:<br><a href="#" style="color:var(--primary);font-weight:700;text-decoration:underline;">pay.danat-future.com/pay/inv_982</a><br><small style="color:var(--wa-subtext);">(متبقي لديك 4 أشهر حتى نهاية العقد).</small>', time: '10:15 ص', delay: 4800, reveal: 2, revealNext: 3, badge: '⚡ تم التحقق المصرفي وتوليد رابط كي نت في 0.9 ثانية' }
+        ],
+        2: [
+          { role: 'user', text: 'أرسلي إيصال شهر أغسطس المسدد على إيميلي لو سمحت.', time: '11:02 ص', delay: 400 },
+          { role: 'bot', text: 'تم التحقق من سداد فاتورة أغسطس بالكامل (450 د.ك) ✅<br>تم إرسال إيصال السداد المعتمد رقم (#REC-2026-08) إلى بريدك المسجل:<br>📧 <strong>b****d@gmail.com</strong><br>كما يمكنك تنزيله الآن:<br><span class="pdf-chip" id="receiptDownloadBtn" onclick="openReceiptModal()">📄 [تحميل الإيصال PDF]</span>', time: '11:02 ص', delay: 1800, triggerHand: true, badge: '📄 تم التحقق من سداد أغسطس وإصدار إيصال PDF معتمد' }
+        ],
+        3: [
+          { role: 'user', text: 'أبي إيصال شهر سبتمبر لو سمحت.', time: '11:20 ص', delay: 400 },
+          { role: 'bot', text: 'عذراً يا بو فهد، فاتورة شهر سبتمبر <strong>غير مسددة بعد</strong> وقيمتها 450 د.ك.<br>لا يمكن إصدار إيصال لفاتورة معلقة ⚠️<br>يمكنك سدادها فوراً عبر الرابط:<br><a href="#" style="color:var(--primary);font-weight:700;text-decoration:underline;">[رابط كي نت السريع]</a><br>وسيصلك الإيصال تلقائياً فور تأكيد البنك.', time: '11:20 ص', delay: 1800, badge: '🔒 تم فحص القيود المحاسبية ومنع إصدار إيصال لفاتورة غير مسددة' }
+        ]
+      };
+
+      /** الخطوة 2: محاكاة الشات الحية عبر السيناريوهات 1 و 2 و 3 بالتتابع */
+      function runShowcasesTour(onDone) {
+        const sec = document.getElementById('section-showcases');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        playSingleScenario(1, () => {
+          addTourTimer(() => {
+            playSingleScenario(2, () => {
+              addTourTimer(() => {
+                playSingleScenario(3, () => { addTourTimer(() => { if (onDone) onDone(); }, 1200); });
+              }, 1200);
+            });
+          }, 1200);
+        });
+      }
+
+      function playSingleScenario(id, onComplete) {
+        const titles = { 1: 'طلب رابط كي نت المباشر', 2: 'استخراج إيصال شهر مدفوع (PDF)', 3: 'فحص الفواتير غير المسددة' };
+        updateTourBar(2, `الخطوة 2 من 4: محاكاة الشات الحية • ${titles[id]} 💬`);
+        document.querySelectorAll('.tab-btn').forEach((btn, idx) => btn.classList.toggle('active', idx === (id - 1)));
+        if (id === 1) {
+          for (let i = 1; i <= 3; i++) {
+            const card = document.getElementById('impact' + i);
+            if (card) card.classList.remove('revealed');
+          }
+        }
+        const container = document.getElementById('chatContainer'), typing = document.getElementById('typingBubble'), badge = document.getElementById('chatBadge'), statusEl = document.getElementById('agentStatus');
+        container.querySelectorAll('.msg-bubble:not(#typingBubble)').forEach(m => m.remove());
+        if (badge) badge.classList.remove('visible');
+
+        const steps = scenariosData[id];
+        steps.forEach((step) => {
+          if (step.role === 'bot') {
+            addTourTimer(() => {
+              if (typing) { typing.style.display = 'block'; container.appendChild(typing); container.scrollTop = container.scrollHeight; }
+              if (statusEl) { statusEl.classList.add('typing'); statusEl.textContent = 'يكتب الآن...'; }
+            }, step.delay - 850);
+          }
+          addTourTimer(() => {
+            if (typing) typing.style.display = 'none';
+            if (statusEl) { statusEl.classList.remove('typing'); statusEl.textContent = 'متصل الآن (الوكيل الذكي)'; }
+            const div = document.createElement('div');
+            div.className = `msg-bubble visible ${step.role === 'user' ? 'msg-user' : 'msg-bot'}`;
+            div.innerHTML = `${step.text} <div class="msg-time">${step.time}</div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+
+            if (step.reveal) { const c = document.getElementById('impact' + step.reveal); if (c) c.classList.add('revealed'); }
+            if (step.revealNext) { addTourTimer(() => { const c = document.getElementById('impact' + step.revealNext); if (c) c.classList.add('revealed'); }, 400); }
+            if (step.badge && badge) {
+              badge.querySelector('span').textContent = step.badge;
+              container.appendChild(badge); badge.classList.add('visible'); container.scrollTop = container.scrollHeight;
+            }
+            if (step.triggerHand) {
+              addTourTimer(() => {
+                const btn = document.getElementById('receiptDownloadBtn');
+                if (btn) animateHandToReceipt(btn, () => {
+                  addTourTimer(() => { closeReceiptModal(); if (onComplete) onComplete(); }, 2400);
+                });
+              }, 400);
+            }
+          }, step.delay);
+        });
+
+        if (!steps.some(s => s.triggerHand)) {
+          const lastDelay = steps[steps.length - 1].delay + 2200;
+          addTourTimer(() => { if (onComplete) onComplete(); }, lastDelay);
+        }
+      }
+
+      function userSelectTab(id) {
+        clearAllTourTimers();
+        playSingleScenario(id, () => { addTourTimer(() => nextTourStep(), 1500); });
+      }
+
+      /** تحريك مؤشر اليد نحو رابط الإيصال والضغط التلقائي عليه */
+      function animateHandToReceipt(targetBtn, callback) {
+        const hand = document.getElementById('handCursor'), phone = document.querySelector('.phone-mockup');
+        if (!hand || !targetBtn || !phone) return;
+        const phoneRect = phone.getBoundingClientRect(), btnRect = targetBtn.getBoundingClientRect();
+        hand.style.left = '40px'; hand.style.top = '360px'; hand.style.opacity = '1';
+        addTourTimer(() => {
+          hand.style.left = ((btnRect.left - phoneRect.left) + 20) + 'px';
+          hand.style.top = ((btnRect.top - phoneRect.top) + 8) + 'px';
+          addTourTimer(() => {
+            hand.classList.add('clicking');
+            addTourTimer(() => { openReceiptModal(); hideHandCursor(); if (callback) callback(); }, 450);
+          }, 850);
+        }, 300);
+      }
+
+      function hideHandCursor() {
+        const hand = document.getElementById('handCursor');
+        if (hand) { hand.style.opacity = '0'; hand.classList.remove('clicking'); }
+      }
+
+      function openReceiptModal() { document.getElementById('receiptModal').classList.add('active'); }
+      function closeReceiptModal() { document.getElementById('receiptModal').classList.remove('active'); }
+      function closeReceiptModalOnBackdrop(e) { if (e.target.id === 'receiptModal') closeReceiptModal(); }
+
+      /** الخطوة 3: استعراض مسار المعالجة اللحظية وأسهم التدفق بالتتابع */
+      function runWorkflowTour(onDone) {
+        updateTourBar(3, 'الخطوة 3 من 4: مسار المعالجة التفاعلية اللحظية (5 خطوات) 🔄');
+        const sec = document.getElementById('section-workflow');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        const steps = [document.getElementById('step-box-1'), document.getElementById('step-box-2'), document.getElementById('step-box-3'), document.getElementById('step-box-4'), document.getElementById('step-box-5')];
+        const arrows = [document.getElementById('flow-arrow-1'), document.getElementById('flow-arrow-2'), document.getElementById('flow-arrow-3'), document.getElementById('flow-arrow-4')];
+        steps.forEach(s => { if (s) s.classList.remove('active-step', 'completed-step'); });
+        arrows.forEach(a => { if (a) a.classList.remove('active-arrow'); });
+
+        addTourTimer(() => { if (steps[0]) steps[0].classList.add('active-step'); if (arrows[0]) arrows[0].classList.add('active-arrow'); }, 300);
+        addTourTimer(() => {
+          if (steps[0]) { steps[0].classList.remove('active-step'); steps[0].classList.add('completed-step'); }
+          if (arrows[0]) arrows[0].classList.remove('active-arrow');
+          if (steps[1]) steps[1].classList.add('active-step'); if (arrows[1]) arrows[1].classList.add('active-arrow');
+        }, 1300);
+        addTourTimer(() => {
+          if (steps[1]) { steps[1].classList.remove('active-step'); steps[1].classList.add('completed-step'); }
+          if (arrows[1]) arrows[1].classList.remove('active-arrow');
+          if (steps[2]) steps[2].classList.add('active-step'); if (arrows[2]) arrows[2].classList.add('active-arrow');
+        }, 2300);
+        addTourTimer(() => {
+          if (steps[2]) { steps[2].classList.remove('active-step'); steps[2].classList.add('completed-step'); }
+          if (arrows[2]) arrows[2].classList.remove('active-arrow');
+          if (steps[3]) steps[3].classList.add('active-step'); if (arrows[3]) arrows[3].classList.add('active-arrow');
+        }, 3300);
+        addTourTimer(() => {
+          if (steps[3]) { steps[3].classList.remove('active-step'); steps[3].classList.add('completed-step'); }
+          if (arrows[3]) arrows[3].classList.remove('active-arrow');
+          if (steps[4]) steps[4].classList.add('active-step');
+        }, 4300);
+        addTourTimer(() => {
+          if (steps[4]) { steps[4].classList.remove('active-step'); steps[4].classList.add('completed-step'); }
+          if (onDone) onDone();
+        }, 5500);
+      }
+
+      /** الخطوة 4: إنفوجرافيك المقارنة الشاملة يظهر كارت كارت بفارق زمني مريح للقراءة */
+      function runComparisonTour(onDone) {
+        updateTourBar(4, 'الخطوة 4 من 4: إنفوجرافيك المقارنة (النظام التقليدي مقابل الذكي) 📊');
+        const sec = document.getElementById('section-comparison');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        for (let i = 1; i <= 5; i++) {
+          const row = document.getElementById('infoRow' + i);
+          if (row) row.classList.remove('revealed');
+        }
+        for (let i = 1; i <= 5; i++) {
+          addTourTimer(() => {
+            const row = document.getElementById('infoRow' + i);
+            if (row) row.classList.add('revealed');
+          }, (i - 1) * 1800 + 400);
+        }
+        addTourTimer(() => { if (onDone) onDone(); }, 13500);
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => runTourStep(1), 600);
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeReceiptModal();
+      });
+    </script>
+  </body>
+</html>

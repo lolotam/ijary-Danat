@@ -1,0 +1,77 @@
+/* Danat Al Mustaqbal — "Ivory Estate" palette (redesign 1c, chosen 2026-07). Ivory + black + gold. */
+:root {
+  --radius: 0.875rem;
+  --background: #f7f3ea; /* warm ivory page */
+  --foreground: #171512; /* near-black warm ink */
+  --card: #ffffff;
+  --card-foreground: #171512;
+  --popover: #ffffff;
+  --popover-foreground: #171512;
+  --primary: #171512; /* black = primary action */
+  --primary-foreground: #f5efe0;
+  --secondary: #efe9da; /* ivory tint fill */
+  --secondary-foreground: #171512;
+  --muted: #f0ebde;
+  --muted-foreground: #6b6455;
+  --accent: #d4af37; /* brand gold */
+  --accent-foreground: #171204;
+  --gold-deep: #9c7a1e; /* gold for text/numbers on light */
+  --gold-soft: #cbbf9e;
+  --destructive: oklch(0.55 0.2 27);
+  --destructive-foreground: #fdfbf5;
+  --border: #e7dfc9;
+  --input: #ddd4bc;
+  --ring: #9c7a1e;
+  --chart-1: #d4af37;
+  --chart-2: #171512;
+  --chart-3: #9c7a1e;
+  --chart-4: #6b6455;
+  --chart-5: #cbbf9e;
+  --sidebar: #0e0d0b; /* brand-black rail */
+  --sidebar-foreground: #e8e0cc;
+  --sidebar-primary: #d4af37;
+  --sidebar-primary-foreground: #171204;
+  --sidebar-accent: #1c1913;
+  --sidebar-accent-foreground: #f5efe0;
+  --sidebar-border: rgb(212 175 55 / 22%);
+  --sidebar-ring: #d4af37;
+  /* semantic aliases */
+  --surface-page: var(--background);
+  --surface-card: var(--card);
+  --text-body: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --success: oklch(0.62 0.13 150);
+  /* brand-dark section tokens (headers, hero bands, footer) */
+  --ink: #0e0d0b;
+  --ink-foreground: #f5efe0;
+  --ink-muted: #8d8468;
+}
+.dark {
+  --background: #0e0d0b;
+  --foreground: #f5efe0;
+  --card: #141416;
+  --card-foreground: #f5efe0;
+  --popover: #141416;
+  --popover-foreground: #f5efe0;
+  --primary: #d4af37;
+  --primary-foreground: #171204;
+  --secondary: #1c1913;
+  --secondary-foreground: #f5efe0;
+  --muted: #1c1913;
+  --muted-foreground: #8d8468;
+  --accent: #d4af37;
+  --accent-foreground: #171204;
+  --destructive: oklch(0.65 0.19 25);
+  --destructive-foreground: #fdfbf5;
+  --border: rgb(212 175 55 / 22%);
+  --input: rgb(212 175 55 / 30%);
+  --ring: #d4af37;
+  --sidebar: #0e0d0b;
+  --sidebar-foreground: #e8e0cc;
+  --sidebar-primary: #d4af37;
+  --sidebar-primary-foreground: #171204;
+  --sidebar-accent: #1c1913;
+  --sidebar-accent-foreground: #f5efe0;
+  --sidebar-border: rgb(212 175 55 / 22%);
+  --sidebar-ring: #d4af37;
+}

@@ -1,0 +1,5 @@
+},
+"mem0-mcp": {
+"url": "https://mcp.mem0.ai/mcp",
+"type": "http"
+}

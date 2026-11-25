@@ -1,0 +1,126 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Display" subtitle="Card, Badge, Table, Alert, Avatar, Progress, Logo" -->
+<!doctype html>
+<html dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../styles.css" />
+    <script
+      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+      crossorigin="anonymous"
+    ></script>
+    <script src="../../_ds_bundle.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font-family: var(--font-sans);
+      }
+      * {
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel">
+      const {
+        Card,
+        CardHeader,
+        CardTitle,
+        CardDescription,
+        CardContent,
+        Badge,
+        Avatar,
+        Table,
+        TableHeader,
+        TableBody,
+        TableRow,
+        TableHead,
+        TableCell,
+        Alert,
+        AlertDescription,
+        Skeleton,
+        Separator,
+        Progress,
+        Logo,
+        Icon,
+      } = window.DanatAlMustaqbalDesignSystem_110f06;
+      function Demo() {
+        return (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <Logo />
+              <Separator orientation="vertical" style={{ height: 28 }} />
+              <Badge>نشط</Badge>
+              <Badge variant="success">مدفوعة</Badge>
+              <Badge variant="destructive">متأخرة</Badge>
+              <Badge variant="secondary">مسودة</Badge>
+              <Badge variant="outline">مؤرشف</Badge>
+              <Avatar fallback="أح" />
+              <div style={{ flex: 1 }}>
+                <Progress value={62} />
+              </div>
+              <Skeleton style={{ height: 20, width: 90 }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 12 }}>
+              <Card>
+                <CardHeader style={{ padding: 20 }}>
+                  <CardDescription>فواتير الإيجار</CardDescription>
+                  <CardTitle style={{ fontSize: 30 }}>1,240</CardTitle>
+                  <CardDescription style={{ fontSize: 11 }}>هذا الشهر</CardDescription>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardContent style={{ padding: 8 }}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>المستأجر</TableHead>
+                        <TableHead>الوحدة</TableHead>
+                        <TableHead>المبلغ (د.ك)</TableHead>
+                        <TableHead>الحالة</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell>أحمد الصالح</TableCell>
+                        <TableCell>A-12</TableCell>
+                        <TableCell>250.000</TableCell>
+                        <TableCell>
+                          <Badge variant="success">مدفوعة</Badge>
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>شركة الخليج</TableCell>
+                        <TableCell>B-03</TableCell>
+                        <TableCell>780.000</TableCell>
+                        <TableCell>
+                          <Badge variant="destructive">متأخرة</Badge>
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+            <Alert variant="success">
+              <AlertDescription>تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.</AlertDescription>
+            </Alert>
+          </div>
+        );
+      }
+      ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+    </script>
+  </body>
+</html>

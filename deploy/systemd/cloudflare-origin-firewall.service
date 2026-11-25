@@ -1,0 +1,18 @@
+# Re-applies the Cloudflare-only filter on the web ports. iptables rules do
+# not survive a reboot, and DOCKER-USER only exists once Docker has started.
+[Unit]
+Description=Restrict origin web ports to Cloudflare
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cloudflare-origin-firewall.sh apply
+# A first boot with no cached list and no network would otherwise wait for
+# the next daily timer run with the ports open.
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

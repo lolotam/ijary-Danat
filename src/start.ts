@@ -1,0 +1,34 @@
+import {
+  captureException,
+  sentryGlobalFunctionMiddleware,
+  sentryGlobalRequestMiddleware,
+} from "@sentry/tanstackstart-react";
+import { createStart, createMiddleware } from "@tanstack/react-start";
+
+import { renderErrorPage } from "./lib/error-page";
+import { attachSupabaseAuth } from "./integrations/supabase/auth-attacher";
+
+const errorMiddleware = createMiddleware().server(async ({ next }) => {
+  try {
+    return await next();
+  } catch (error) {
+    if (error != null && typeof error === "object" && "statusCode" in error) {
+      throw error;
+    }
+    // Sentry's middleware is outermost, so a throw converted to a Response here
+    // would never reach it; report before swallowing.
+    captureException(error);
+    console.error(error);
+    return new Response(renderErrorPage(), {
+      status: 500,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+});
+
+export const startInstance = createStart(() => ({
+  // Sentry first in both arrays so its span covers the whole request; the
+  // errors errorMiddleware swallows are reported from its catch instead.
+  requestMiddleware: [sentryGlobalRequestMiddleware, errorMiddleware],
+  functionMiddleware: [sentryGlobalFunctionMiddleware, attachSupabaseAuth],
+}));

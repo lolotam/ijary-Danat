@@ -1,8 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { companyClient } from "@/company/companyClient.server";
-import { CompanyContextError } from "@/company/errors";
-import { getRequestCompany } from "@/company/requestCompany.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { companyStoragePath } from "@/company/storagePath";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { parseServerInput } from "@/lib/parseServerInput";
@@ -37,14 +36,15 @@ export const uploadShopMedia = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => parseServerInput(uploadShopMediaSchema, data))
   .handler(async ({ data, context }) => {
+    // The company comes from the host only: `requireSupabaseAuth` already
+    // refused a session whose profile belongs to another company.
+    const companyId = requireRequestCompany().id;
     const profile = await context.supabase
       .from("profiles")
-      .select("company_id, tenant_id")
+      .select("tenant_id")
       .eq("id", context.userId)
       .maybeSingle();
     if (profile.error) throw new Error(profile.error.message);
-    const companyId = getRequestCompany()?.id ?? profile.data?.company_id;
-    if (!companyId) throw new CompanyContextError("COMPANY_REQUIRED");
     const tenantId = profile.data?.tenant_id;
     if (!tenantId) throw new Error("Permission denied");
 

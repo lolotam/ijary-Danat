@@ -31,10 +31,12 @@ export function extractCompanyIdFromStoragePath(
  *
  * Rejects missing/invalid company ids, traversal segments (`..`), and paths
  * already prefixed for a different company so every bucket stays isolated by
- * `285_storage_company_paths.sql`.
+ * `304_storage_company_paths.sql`.
  */
 export function companyStoragePath(companyId: string, relativePath: string): string {
-  const validCompanyId = assertStorageCompanyId(companyId);
+  // Storage policies compare the folder to `current_company_id()::text`, which
+  // Postgres always renders lowercase; an uppercase id would be refused.
+  const validCompanyId = assertStorageCompanyId(companyId).toLowerCase();
   const cleaned = relativePath.replace(/^\/+/, "");
   if (!cleaned) {
     throw new Error("Storage relative path is required");
@@ -47,7 +49,7 @@ export function companyStoragePath(companyId: string, relativePath: string): str
 
   if (segments[0] === "companies") {
     const existingCompanyId = segments[1];
-    if (!existingCompanyId || existingCompanyId.toLowerCase() !== validCompanyId.toLowerCase()) {
+    if (!existingCompanyId || existingCompanyId.toLowerCase() !== validCompanyId) {
       throw new Error("Cross-company storage path rejected");
     }
     if (segments.length < 3) {

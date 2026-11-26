@@ -4,7 +4,6 @@ import type { CompanyStatus } from "@/integrations/supabase/database.types";
 
 const HOST_CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 1_000;
-const LOCALHOST_SUFFIX = ".localhost";
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/;
 
 interface HostCacheEntry {
@@ -14,10 +13,9 @@ interface HostCacheEntry {
 
 export interface HostLookupDeps {
   findDomainCompany?: (host: string) => Promise<RequestCompany | null>;
-  findDevCompanyBySlug?: (slug: string) => Promise<RequestCompany | null>;
+  findCompanyBySlug?: (slug: string) => Promise<RequestCompany | null>;
   rootHost?: string;
   adminHost?: string;
-  isDevelopment?: boolean;
   now?: () => number;
 }
 
@@ -40,10 +38,19 @@ export function normalizeHost(rawHost: string | null | undefined): string {
 }
 
 /**
- * يستخرج اسم المضيف المطبَّع من طلب HTTP مع تفضيل X-Forwarded-Host عند وجود وكيل.
+ * يستخرج اسم المضيف المطبَّع من طلب HTTP، ولا يقرأ X-Forwarded-Host إلا خلف وكيل موثوق.
+ *
+ * Any client can send `X-Forwarded-Host`, and the host picks the company, so
+ * trusting it unconditionally let a request to one company's address run under
+ * another company's context. Traefik routes on `Host` and passes it through
+ * unchanged, so `Host` is the default; set `TRUST_FORWARDED_HOST=true` only
+ * when a proxy in front overwrites `X-Forwarded-Host` itself.
  */
-export function extractRequestHost(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-host");
+export function extractRequestHost(
+  request: Request,
+  trustForwardedHost = process.env.TRUST_FORWARDED_HOST === "true",
+): string {
+  const forwarded = trustForwardedHost ? request.headers.get("x-forwarded-host") : null;
   if (forwarded && forwarded.trim()) {
     return normalizeHost(forwarded);
   }
@@ -61,11 +68,12 @@ export function extractRequestHost(request: Request): string {
 }
 
 /**
- * يستخرج المعرّف المختصر للشركة من نطاق *.localhost في بيئة التطوير فقط.
+ * يستخرج المعرّف المختصر للشركة من نطاق فرعي بمستوى واحد تحت مضيف الجذر (`<slug>.<root>`).
  */
-export function extractDevLocalhostSlug(hostname: string): string | null {
-  if (!hostname.endsWith(LOCALHOST_SUFFIX)) return null;
-  const slug = hostname.slice(0, -LOCALHOST_SUFFIX.length);
+export function extractSubdomainSlug(hostname: string, rootHost: string): string | null {
+  const suffix = `.${rootHost}`;
+  if (!rootHost || !hostname.endsWith(suffix)) return null;
+  const slug = hostname.slice(0, -suffix.length);
   return SLUG_PATTERN.test(slug) ? slug : null;
 }
 
@@ -144,7 +152,7 @@ async function queryDomainCompany(host: string): Promise<RequestCompany | null> 
 }
 
 /**
- * يبحث في قاعدة البيانات عن شركة بالمعرّف المختصر لدعم `*.localhost` في التطوير.
+ * يبحث في قاعدة البيانات عن شركة بالمعرّف المختصر لحسم `<slug>.<root>`.
  */
 async function queryCompanyBySlug(slug: string, host: string): Promise<RequestCompany | null> {
   const { data: companyRow, error: companyError } = await supabaseAdmin
@@ -160,11 +168,15 @@ async function queryCompanyBySlug(slug: string, host: string): Promise<RequestCo
 }
 
 /**
- * يحسم المضيف عبر قاعدة البيانات مع مسار احتياطي لـ `*.localhost` خارج الإنتاج.
+ * يحسم المضيف: نطاق متحقق منه في `company_domains` أولاً، ثم `<slug>.<root>` بالمعرّف المختصر.
+ *
+ * Nothing writes `subdomain` rows to `company_domains`, so every company's
+ * automatic address resolves through its slug; `company_domains` carries the
+ * verified custom domains.
  */
 async function lookupCompanyForHost(
   host: string,
-  isDevelopment: boolean,
+  rootHost: string,
   deps?: HostLookupDeps,
 ): Promise<{ company: RequestCompany | null; cacheable: boolean }> {
   try {
@@ -174,15 +186,13 @@ async function lookupCompanyForHost(
       return { company: domainCompany, cacheable: true };
     }
 
-    if (isDevelopment) {
-      const devSlug = extractDevLocalhostSlug(host);
-      if (devSlug) {
-        const findBySlug =
-          deps?.findDevCompanyBySlug ?? ((slug: string) => queryCompanyBySlug(slug, host));
-        const devCompany = await findBySlug(devSlug);
-        if (devCompany) {
-          return { company: devCompany, cacheable: true };
-        }
+    const slug = extractSubdomainSlug(host, rootHost);
+    if (slug) {
+      const findBySlug =
+        deps?.findCompanyBySlug ?? ((candidate: string) => queryCompanyBySlug(candidate, host));
+      const slugCompany = await findBySlug(slug);
+      if (slugCompany) {
+        return { company: slugCompany, cacheable: true };
       }
     }
 
@@ -226,8 +236,7 @@ export async function resolveHostCompany(
     return cached.resolution;
   }
 
-  const isDevelopment = deps?.isDevelopment ?? process.env.NODE_ENV !== "production";
-  const { company, cacheable } = await lookupCompanyForHost(host, isDevelopment, deps);
+  const { company, cacheable } = await lookupCompanyForHost(host, rootHost, deps);
   const resolution: HostResolution = company
     ? { kind: "company", host, company }
     : { kind: "unknown", host, company: null };
@@ -252,5 +261,6 @@ export async function listActiveCompanies(): Promise<RequestCompany[]> {
     throw new Error(`Could not list active companies: ${error.message}`);
   }
 
-  return (data ?? []).map((row) => toRequestCompany(row, `${row.slug}.localhost`));
+  const { rootHost } = readPlatformHosts();
+  return (data ?? []).map((row) => toRequestCompany(row, `${row.slug}.${rootHost}`));
 }

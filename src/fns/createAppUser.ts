@@ -11,7 +11,7 @@ import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
 import { notifyUserCredentials, type CredentialSendResult } from "@/fns/notifyUserCredentials";
 import { normalisePhoneForSave } from "@/lib/phoneConflicts.server";
-import { getAuthAdmin } from "@/platform/authAdmin.server";
+import { createAuthUser, deleteAuthUser } from "@/platform/authAdmin.server";
 import { syncTenantContact } from "@/fns/syncTenantContact";
 import { isTenantAccountConflict, TENANT_ALREADY_HAS_ACCOUNT } from "@/lib/tenantPortalAccount";
 import { TENANT_PAUSED_REASON } from "@/lib/tenantNotificationsPaused";
@@ -195,7 +195,7 @@ export const createAppUser = createServerFn({ method: "POST" })
     const email = data.email.toLowerCase();
 
     // 1. Create auth user (email-confirmed so they can sign in immediately)
-    const createRes = await getAuthAdmin().createUser({
+    const createRes = await createAuthUser({
       email,
       password: data.password,
       email_confirm: true,
@@ -232,7 +232,7 @@ export const createAppUser = createServerFn({ method: "POST" })
       .single();
     if (profileRes.error) {
       // Roll back auth user on failure
-      await getAuthAdmin().deleteUser(userId);
+      await deleteAuthUser(userId);
       if (isUsernameConflict(profileRes.error)) {
         throw usernameTakenError(data.username);
       }
@@ -249,7 +249,7 @@ export const createAppUser = createServerFn({ method: "POST" })
       .from("user_roles")
       .insert({ company_id: company.id, user_id: userId, role, granted_by: context.userId } as any);
     if (roleRes.error) {
-      await getAuthAdmin().deleteUser(userId);
+      await deleteAuthUser(userId);
       throw new Error(roleRes.error.message);
     }
 

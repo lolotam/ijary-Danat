@@ -412,3 +412,43 @@ $$;
 
 revoke execute on function public._legacy_single_company_id()
   from public, anon, authenticated, company_service;
+
+------------------------------------------------------------
+-- 8. Strict company scope for security definer functions
+------------------------------------------------------------
+
+/**
+ * يرجع شركة الطلب الحالي، ويرفض بـ COMPANY_REQUIRED أي دور API بدون شركة؛ يرجع null للمنصة فقط.
+ *
+ * Security definer functions bypass RLS and used to filter with
+ * `(v_company_id is null or company_id = v_company_id)`, so a caller whose
+ * context resolved to null (anon, a suspended company, a missing profile) saw
+ * every company's rows. Only platform callers with no API role (pg_cron, the
+ * migration runner, `service_role`) may get null here and sweep all companies.
+ */
+create or replace function public.current_company_id_strict()
+returns uuid
+language plpgsql
+stable
+set search_path = public, auth
+as $$
+declare
+  v_company_id uuid := public.current_company_id();
+  v_role text := coalesce(
+    nullif(nullif(current_setting('role', true), 'none'), ''),
+    nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', ''),
+    auth.role(),
+    ''
+  );
+begin
+  if v_company_id is null
+     and v_role not in ('', 'service_role', 'postgres', 'supabase_admin') then
+    raise exception 'COMPANY_REQUIRED' using errcode = '42501';
+  end if;
+  return v_company_id;
+end;
+$$;
+
+revoke execute on function public.current_company_id_strict() from public, anon;
+grant execute on function public.current_company_id_strict()
+  to authenticated, company_service, service_role;

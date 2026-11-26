@@ -7,7 +7,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
 import { normalisePhoneForSave } from "@/lib/phoneConflicts.server";
-import { getAuthAdmin } from "@/platform/authAdmin.server";
+import { updateAuthUserById } from "@/platform/authAdmin.server";
 import type { AppRole, TablesUpdate } from "@/integrations/supabase/database.types";
 import { syncTenantContact } from "@/fns/syncTenantContact";
 import { isTenantAccountConflict, TENANT_ALREADY_HAS_ACCOUNT } from "@/lib/tenantPortalAccount";
@@ -128,7 +128,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
       };
     }
     if (Object.keys(authUpdates).length) {
-      const authRes = await getAuthAdmin().updateUserById(data.userId, authUpdates);
+      const authRes = await updateAuthUserById(data.userId, authUpdates);
       if (authRes.error) {
         if (authEmail && isEmailTaken(authRes.error)) throw await emailTakenError(authEmail);
         throw new Error(authErrorMessage(authRes.error, "Failed to update the auth user"));

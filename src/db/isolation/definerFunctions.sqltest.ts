@@ -66,7 +66,9 @@ describe("company isolation structure: security definer functions (T013)", () =>
       for (const fn of rows) {
         if (DEFINER_ALLOWLIST.has(fn.proname)) continue;
         const code = stripSqlComments(fn.body);
-        if (!/\bcurrent_company_id\s*\(/i.test(code)) {
+        // `current_company_id_strict()` (T052j) calls `current_company_id()` and
+        // raises COMPANY_REQUIRED when it is null, so it counts as scoping.
+        if (!/\bcurrent_company_id(?:_strict)?\s*\(/i.test(code)) {
           offending.push(fn.signature);
         }
       }

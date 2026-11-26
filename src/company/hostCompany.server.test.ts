@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompanyContextError, isCompanyContextError } from "@/company/errors";
 import {
   clearHostCompanyCache,
-  extractDevLocalhostSlug,
   extractRequestHost,
+  extractSubdomainSlug,
   normalizeHost,
   resolveHostCompany,
 } from "@/company/hostCompany.server";
@@ -39,14 +39,15 @@ describe("normalizeHost and extractRequestHost", () => {
     expect(normalizeHost("   ")).toBe("");
   });
 
-  it("prefers x-forwarded-host over host and request URL", () => {
+  it("ignores a client-sent x-forwarded-host unless a trusted proxy sets it", () => {
     const req = new Request("http://internal:3000/admin", {
       headers: {
         "x-forwarded-host": "Acme.Ijary.App, proxy",
-        host: "internal:3000",
+        host: "beta.ijary.app",
       },
     });
-    expect(extractRequestHost(req)).toBe("acme.ijary.app");
+    expect(extractRequestHost(req, false)).toBe("beta.ijary.app");
+    expect(extractRequestHost(req, true)).toBe("acme.ijary.app");
   });
 
   it("falls back to host header and request URL when x-forwarded-host is absent", () => {
@@ -60,13 +61,16 @@ describe("normalizeHost and extractRequestHost", () => {
   });
 });
 
-describe("extractDevLocalhostSlug", () => {
-  it("extracts valid single-label slugs from *.localhost and rejects invalid hosts", () => {
-    expect(extractDevLocalhostSlug("acme.localhost")).toBe("acme");
-    expect(extractDevLocalhostSlug("danat-co1.localhost")).toBe("danat-co1");
-    expect(extractDevLocalhostSlug("sub.acme.localhost")).toBeNull();
-    expect(extractDevLocalhostSlug("a.localhost")).toBeNull();
-    expect(extractDevLocalhostSlug("acme.ijary.app")).toBeNull();
+describe("extractSubdomainSlug", () => {
+  it.each([
+    ["acme.ijary.app", "ijary.app", "acme"],
+    ["danat-co1.localhost", "localhost", "danat-co1"],
+    ["sub.acme.ijary.app", "ijary.app", null],
+    ["a.ijary.app", "ijary.app", null],
+    ["acme.ijary.app.evil.com", "ijary.app", null],
+    ["acmeijary.app", "ijary.app", null],
+  ])("%s under %s gives %s", (host, root, expected) => {
+    expect(extractSubdomainSlug(host, root)).toBe(expected);
   });
 });
 
@@ -127,40 +131,30 @@ describe("resolveHostCompany", () => {
     expect(findDomainCompany).toHaveBeenCalledTimes(2);
   });
 
-  it("resolves *.localhost in development by slug and ignores it in production", async () => {
-    const findDevCompanyBySlug = vi.fn(async (slug: string) =>
-      slug === "acme" ? { ...ACME_COMPANY, host: "acme.localhost" } : null,
+  it("resolves <slug>.<root> by slug when no domain row exists, and only under the root host", async () => {
+    const findCompanyBySlug = vi.fn(async (slug: string) =>
+      slug === "acme" ? ACME_COMPANY : null,
     );
-    const findDomainCompany = createDomainFinder({});
-
-    const devResult = await resolveHostCompany("acme.localhost:8080", {
-      rootHost: "localhost",
-      adminHost: "admin.localhost",
-      isDevelopment: true,
-      findDomainCompany,
-      findDevCompanyBySlug,
-    });
-    expect(devResult).toEqual({
-      kind: "company",
-      host: "acme.localhost",
-      company: { ...ACME_COMPANY, host: "acme.localhost" },
-    });
-    expect(findDevCompanyBySlug).toHaveBeenCalledWith("acme");
-
-    clearHostCompanyCache();
-    const prodResult = await resolveHostCompany("acme.localhost", {
+    const deps = {
       rootHost: "ijary.app",
       adminHost: "admin.ijary.app",
-      isDevelopment: false,
-      findDomainCompany,
-      findDevCompanyBySlug,
+      findDomainCompany: createDomainFinder({}),
+      findCompanyBySlug,
+    };
+
+    expect(await resolveHostCompany("acme.ijary.app", deps)).toEqual({
+      kind: "company",
+      host: "acme.ijary.app",
+      company: ACME_COMPANY,
     });
-    expect(prodResult).toEqual({
+    expect(findCompanyBySlug).toHaveBeenCalledWith("acme");
+
+    expect(await resolveHostCompany("acme.localhost", deps)).toEqual({
       kind: "unknown",
       host: "acme.localhost",
       company: null,
     });
-    expect(findDevCompanyBySlug).toHaveBeenCalledTimes(1);
+    expect(findCompanyBySlug).toHaveBeenCalledTimes(1);
   });
 
   it("does not cache transient lookup failures", async () => {

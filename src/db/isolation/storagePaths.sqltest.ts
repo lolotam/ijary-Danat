@@ -8,8 +8,8 @@ import { actAs, actAsSuperuser, captureRaise, closePool, withRollback } from "@/
 
 afterAll(closePool);
 
-/** الحاويات العامة الـ 3 التي تبقى قراءتها متاحة للعموم مع تقييد الكتابة بالشركة. */
-const PUBLIC_READ_BUCKETS = ["branding", "landing", "property-images"] as const;
+/** الحاويات العامة الـ 3: روابطها العامة تُخدم دون RLS، أما قراءة صفوف الكائنات فمقيّدة بالشركة. */
+const PUBLIC_URL_BUCKETS = ["branding", "landing", "property-images"] as const;
 
 /** الحاويات الخاصة الـ 11 التي تُقيَّد قراءتها وكتابتها بمسار `companies/<company_id>/`. */
 const PRIVATE_BUCKETS = [
@@ -27,7 +27,7 @@ const PRIVATE_BUCKETS = [
 ] as const;
 
 /** جميع حاويات التخزين الـ 14 في المنصة. */
-const ALL_14_BUCKETS = [...PUBLIC_READ_BUCKETS, ...PRIVATE_BUCKETS] as const;
+const ALL_14_BUCKETS = [...PUBLIC_URL_BUCKETS, ...PRIVATE_BUCKETS] as const;
 
 /**
  * يزرع كائناً تجريبياً في `storage.objects` بصلاحية المشرف لإجراء اختبارات القراءة والتعديل والحذف.
@@ -156,12 +156,12 @@ describe("storage path isolation across all 14 buckets (T018)", () => {
     });
   });
 
-  test("isolates reads on all 11 private buckets and preserves public read on branding and landing", async () => {
+  test("isolates object reads on all 14 buckets to the caller's company", async () => {
     await withRollback(async (client) => {
       const { A, B } = await seedTwoCompanies(client);
       const tag = randomUUID().slice(0, 8);
 
-      for (const bucketId of PRIVATE_BUCKETS) {
+      for (const bucketId of ALL_14_BUCKETS) {
         const pathA = `companies/${A.id}/priv/${tag}.txt`;
         const pathB = `companies/${B.id}/priv/${tag}.txt`;
         const unscoped = `unscoped-priv/${tag}.txt`;
@@ -194,22 +194,27 @@ describe("storage path isolation across all 14 buckets (T018)", () => {
           ).toEqual([pathA]);
         });
       }
+    });
+  });
 
-      for (const publicBucket of ["branding", "landing"] as const) {
-        const publicPath = `companies/${A.id}/pub/${tag}.png`;
-        await seedStorageObject(client, publicBucket, publicPath);
+  // Regression (T052m): a `to public` select on the public buckets let anyone
+  // list every company's file names through the storage API.
+  test("anon cannot list objects in the public-URL buckets", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      const tag = randomUUID().slice(0, 8);
 
-        await actAs(client, "anon");
-        const { rows } = await client.query<{ name: string }>(
-          `select name from storage.objects where bucket_id = $1 and name = $2`,
-          [publicBucket, publicPath],
-        );
-        expect(
-          rows.map((r) => r.name),
-          `${publicBucket} public read`,
-        ).toEqual([publicPath]);
-        await actAsSuperuser(client);
+      for (const bucketId of PUBLIC_URL_BUCKETS) {
+        await seedStorageObject(client, bucketId, `companies/${A.id}/pub/${tag}.png`);
       }
+
+      await actAs(client, "anon");
+      const { rows } = await client.query<{ name: string }>(
+        `select name from storage.objects where bucket_id = any($1::text[])`,
+        [[...PUBLIC_URL_BUCKETS]],
+      );
+      await actAsSuperuser(client);
+      expect(rows).toEqual([]);
     });
   });
 });

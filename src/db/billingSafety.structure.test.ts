@@ -58,10 +58,11 @@ describe("billing safety for archived contracts (live migration resolution)", ()
     // re-issued it so the line loop prices through the period pricer (rent
     // increase) — all still carrying the guard, which the archived_at
     // assertions below check against whichever file this resolves to. 280
-    // re-issued it to enforce `current_company_id()` and tenant-scoped joins;
+    // re-issued it to enforce `current_company_id()` and tenant-scoped joins
+    // (split into 284 by T052l);
     // each bump of this expectation is a deliberate update, not rot.
     expect(resolveLiveMigrationFile("regenerate_contract_invoices")).toBe(
-      "280_functions_billing.sql",
+      "284_functions_billing_generation.sql",
     );
     expect(resolveLiveMigrationFile("regenerate_contract_invoices")).not.toBe(
       "82_billing_safety_archived_contracts.sql",

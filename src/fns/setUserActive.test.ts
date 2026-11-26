@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 vi.mock("@/platform/authAdmin.server", () => ({
-  getAuthAdmin: () => ({ updateUserById: mocks.updateUserById }),
+  updateAuthUserById: mocks.updateUserById,
 }));
 
 vi.mock("@/company/companyClient.server", () => ({

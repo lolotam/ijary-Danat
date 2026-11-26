@@ -20,6 +20,16 @@ describe("companyStoragePath", () => {
     );
   });
 
+  // Regression (T052m): storage policies compare against the lowercase
+  // `current_company_id()::text`, so an uppercase id was refused on upload.
+  test("lowercases an uppercase company id so storage policies match", () => {
+    const upper = "ABCDEF12-3456-4789-8ABC-DEF012345678";
+    expect(companyStoragePath(upper, "logo.png")).toBe(`companies/${upper.toLowerCase()}/logo.png`);
+    expect(companyStoragePath(upper, `companies/${upper}/logo.png`)).toBe(
+      `companies/${upper.toLowerCase()}/logo.png`,
+    );
+  });
+
   test("is idempotent when path already belongs to the same company", () => {
     expect(companyStoragePath(COMPANY_A, `companies/${COMPANY_A}/backups/1.zip`)).toBe(
       `companies/${COMPANY_A}/backups/1.zip`,

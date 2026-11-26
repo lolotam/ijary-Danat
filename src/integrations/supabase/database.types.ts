@@ -2112,6 +2112,10 @@ export interface Database {
         Args: Record<PropertyKey, never>;
         Returns: string | null;
       };
+      current_company_id_strict: {
+        Args: Record<PropertyKey, never>;
+        Returns: string | null;
+      };
       /** Migration 254 — دالة مبدئية للتحقق من مشرف المنصة (تُستبدل لاحقاً في ترحيل 289). */
       is_platform_admin: {
         Args: Record<PropertyKey, never>;

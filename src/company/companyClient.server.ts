@@ -21,7 +21,10 @@ export interface CompanyServiceJwtClaims {
 }
 
 /**
- * يقرأ عنوان Supabase وقيمة المفتاح العام مع دعم بادئة SELF_ في بيئة معاينة Lovable.
+ * يقرأ عنوان Supabase وقيمة المفتاح العام مع دعم بادئة SELF_ في بيئة معاينة Lovable، ويرمي خطأ لو ناقصين.
+ *
+ * A silent localhost fallback sent company traffic to whatever answered on
+ * that port; a missing setting is a deployment error and must stop the request.
  */
 function readSupabasePublicConfig(): { url: string; publishableKey: string } {
   const url = process.env.SUPABASE_URL || process.env.SELF_SUPABASE_URL;
@@ -29,13 +32,9 @@ function readSupabasePublicConfig(): { url: string; publishableKey: string } {
     process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SELF_SUPABASE_PUBLISHABLE_KEY;
 
   if (!url || !publishableKey) {
-    console.warn("[company/companyClient] Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY.");
+    throw new Error("Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY for companyClient.");
   }
-
-  return {
-    url: url ?? "http://localhost:54321",
-    publishableKey: publishableKey ?? "public-anon-key",
-  };
+  return { url, publishableKey };
 }
 
 /**

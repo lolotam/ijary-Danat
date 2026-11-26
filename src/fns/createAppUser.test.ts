@@ -42,7 +42,8 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 vi.mock("@/platform/authAdmin.server", () => ({
-  getAuthAdmin: () => ({ createUser: mocks.createUser, deleteUser: mocks.deleteUser }),
+  createAuthUser: mocks.createUser,
+  deleteAuthUser: mocks.deleteUser,
 }));
 
 vi.mock("@/company/companyClient.server", () => ({

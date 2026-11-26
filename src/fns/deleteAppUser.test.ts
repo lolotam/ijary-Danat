@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 vi.mock("@/platform/authAdmin.server", () => ({
-  getAuthAdmin: () => ({ deleteUser: mocks.deleteUser }),
+  deleteAuthUser: mocks.deleteUser,
 }));
 
 vi.mock("@/company/companyClient.server", () => ({

@@ -89,13 +89,13 @@ Each group task writes two migrations — columns (add or tighten `company_id`, 
 - [x] T030 [US1] Notifications and system group (`notification_templates`, `notifications`, `provider_configs`, `report_schedules`, `generated_reports`, `cron_jobs`, `backups`) in `db/migrations/273_company_notifications_columns.sql` and `db/migrations/274_company_notifications_policies.sql`
 - [x] T031 [US1] Messaging group (`gmail_connections`, `gmail_messages`, `email_signatures`, `evolution_connections`, `whatsapp_chats`, `whatsapp_contacts`, `whatsapp_messages`, `whatsapp_contact_contracts`, `tenant_messages`, `contact_inquiries`) in `db/migrations/275_company_messaging_columns.sql` and `db/migrations/276_company_messaging_policies.sql`
 - [x] T032 [US1] Landing group (`landing_media`, `landing_page_settings`, `landing_page_sections`, `landing_carousel_slides`, `leasing_inquiries`) in `db/migrations/277_company_landing_columns.sql` and `db/migrations/278_company_landing_policies.sql`
-- [x] T033 [US1] Function audit, identity and permission helpers (`has_permission`, `is_staff`, `has_role`, `write_audit`, sign-in helpers): invoker where possible, explicit company predicate otherwise, accept `company_service` for the permission skip, in `db/migrations/279_functions_identity.sql` (research.md R2)
-- [x] T034 [US1] Function audit, invoice generation and schedule functions in `db/migrations/280_functions_billing.sql`
-- [x] T035 [US1] Function audit, payment, allocation, reversal, deposit, refund and insurance functions in `db/migrations/281_functions_payments.sql`
-- [x] T036 [US1] Function audit, closeout, electricity and salary functions in `db/migrations/282_functions_closeout_electricity_hr.sql`
-- [x] T037 [US1] Function audit, notification, reminder, report, summary and KPI functions, removing every "oldest company" lookup, in `db/migrations/283_functions_notifications_reports.sql`
-- [x] T038 [US1] Replace the global code sequences with `company_counters` behind the existing `next_*_code()` names in `db/migrations/284_company_counters.sql` (data-model.md: `company_counters.kind`; research.md R13)
-- [x] T039 [US1] Storage bucket policies for the `companies/<company_id>/` prefix in `db/migrations/285_storage_company_paths.sql` (research.md R12)
+- [x] T033 [US1] Function audit, identity and permission helpers (`has_permission`, `is_staff`, `has_role`, `write_audit`, sign-in helpers): invoker where possible, explicit company predicate otherwise, accept `company_service` for the permission skip, in `db/migrations/279_functions_identity.sql`, now split into 279–282 by T052l (research.md R2)
+- [x] T034 [US1] Function audit, invoice generation and schedule functions in `db/migrations/280_functions_billing.sql`, now split into 283–289 by T052l
+- [x] T035 [US1] Function audit, payment, allocation, reversal, deposit, refund and insurance functions in `db/migrations/281_functions_payments.sql`, now split into 290–293 by T052l
+- [x] T036 [US1] Function audit, closeout, electricity and salary functions in `db/migrations/282_functions_closeout_electricity_hr.sql`, now split into 294–297 by T052l
+- [x] T037 [US1] Function audit, notification, reminder, report, summary and KPI functions, removing every "oldest company" lookup, in `db/migrations/283_functions_notifications_reports.sql`, now split into 298–302 by T052l
+- [x] T038 [US1] Replace the global code sequences with `company_counters` behind the existing `next_*_code()` names in `db/migrations/303_company_counters.sql` (was 284 before the T052l split) (data-model.md: `company_counters.kind`; research.md R13)
+- [x] T039 [US1] Storage bucket policies for the `companies/<company_id>/` prefix in `db/migrations/304_storage_company_paths.sql` (was 285 before the T052l split; research.md R12)
 - [x] T040 [US1] Add `src/company/storagePath.ts` and use it at every upload and download site: `src/hooks/useTenants.ts`, `usePayments.ts`, `useExpenses.ts`, `useDeposits.ts`, `useTenantMessages.ts`, `src/components/admin/settings/CompanySettingsForm.tsx`, `ImageSourceInput.tsx`, `src/fns/uploadShopMedia.ts`, `sendCompanyInfo.ts`, `backupCore.ts`, `evolutionDelivery.ts`, `src/lib/reportPdfAttachment.ts`, `gmailAttachment.ts`
 - [x] T041 [P] [US1] Move the 11 `src/lib/*` service-role importers (`audit`, `env.server`, `gmailClient.server`, `invoiceDocumentPdf`, `invoiceRelations`, `paymentReceiptPdf`, `phoneConflicts.server`, `recordSentResendMessage`, `reportPdfAttachment`, `suppressedPayments`, `userConflicts.server`) to `companyClient`
 - [x] T042 [P] [US1] Move the notification family in `src/fns/` (`notify*.ts`, `enqueueNotification.ts`, `sendNotification.ts`, `sendBulkNotification.ts`, `dispatch*.ts`, `loadTemplateCopy.ts`, `notificationDrainJob.ts`, `workflowRegistry.ts`) to `companyClient`
@@ -114,22 +114,22 @@ Each group task writes two migrations — columns (add or tighten `company_id`, 
 
 An independent review of T012–T052 found isolation holes the suite did not cover. Fixed before closing the phase:
 
-- [x] T052a [US1] Drop `erase_all_data()` (still granted to `authenticated` after T050 removed the UI) in `db/migrations/283_functions_notifications_reports.sql`
-- [x] T052b [US1] Make `reassign_contract_tenant_records` trigger-only: company passed from the contract row, no fallback lookup, no API role can execute it, in `db/migrations/280_functions_billing.sql`
+- [x] T052a [US1] Drop `erase_all_data()` (still granted to `authenticated` after T050 removed the UI) in `db/migrations/299_functions_backup.sql`
+- [x] T052b [US1] Make `reassign_contract_tenant_records` trigger-only: company passed from the contract row, no fallback lookup, no API role can execute it, in `db/migrations/287_functions_billing_contract_save_triggers.sql`
 - [x] T052c [US1] Replace every "oldest company" backfill in migrations 255–277 with `_legacy_single_company_id()` (fails when more than one company exists) in `db/migrations/254_company_context.sql`; extend `src/db/isolation/noOldestCompany.structure.test.ts` to scan whole migrations
 - [x] T052d [US1] Move the login-audit service_role client to `src/platform/loginAuditClient.server.ts`; lint rule against reading the service_role key outside the allow-list in `eslint.config.js`
 - [x] T052e [US1] Block staff and `company_service` from changing `companies.id`, `slug`, `status` and `suspended_*` (trigger `companies_guard_platform_columns`) in `db/migrations/256_company_identity_policies.sql`; tests in `src/db/isolation/platformGuards.sqltest.ts`
 
-Still open from the same review (lower severity):
+Lower-severity findings from the same review:
 
-- [ ] T052f [US1] `extractRequestHost` trusts `x-forwarded-host` from any client; accept it only from the known proxy in `src/company/hostCompany.server.ts`
-- [ ] T052g [US1] Nothing creates `company_domains` rows of kind `subdomain`, so `<slug>.ijary.app` resolves nowhere in production; create the row with the company (or fall back to slug under the root host) in `src/company/hostCompany.server.ts` and a migration
-- [ ] T052h [US1] `src/fns/uploadShopMedia.ts` falls back to the profile's company when there is no host context; require the request company and treat a mismatch as signed out
-- [ ] T052i [US1] `src/company/companyClient.server.ts` falls back to `http://localhost:54321` when the URL or key is missing; throw instead
-- [ ] T052j [US1] Security definer functions in migrations 279–280 filter with `(v_company_id is null or company_id = v_company_id)`; add one helper that raises `COMPANY_REQUIRED` except for service_role and use it everywhere
-- [ ] T052k [US1] `getAuthAdmin()` in `src/platform/authAdmin.server.ts` hands the full GoTrue admin API to any importer; expose narrow helpers only (folds into T083)
-- [ ] T052l [US1] Split migrations 279–283 (1289–2468 lines) by responsibility to respect the 600-line ceiling
-- [ ] T052m [US1] Decide whether `property-images` should stay publicly readable without a company check (`db/migrations/285_storage_company_paths.sql`); lowercase the UUID in `src/company/storagePath.ts`
+- [x] T052f [US1] `extractRequestHost` trusted `x-forwarded-host` from any client; it is now read only when `TRUST_FORWARDED_HOST=true` (default `false`: Traefik passes `Host` through) in `src/company/hostCompany.server.ts`, `src/lib/env.server.ts`, `.env.example`, `docker-compose.yml`
+- [x] T052g [US1] Nothing created `company_domains` rows of kind `subdomain`, so `<slug>.ijary.app` resolved nowhere in production; host lookup now tries a verified domain row, then the slug under `PLATFORM_ROOT_HOST` (no migration needed) in `src/company/hostCompany.server.ts`
+- [x] T052h [US1] `src/fns/uploadShopMedia.ts` fell back to the profile's company when there was no host context; it now requires the request company (`requireSupabaseAuth` already treats a mismatch as signed out)
+- [x] T052i [US1] `src/company/companyClient.server.ts` fell back to `http://localhost:54321` when the URL or key was missing; it now throws
+- [x] T052j [US1] Security definer functions in migrations 279–281 filtered with `(v_company_id is null or company_id = v_company_id)`; they now read `public.current_company_id_strict()` (`db/migrations/254_company_context.sql`), which raises `COMPANY_REQUIRED` unless the caller is a platform role (`service_role`, `postgres`, `supabase_admin`, or none). `validate_electricity_charge_insert` drops the null branch outright
+- [x] T052k [US1] `getAuthAdmin()` handed the full GoTrue admin API to any importer; `src/platform/authAdmin.server.ts` now exports only `createAuthUser`, `updateAuthUserById` and `deleteAuthUser` (synthetic emails still T083)
+- [x] T052l [US1] Split migrations 279–283 (1289–2468 lines) by responsibility into 279–302 (each under 520 lines, bodies unchanged, grants moved next to their functions); `284_company_counters` and `285_storage_company_paths` renumbered to 303 and 304
+- [x] T052m [US1] The `to public` select on `branding`, `landing` and `property-images` let anyone list every company's file names; it is now `to authenticated` and scoped to the caller's company (public URLs are served without RLS and keep working) in `db/migrations/304_storage_company_paths.sql`; `src/company/storagePath.ts` lowercases the company id
 
 **Checkpoint**: Isolation suite 100% green. Until then no second company exists in any shared environment.
 

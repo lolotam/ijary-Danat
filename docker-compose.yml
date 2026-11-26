@@ -33,6 +33,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       PLATFORM_ROOT_HOST: ${PLATFORM_ROOT_HOST}
       PLATFORM_ADMIN_HOST: ${PLATFORM_ADMIN_HOST}
+      TRUST_FORWARDED_HOST: ${TRUST_FORWARDED_HOST:-false}
       # Platform default email sender & email providers (optional).
       PLATFORM_EMAIL_PROVIDER: ${PLATFORM_EMAIL_PROVIDER:-}
       PLATFORM_EMAIL_FROM: ${PLATFORM_EMAIL_FROM:-}

@@ -6,7 +6,7 @@ import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
-import { getAuthAdmin } from "@/platform/authAdmin.server";
+import { deleteAuthUser } from "@/platform/authAdmin.server";
 import { requireRole } from "@/fns/requirePermission";
 
 /**
@@ -52,7 +52,7 @@ export const deleteAppUser = createServerFn({ method: "POST" })
       throw new Error("User account was not found in this company.");
     }
 
-    const deleteRes = await getAuthAdmin().deleteUser(data.userId);
+    const deleteRes = await deleteAuthUser(data.userId);
     if (deleteRes.error) {
       throw new Error(authErrorMessage(deleteRes.error, "Failed to delete the auth user"));
     }

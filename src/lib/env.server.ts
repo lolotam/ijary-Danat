@@ -102,6 +102,11 @@ export const envSchema = z
         isValidHost,
         "PLATFORM_ADMIN_HOST must be a valid hostname without protocol or path (e.g. admin.ijary.app)",
       ),
+    TRUST_FORWARDED_HOST: optionalEnv(
+      z.enum(["true", "false"], {
+        message: "TRUST_FORWARDED_HOST must be 'true' or 'false'",
+      }),
+    ),
     CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters long"),
     MYFATOORAH_API_KEY: optionalEnv(z.string().trim().min(1)),
     MYFATOORAH_WEBHOOK_SECRET: optionalEnv(z.string().trim().min(1)),

@@ -43,11 +43,11 @@ function sectionFor(name: string): string {
 }
 
 describe("module summary RPCs (live migration resolution)", () => {
-  test("get_payments_summary live definition is migration 283, not 79/85/106", () => {
-    // Proves the resolver itself cannot rot: once 283 re-issues the function,
+  test("get_payments_summary live definition is migration 302, not 79/85/106", () => {
+    // Proves the resolver itself cannot rot: once 302 re-issues the function,
     // assertions must not keep reading dead SQL from earlier migrations.
     const file = resolveLiveMigrationFile("get_payments_summary");
-    expect(file.startsWith("283_")).toBe(true);
+    expect(file.startsWith("302_")).toBe(true);
     expect(file.startsWith("106_")).toBe(false);
     expect(file.startsWith("79_")).toBe(false);
     expect(file.startsWith("85_")).toBe(false);
@@ -150,10 +150,10 @@ describe("module summary RPCs (live migration resolution)", () => {
       /count\(\*\)\s+filter\s*\(\s*where\s+t\.archived_at\s+is\s+not\s+null\s*\)/i,
     );
 
-    // Live definition is migration 283 (same 4-arg signature as 90/91/211 — no drop).
+    // Live definitions are migrations 301/302 (same 4-arg signature as 90/91/211 — no drop).
     // The 3-arg DROP lives only in 90's history; create-or-replace is correct here.
-    expect(resolveLiveMigrationFile("get_contracts_summary").startsWith("283_")).toBe(true);
-    expect(resolveLiveMigrationFile("get_tenants_summary").startsWith("283_")).toBe(true);
+    expect(resolveLiveMigrationFile("get_contracts_summary").startsWith("301_")).toBe(true);
+    expect(resolveLiveMigrationFile("get_tenants_summary").startsWith("302_")).toBe(true);
     expect(sectionFor("get_contracts_summary")).not.toMatch(/drop function if exists/i);
     expect(sectionFor("get_tenants_summary")).not.toMatch(/drop function if exists/i);
   });

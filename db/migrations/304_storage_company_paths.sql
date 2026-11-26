@@ -18,10 +18,13 @@ begin
 end;
 $$;
 
--- حاويات القراءة العامة الثلاث (branding, landing, property-images) تحت مسار الشركات فقط.
+-- الحاويات العامة الثلاث (branding, landing, property-images): قراءة صفوف الكائنات لمستخدمي الشركة نفسها فقط.
+-- Public buckets serve `/object/public/...` without consulting RLS, so public URLs
+-- keep working with no select policy. A `to public` select here only let anyone
+-- list and enumerate every company's file names (T052m).
 create policy storage_public_buckets_select
-  on storage.objects for select to public
-  using (bucket_id in ('branding', 'landing', 'property-images') and (storage.foldername(name))[1] = 'companies');
+  on storage.objects for select to authenticated
+  using (bucket_id in ('branding', 'landing', 'property-images') and (storage.foldername(name))[1] = 'companies' and (storage.foldername(name))[2] = ((select public.current_company_id()))::text);
 
 -- وصول خدمة الشركة إلى كائنات الشركة الحالية في جميع الحاويات الأربع عشرة.
 create policy storage_company_service_all

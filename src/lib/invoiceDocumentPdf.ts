@@ -7,7 +7,7 @@ import { loadInvoicesWithRelations } from "@/lib/invoiceRelations";
 import { safeFilename } from "@/lib/safeFilename";
 import { renderAndStorePdf, type StoredPdf } from "@/lib/reportPdfAttachment";
 
-/** Path prefix inside `report-documents`; `285_storage_company_paths.sql` prefixes with `companies/<companyId>/`. */
+/** Path prefix inside `report-documents`; `304_storage_company_paths.sql` prefixes with `companies/<companyId>/`. */
 const INVOICE_PREFIX = "invoice-documents";
 
 /**

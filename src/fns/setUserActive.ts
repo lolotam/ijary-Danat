@@ -6,7 +6,7 @@ import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
-import { getAuthAdmin } from "@/platform/authAdmin.server";
+import { updateAuthUserById } from "@/platform/authAdmin.server";
 import { requirePermission } from "@/fns/requirePermission";
 
 /**
@@ -78,7 +78,7 @@ export const setUserActive = createServerFn({ method: "POST" })
         return { ok: false as const, error: profileRes.error.message };
       }
 
-      const unban = await getAuthAdmin().updateUserById(data.userId, {
+      const unban = await updateAuthUserById(data.userId, {
         ban_duration: "none",
       });
       if (unban.error) {
@@ -92,7 +92,7 @@ export const setUserActive = createServerFn({ method: "POST" })
       // account active and unbanned — a clean retry — instead of the hole
       // this task exists to close: "deactivated" in the table, password
       // grant still live forever, nothing flagging the desync.
-      const ban = await getAuthAdmin().updateUserById(data.userId, {
+      const ban = await updateAuthUserById(data.userId, {
         ban_duration: "876000h",
       });
       if (ban.error) {
@@ -107,7 +107,7 @@ export const setUserActive = createServerFn({ method: "POST" })
         .update({ is_active: false } as any)
         .eq("id", data.userId);
       if (profileRes.error) {
-        const rollback = await getAuthAdmin().updateUserById(data.userId, {
+        const rollback = await updateAuthUserById(data.userId, {
           ban_duration: "none",
         });
         return {

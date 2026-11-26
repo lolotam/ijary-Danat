@@ -70,6 +70,18 @@ describe("companyClient", () => {
     expect(() => companyClient(TEST_COMPANY_ID)).toThrow(/SUPABASE_JWT_SECRET/);
   });
 
+  // Regression (T052i): a missing URL used to fall back to localhost and send
+  // company traffic to whatever answered on that port.
+  it.each(["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY"] as const)(
+    "refuses to build a client when %s is missing instead of falling back",
+    (key) => {
+      delete process.env[key];
+      expect(() => companyClient(TEST_COMPANY_ID)).toThrow(
+        /Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY/,
+      );
+    },
+  );
+
   it("signs a 5-minute HS256 JWT with role company_service and company_id without allow_suspended", async () => {
     const token = await signCompanyServiceToken(TEST_COMPANY_ID);
     const { payload, protectedHeader } = await jwtVerify(

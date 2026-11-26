@@ -85,6 +85,9 @@ logs/security/
 # npm writes this on every `npm install`; bun.lock is the lockfile Docker uses.
 package-lock.json
 
+# Supabase CLI scratch (never staged).
+supabase/.temp/
+
 # Per-machine agent tooling (delegate skills), not part of the product.
 .agents/
 .claude/

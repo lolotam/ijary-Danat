@@ -42,7 +42,7 @@ type JobHandler<K extends JobKind> = (ctx: {
 Before calling the handler the worker:
 
 - loads the `job_requests` row and stops if it is already `succeeded`;
-- marks it `skipped` if the company is suspended (except `payment.settle`) or the kind's section is off;
+- marks it `skipped` if the company is suspended or the kind's section is off, except `payment.settle`, which is exempt from both the suspension check and the section check;
 - sets `status = 'running'`.
 
 After the handler: `succeeded` with `result`, or on the final failed attempt `failed` with `last_error`. For kinds marked "notice" a `user_notices` row is written for `requested_by`.

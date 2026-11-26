@@ -165,8 +165,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 - [x] T058 [US2] VERIFY: spike BullMQ workers on Bun against Node LTS and record the outcome in `specs/001-multi-company-saas/research.md` R6
 - [x] T059 [US2] Write migration `db/migrations/306_job_requests.sql`: `job_requests`, `user_notices`, `enqueue_job()` (data-model.md: `job_requests.kind`, `job_requests.status`, `job_requests.dedupe_key`, `user_notices.level`)
-- [ ] T060 [US2] Define the job catalogue (kinds, Zod payloads, queue, section) from `contracts/jobs.md` section 5 in `src/jobs/catalog.ts`
-- [ ] T061 [US2] Implement `enqueueJob` in `src/jobs/enqueue.ts`
+- [x] T060 [US2] Define the job catalogue (kinds, Zod payloads, queue, section) from `contracts/jobs.md` section 5 in `src/jobs/catalog.ts`
+- [x] T061 [US2] Implement `enqueueJob` in `src/jobs/enqueue.ts`
 - [ ] T062 [US2] Implement queues and the worker entry point in `src/worker/queues.ts` and `src/worker/main.ts`
 - [ ] T063 [US2] Implement the outbox relay in `src/worker/relay.ts`
 - [ ] T064 [US2] Implement the handler wrapper in `src/worker/runJob.ts` (`contracts/jobs.md` section 3)

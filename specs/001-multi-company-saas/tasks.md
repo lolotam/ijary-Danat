@@ -30,11 +30,11 @@
 
 **Purpose**: Make the repository ready and safe to work in.
 
-- [ ] T001 Create branch `001-multi-company-saas` from `main` in `lolotam/ijary-Danat` and confirm a clean `git status`
-- [ ] T002 Rewrite `CLAUDE.md` for IJARY: remove the Danat production section (server table, `ssh-danatfuture-mcp`, auto-deploy on push to `main`, migration runbook against `danatfuture-*`), state that Danat production is out of bounds, add the company-context rules from `specs/001-multi-company-saas/contracts/company-context.md` and the terminology from spec.md
-- [ ] T003 [P] Add `bullmq`, `ioredis` and `jose` to `package.json` and update `bun.lock`
-- [ ] T004 [P] Add a `redis` service to `docker-compose.yml` and a `worker` script to `package.json`
-- [ ] T005 [P] Add the new variables to `.env.example` (`SUPABASE_JWT_SECRET`, `INTEGRATIONS_MASTER_KEY`, `REDIS_URL`, `PLATFORM_ROOT_HOST`, `PLATFORM_ADMIN_HOST`, platform default sender, Meta app, Evolution server) and validate them at start-up in `src/lib/env.server.ts`
+- [x] T001 Create branch `001-multi-company-saas` from `main` in `lolotam/ijary-Danat` and confirm a clean `git status`
+- [x] T002 Rewrite `CLAUDE.md` for IJARY: remove the Danat production section (server table, `ssh-danatfuture-mcp`, auto-deploy on push to `main`, migration runbook against `danatfuture-*`), state that Danat production is out of bounds, add the company-context rules from `specs/001-multi-company-saas/contracts/company-context.md` and the terminology from spec.md
+- [x] T003 [P] Add `bullmq`, `ioredis` and `jose` to `package.json` and update `bun.lock`
+- [x] T004 [P] Add a `redis` service to `docker-compose.yml` and a `worker` script to `package.json`
+- [x] T005 [P] Add the new variables to `.env.example` (`SUPABASE_JWT_SECRET`, `INTEGRATIONS_MASTER_KEY`, `REDIS_URL`, `PLATFORM_ROOT_HOST`, `PLATFORM_ADMIN_HOST`, platform default sender, Meta app, Evolution server) and validate them at start-up in `src/lib/env.server.ts`
 
 ---
 
@@ -44,12 +44,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Write migration `db/migrations/254_company_context.sql`: role `company_service`; `current_company_id()`, `is_platform_admin()` stub; new `companies` columns; `company_domains`; `reserved_slugs` with its seed (data-model.md: `companies.slug`, `companies.status`, `companies.currency`, `companies.timezone`, `company_domains.kind`, `company_domains.verification_status`, `reserved_slugs.slug`; research.md R1, R2)
-- [ ] T007 Implement `companyClient(companyId, opts)` with token signing in `src/company/companyClient.server.ts`, with unit tests in `src/company/companyClient.server.test.ts` (throws `COMPANY_REQUIRED`; 5-minute expiry; `allow_suspended` only when asked)
-- [ ] T008 [P] Define the error codes of `contracts/company-context.md` section 6 in `src/company/errors.ts`
-- [ ] T009 Implement host resolution and request context in `src/company/hostCompany.server.ts` and `src/company/requestCompany.server.ts`, wired through `server/middleware/company.ts` (60-second cache; `*.localhost` in development)
-- [ ] T010 Add the `no-restricted-imports` rule for `src/integrations/supabase/client.server.ts` to `eslint.config.js`, with a temporary allow-list file `eslint.platform-allowlist.js` listing today's 92 importers
-- [ ] T011 [P] Build the two-company SQL test harness in `src/db/isolation/twoCompanies.ts` (companies A and B, one user per role in each, helpers to run as a user and as `company_service`)
+- [x] T006 Write migration `db/migrations/254_company_context.sql`: role `company_service`; `current_company_id()`, `is_platform_admin()` stub; new `companies` columns; `company_domains`; `reserved_slugs` with its seed (data-model.md: `companies.slug`, `companies.status`, `companies.currency`, `companies.timezone`, `company_domains.kind`, `company_domains.verification_status`, `reserved_slugs.slug`; research.md R1, R2)
+- [x] T007 Implement `companyClient(companyId, opts)` with token signing in `src/company/companyClient.server.ts`, with unit tests in `src/company/companyClient.server.test.ts` (throws `COMPANY_REQUIRED`; 5-minute expiry; `allow_suspended` only when asked)
+- [x] T008 [P] Define the error codes of `contracts/company-context.md` section 6 in `src/company/errors.ts`
+- [x] T009 Implement host resolution and request context in `src/company/hostCompany.server.ts` and `src/company/requestCompany.server.ts`, wired through `server/middleware/company.ts` (60-second cache; `*.localhost` in development)
+- [x] T010 Add the `no-restricted-imports` rule for `src/integrations/supabase/client.server.ts` to `eslint.config.js`, with a temporary allow-list file `eslint.platform-allowlist.js` listing today's 92 importers
+- [x] T011 [P] Build the two-company SQL test harness in `src/db/isolation/twoCompanies.ts` (companies A and B, one user per role in each, helpers to run as a user and as `company_service`)
 
 **Checkpoint**: Context function, company-bound client, host resolution and test harness exist.
 
@@ -63,39 +63,39 @@
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Structure test: every `public` table off the allow-list has `company_id`, forced RLS and a policy naming `current_company_id`, in `src/db/isolation/tablesScoped.sqltest.ts`
-- [ ] T013 [P] [US1] Structure test: every `security definer` function names `current_company_id` or is allow-listed, in `src/db/isolation/definerFunctions.sqltest.ts`
-- [ ] T014 [P] [US1] Structure test: no `from companies … limit 1` in `db/migrations` latest definitions or in `src`, in `src/db/isolation/noOldestCompany.structure.test.ts`
-- [ ] T015 [P] [US1] Generated behaviour matrix: for each table, a user of A selects, updates and deletes 0 rows of B and cannot insert with B's `company_id`, in `src/db/isolation/crossCompanyMatrix.sqltest.ts`
-- [ ] T016 [P] [US1] Cross-company link and per-company uniqueness tests in `src/db/isolation/linksAndUniques.sqltest.ts`
-- [ ] T017 [P] [US1] `company_service` tests (token for A reads none of B; no claim reads nothing) in `src/db/isolation/companyService.sqltest.ts`
-- [ ] T018 [P] [US1] Storage path tests for all 14 buckets in `src/db/isolation/storagePaths.sqltest.ts`
-- [ ] T019 [P] [US1] Per-company numbering test in `src/db/isolation/counters.sqltest.ts`
-- [ ] T020 [P] [US1] Extend `src/db/rlsHoistedAuth.sqltest.ts` to cover `current_company_id` and the `company_service` role
+- [x] T012 [P] [US1] Structure test: every `public` table off the allow-list has `company_id`, forced RLS and a policy naming `current_company_id`, in `src/db/isolation/tablesScoped.sqltest.ts`
+- [x] T013 [P] [US1] Structure test: every `security definer` function names `current_company_id` or is allow-listed, in `src/db/isolation/definerFunctions.sqltest.ts`
+- [x] T014 [P] [US1] Structure test: no `from companies … limit 1` in `db/migrations` latest definitions or in `src`, in `src/db/isolation/noOldestCompany.structure.test.ts`
+- [x] T015 [P] [US1] Generated behaviour matrix: for each table, a user of A selects, updates and deletes 0 rows of B and cannot insert with B's `company_id`, in `src/db/isolation/crossCompanyMatrix.sqltest.ts`
+- [x] T016 [P] [US1] Cross-company link and per-company uniqueness tests in `src/db/isolation/linksAndUniques.sqltest.ts`
+- [x] T017 [P] [US1] `company_service` tests (token for A reads none of B; no claim reads nothing) in `src/db/isolation/companyService.sqltest.ts`
+- [x] T018 [P] [US1] Storage path tests for all 14 buckets in `src/db/isolation/storagePaths.sqltest.ts`
+- [x] T019 [P] [US1] Per-company numbering test in `src/db/isolation/counters.sqltest.ts`
+- [x] T020 [P] [US1] Extend `src/db/rlsHoistedAuth.sqltest.ts` to cover `current_company_id` and the `company_service` role
 
 ### Implementation for User Story 1
 
 Each group task writes two migrations — columns (add or tighten `company_id`, backfill, composite keys, per-company uniques, indexes led by `company_id`) and policies (rewrite to the shape in `contracts/company-context.md` section 5) — per data-model.md section 1. Run in this order; each must leave the existing SQL suite green.
 
-- [ ] T021 [US1] Identity group (`profiles`, `user_roles`, `role_permissions`, `custom_roles`, `custom_role_permissions`, `user_custom_roles`, `user_tenants`, `audit_logs`, `failed_login_attempts`) in `db/migrations/255_company_identity_columns.sql` and `db/migrations/256_company_identity_policies.sql`
-- [ ] T022 [US1] Lists group (`option_lists`, `option_list_items`, `building_categories`, `expense_categories`, `invoice_years`, `card_visibility`) in `db/migrations/257_company_lists_columns.sql` and `db/migrations/258_company_lists_policies.sql`
-- [ ] T023 [US1] Properties group (`properties`, `buildings`, `units`, `maintenance_requests`) in `db/migrations/259_company_properties_columns.sql` and `db/migrations/260_company_properties_policies.sql`
-- [ ] T024 [US1] Renters and contracts group (`tenants`, `tenant_documents`, `contracts`, `contract_units`, `contract_extra_charges`, `concessions`, `concession_invoices`, `commercial_brands`, `commercial_brand_contracts`, `contract_operational_events`) in `db/migrations/261_company_contracts_columns.sql` and `db/migrations/262_company_contracts_policies.sql`
-- [ ] T025 [US1] Billing group (`invoices`, `invoice_items`, `payments`, `payment_allocations`, `receipts`, `payment_requests`, `webhook_events`, `email_webhook_events`) in `db/migrations/263_company_billing_columns.sql` and `db/migrations/264_company_billing_policies.sql`
-- [ ] T026 [US1] Ledgers group (`deposits`, `partial_payments`, `insurance_payments`, `refunds`, `expenses`) in `db/migrations/265_company_ledgers_columns.sql` and `db/migrations/266_company_ledgers_policies.sql`
-- [ ] T027 [US1] Closeout group (`contract_closeouts`, `contract_closeout_deductions`, `contract_closeout_invoice_actions`) in `db/migrations/267_company_closeout_columns.sql` and `db/migrations/268_company_closeout_policies.sql`
-- [ ] T028 [US1] Electricity group (`electricity_tariffs`, `electricity_meters`, `meter_readings`, `electricity_charges`) in `db/migrations/269_company_electricity_columns.sql` and `db/migrations/270_company_electricity_policies.sql`
-- [ ] T029 [US1] HR group (`employees`, `employee_documents`, `salaries`) in `db/migrations/271_company_hr_columns.sql` and `db/migrations/272_company_hr_policies.sql`
-- [ ] T030 [US1] Notifications and system group (`notification_templates`, `notifications`, `provider_configs`, `report_schedules`, `generated_reports`, `cron_jobs`, `backups`) in `db/migrations/273_company_notifications_columns.sql` and `db/migrations/274_company_notifications_policies.sql`
-- [ ] T031 [US1] Messaging group (`gmail_connections`, `gmail_messages`, `email_signatures`, `evolution_connections`, `whatsapp_chats`, `whatsapp_contacts`, `whatsapp_messages`, `whatsapp_contact_contracts`, `tenant_messages`, `contact_inquiries`) in `db/migrations/275_company_messaging_columns.sql` and `db/migrations/276_company_messaging_policies.sql`
-- [ ] T032 [US1] Landing group (`landing_media`, `landing_page_settings`, `landing_page_sections`, `landing_carousel_slides`, `leasing_inquiries`) in `db/migrations/277_company_landing_columns.sql` and `db/migrations/278_company_landing_policies.sql`
-- [ ] T033 [US1] Function audit, identity and permission helpers (`has_permission`, `is_staff`, `has_role`, `write_audit`, sign-in helpers): invoker where possible, explicit company predicate otherwise, accept `company_service` for the permission skip, in `db/migrations/279_functions_identity.sql` (research.md R2)
-- [ ] T034 [US1] Function audit, invoice generation and schedule functions in `db/migrations/280_functions_billing.sql`
-- [ ] T035 [US1] Function audit, payment, allocation, reversal, deposit, refund and insurance functions in `db/migrations/281_functions_payments.sql`
-- [ ] T036 [US1] Function audit, closeout, electricity and salary functions in `db/migrations/282_functions_closeout_electricity_hr.sql`
-- [ ] T037 [US1] Function audit, notification, reminder, report, summary and KPI functions, removing every "oldest company" lookup, in `db/migrations/283_functions_notifications_reports.sql`
-- [ ] T038 [US1] Replace the global code sequences with `company_counters` behind the existing `next_*_code()` names in `db/migrations/284_company_counters.sql` (data-model.md: `company_counters.kind`; research.md R13)
-- [ ] T039 [US1] Storage bucket policies for the `companies/<company_id>/` prefix in `db/migrations/285_storage_company_paths.sql` (research.md R12)
+- [x] T021 [US1] Identity group (`profiles`, `user_roles`, `role_permissions`, `custom_roles`, `custom_role_permissions`, `user_custom_roles`, `user_tenants`, `audit_logs`, `failed_login_attempts`) in `db/migrations/255_company_identity_columns.sql` and `db/migrations/256_company_identity_policies.sql`
+- [x] T022 [US1] Lists group (`option_lists`, `option_list_items`, `building_categories`, `expense_categories`, `invoice_years`, `card_visibility`) in `db/migrations/257_company_lists_columns.sql` and `db/migrations/258_company_lists_policies.sql`
+- [x] T023 [US1] Properties group (`properties`, `buildings`, `units`, `maintenance_requests`) in `db/migrations/259_company_properties_columns.sql` and `db/migrations/260_company_properties_policies.sql`
+- [x] T024 [US1] Renters and contracts group (`tenants`, `tenant_documents`, `contracts`, `contract_units`, `contract_extra_charges`, `concessions`, `concession_invoices`, `commercial_brands`, `commercial_brand_contracts`, `contract_operational_events`) in `db/migrations/261_company_contracts_columns.sql` and `db/migrations/262_company_contracts_policies.sql`
+- [x] T025 [US1] Billing group (`invoices`, `invoice_items`, `payments`, `payment_allocations`, `receipts`, `payment_requests`, `webhook_events`, `email_webhook_events`) in `db/migrations/263_company_billing_columns.sql` and `db/migrations/264_company_billing_policies.sql`
+- [x] T026 [US1] Ledgers group (`deposits`, `partial_payments`, `insurance_payments`, `refunds`, `expenses`) in `db/migrations/265_company_ledgers_columns.sql` and `db/migrations/266_company_ledgers_policies.sql`
+- [x] T027 [US1] Closeout group (`contract_closeouts`, `contract_closeout_deductions`, `contract_closeout_invoice_actions`) in `db/migrations/267_company_closeout_columns.sql` and `db/migrations/268_company_closeout_policies.sql`
+- [x] T028 [US1] Electricity group (`electricity_tariffs`, `electricity_meters`, `meter_readings`, `electricity_charges`) in `db/migrations/269_company_electricity_columns.sql` and `db/migrations/270_company_electricity_policies.sql`
+- [x] T029 [US1] HR group (`employees`, `employee_documents`, `salaries`) in `db/migrations/271_company_hr_columns.sql` and `db/migrations/272_company_hr_policies.sql`
+- [x] T030 [US1] Notifications and system group (`notification_templates`, `notifications`, `provider_configs`, `report_schedules`, `generated_reports`, `cron_jobs`, `backups`) in `db/migrations/273_company_notifications_columns.sql` and `db/migrations/274_company_notifications_policies.sql`
+- [x] T031 [US1] Messaging group (`gmail_connections`, `gmail_messages`, `email_signatures`, `evolution_connections`, `whatsapp_chats`, `whatsapp_contacts`, `whatsapp_messages`, `whatsapp_contact_contracts`, `tenant_messages`, `contact_inquiries`) in `db/migrations/275_company_messaging_columns.sql` and `db/migrations/276_company_messaging_policies.sql`
+- [x] T032 [US1] Landing group (`landing_media`, `landing_page_settings`, `landing_page_sections`, `landing_carousel_slides`, `leasing_inquiries`) in `db/migrations/277_company_landing_columns.sql` and `db/migrations/278_company_landing_policies.sql`
+- [x] T033 [US1] Function audit, identity and permission helpers (`has_permission`, `is_staff`, `has_role`, `write_audit`, sign-in helpers): invoker where possible, explicit company predicate otherwise, accept `company_service` for the permission skip, in `db/migrations/279_functions_identity.sql` (research.md R2)
+- [x] T034 [US1] Function audit, invoice generation and schedule functions in `db/migrations/280_functions_billing.sql`
+- [x] T035 [US1] Function audit, payment, allocation, reversal, deposit, refund and insurance functions in `db/migrations/281_functions_payments.sql`
+- [x] T036 [US1] Function audit, closeout, electricity and salary functions in `db/migrations/282_functions_closeout_electricity_hr.sql`
+- [x] T037 [US1] Function audit, notification, reminder, report, summary and KPI functions, removing every "oldest company" lookup, in `db/migrations/283_functions_notifications_reports.sql`
+- [x] T038 [US1] Replace the global code sequences with `company_counters` behind the existing `next_*_code()` names in `db/migrations/284_company_counters.sql` (data-model.md: `company_counters.kind`; research.md R13)
+- [x] T039 [US1] Storage bucket policies for the `companies/<company_id>/` prefix in `db/migrations/285_storage_company_paths.sql` (research.md R12)
 - [ ] T040 [US1] Add `src/company/storagePath.ts` and use it at every upload and download site: `src/hooks/useTenants.ts`, `usePayments.ts`, `useExpenses.ts`, `useDeposits.ts`, `useTenantMessages.ts`, `src/components/admin/settings/CompanySettingsForm.tsx`, `ImageSourceInput.tsx`, `src/fns/uploadShopMedia.ts`, `sendCompanyInfo.ts`, `backupCore.ts`, `evolutionDelivery.ts`, `src/lib/reportPdfAttachment.ts`, `gmailAttachment.ts`
 - [ ] T041 [P] [US1] Move the 11 `src/lib/*` service-role importers (`audit`, `env.server`, `gmailClient.server`, `invoiceDocumentPdf`, `invoiceRelations`, `paymentReceiptPdf`, `phoneConflicts.server`, `recordSentResendMessage`, `reportPdfAttachment`, `suppressedPayments`, `userConflicts.server`) to `companyClient`
 - [ ] T042 [P] [US1] Move the notification family in `src/fns/` (`notify*.ts`, `enqueueNotification.ts`, `sendNotification.ts`, `sendBulkNotification.ts`, `dispatch*.ts`, `loadTemplateCopy.ts`, `notificationDrainJob.ts`, `workflowRegistry.ts`) to `companyClient`

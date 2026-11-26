@@ -69,3 +69,11 @@ alter table storage.objects
 ------------------------------------------------------------
 alter table auth.users
   add column if not exists banned_until timestamptz;
+
+------------------------------------------------------------
+-- schema storage — in supabase/postgres:15.1.1.78, `storage` is owned by
+-- `supabase_admin`, so `postgres` lacks GRANT OPTION when running migration 285
+-- (`grant usage on schema storage to company_service`). Grant it here just as
+-- a Supabase stack operator grants schema access to migration roles.
+------------------------------------------------------------
+grant usage on schema storage to postgres with grant option;

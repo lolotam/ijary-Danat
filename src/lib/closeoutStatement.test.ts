@@ -54,6 +54,7 @@ function makeCloseout(
     deductions: [
       {
         id: "d1",
+        company_id: "comp-1",
         closeout_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
         line: 1,
         kind: "damages",
@@ -66,6 +67,7 @@ function makeCloseout(
     invoiceActions: [
       {
         id: "a1",
+        company_id: "comp-1",
         closeout_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
         invoice_id: "inv-1",
         action: "leave",

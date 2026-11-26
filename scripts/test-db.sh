@@ -66,6 +66,12 @@ psql_in() {
     psql -U postgres -d postgres "$@"
 }
 
+psql_admin() {
+  docker exec -i -e PGPASSWORD="$PG_PASSWORD" \
+    -e PGOPTIONS="-c client_min_messages=warning" "$CONTAINER" \
+    psql -h 127.0.0.1 -U supabase_admin -d postgres "$@"
+}
+
 # Same numeric order as the apply loop so the hash is deterministic and does
 # not flip merely because a file was added where glob and loop disagree.
 FINGERPRINT="$(
@@ -135,7 +141,11 @@ apply() {
 # The bare image ships an older auth/storage baseline than a running Supabase
 # stack. See db/testing/00_service_scaffold.sql.
 log "→ applying service scaffold …"
-apply "$SCAFFOLD"
+if ! psql_admin -v ON_ERROR_STOP=1 -q < "$SCAFFOLD" >/dev/null; then
+  log "✗ failed: $(basename "$SCAFFOLD")"
+  psql_admin -v ON_ERROR_STOP=1 < "$SCAFFOLD" >&2 || true
+  exit 1
+fi
 
 log "→ applying migrations from db/migrations …"
 count=0

@@ -1,67 +1,93 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
+Guidance for coding agents working in this repository.
 
 ## What this project is
 
-**Danat Al Mustaqbal ERMP** (دانة المستقبل العقارية) — Estate Rental Management
-Platform for Danat Al Mustaqbal Real Estate, Kuwait. Property/unit/tenant/contract
-management, invoice & payment engine (MyFatoorah), tenant portal, notifications
-(SMTP/Resend email + WhatsApp Cloud API), expenses, deposits, electricity billing.
-Bilingual Arabic (RTL) / English via `src/i18n/`.
+**IJARY** — Multi-company Estate Rental Management SaaS (Kuwait), converted in
+place from the single-company Danat Al Mustaqbal ERMP codebase (see
+`specs/001-multi-company-saas/`). Features include property/building/unit,
+renter, and contract management; invoice and payment engine (per-company
+gateways: MyFatoorah, Tap, UPayments); renter portal; notifications (SMTP/Resend
+email with platform default sender + per-company WhatsApp via QR/Evolution or
+official Cloud API); expenses, deposits, electricity billing, HR/salaries; a
+super admin panel (`/platform/*`); and a background worker (BullMQ + Redis
+fronted by a Postgres transactional outbox). Bilingual Arabic (RTL) / English via
+`src/i18n/`.
 
-Phases 0–7 are implemented and the platform is live; `TODO.md` is the
-authoritative list of remaining work (smaller gaps, missing tests, open business
-decisions, and the decisions already recorded).
 The repo is **Lovable-connected**: never force-push, rebase, amend, or squash
 commits already pushed to `main`.
+
+### Terminology
+
+Always use these terms consistently across code, specs, and docs:
+
+- **Company**: a customer of the platform (a real-estate business). Keep the
+  existing `companies` table and `company_id` column name; **never** use the
+  word "tenant" to refer to a company.
+- **Renter**: the person who rents a unit from a company (called `tenants` /
+  `tenant` in legacy schema and code).
+- **Staff**: a company's employees who use the company admin panel (`/admin/*`).
+- **Super admin**: the platform owner's account, outside all companies, using
+  the platform panel (`/platform/*`).
+
+## Danat production is out of bounds
+
+- **Danat's existing production deployment and data are strictly out of bounds.**
+- **No command, migration, script, or deployment in this repository targets
+  Danat's production** (`ssh-danatfuture-mcp`, `danatfuture-*` containers, or
+  Danat's live server/database).
+- IJARY is a separate deployment on the owner's Contabo server managed with
+  Dokploy and Traefik behind Cloudflare (`ijary.app`). Danat's live data is not
+  migrated in this conversion.
+- Do not deploy or touch any server without the owner's explicit go-ahead at that
+  moment.
 
 ## Commands (Bun)
 
 ```bash
 bun run dev          # Vite dev server
 bun run build        # production build
-bun run lint         # ESLint 9
+bun run lint         # ESLint
 bun run typecheck    # tsc --noEmit
-bun run test         # Vitest — money-path tests in src/fns/*.test.ts
+bun run test         # Vitest unit tests
 bun run format       # Prettier
 bun run gen:types    # write generated types to database.types.generated.ts (reference only)
 bun run test:sql     # SQL integration tests against a real Postgres (needs Docker)
-bun run test:db      # provision/refresh that Postgres on its own
+bun run test:db      # provision/refresh that Postgres from scratch
+bun run worker       # background worker process (added in Phase 1 setup)
 ```
 
-Run lint + typecheck + test before presenting or committing work.
+Run `bun run lint`, `bun run typecheck`, and `bun run test` (plus
+`bun run test:sql` when SQL changes) before presenting or committing work.
+
+## Coding standards
 
 ### File size: 500–600 lines is the ceiling
 
 Keep every new file under **500–600 lines**. Past that, split by responsibility —
 not by technical layer — so each file has one clear job and things that change
-together stay together. This is a maintainability and scalability rule, and it is
-also a practical one: a file that fits in one context window is one an agent can
-reason about correctly and edit reliably.
+together stay together. When a file you are already working in has grown past
+the ceiling, splitting it is in scope; do not refactor unrelated large files you
+merely read.
 
-When a file you are already working in has grown past the ceiling, splitting it
-is in scope. Do not refactor unrelated large files you merely happened to read.
-
-State by `wc -l` on 2026-10-19 (regenerate it, don't trust memory): the
-2026-09-23 offenders are all split and now under 500 lines. The only production
-files past 600 are `src/integrations/supabase/database.types.ts` (hand-maintained
-types, see below), `src/components/ui/sidebar.tsx` (vendored shadcn) and
-`src/routeTree.gen.ts` (generated, ~1200) — leave all three. The rest past 600 are these eleven test files; split one when you next add
-cases to it: `src/db/contractCloseout.sqltest.ts` (~1290),
-`src/db/invoiceRegeneration.sqltest.ts`,
-`src/fns/resendWebhook.test.ts`, `src/fns/createPayment.test.ts` (~770–870),
-`src/lib/adminTableSortValues.test.tsx`, `src/fns/resolveTemplateVariables.test.ts`,
-`src/db/depositInvoiceLink.sqltest.ts`, `src/db/contractScheduleSync.sqltest.ts`,
-`src/db/dashboardAggregates.sqltest.ts`, `src/db/moduleSummaries.sqltest.ts`,
-`src/lib/paymentReceiptPdf.test.ts` (~600–710).
+Existing files past 600 lines: `src/integrations/supabase/database.types.ts`
+(hand-maintained types), `src/components/ui/sidebar.tsx` (vendored shadcn),
+`src/routeTree.gen.ts` (generated — leave all three), and eleven large legacy
+test files (`src/db/contractCloseout.sqltest.ts`,
+`src/db/invoiceRegeneration.sqltest.ts`, `src/fns/resendWebhook.test.ts`,
+`src/fns/createPayment.test.ts`, `src/lib/adminTableSortValues.test.tsx`,
+`src/fns/resolveTemplateVariables.test.ts`, `src/db/depositInvoiceLink.sqltest.ts`,
+`src/db/contractScheduleSync.sqltest.ts`, `src/db/dashboardAggregates.sqltest.ts`,
+`src/db/moduleSummaries.sqltest.ts`, `src/lib/paymentReceiptPdf.test.ts`) — split
+one when you next add cases to it.
 
 ### Document functions in Arabic, above the function
 
-Every function gets a doc comment **before** it, and that comment leads with an
-Arabic description of what the function does. English may follow for terms with
-no settled Arabic equivalent, and for the _why_ — the reasoning, trade-off or
-incident that explains a non-obvious choice.
+Every function gets a doc comment **before** it, leading with an Arabic
+description of what the function does. English may follow for terms with no
+settled Arabic equivalent, and for the _why_ — the reasoning, trade-off, or
+incident behind a non-obvious choice.
 
 ```ts
 /**
@@ -73,27 +99,93 @@ incident that explains a non-obvious choice.
 export function totalMonthlyAmount(rows: Array<{ monthly_amount: number }>): number {
 ```
 
-Arabic is the product's primary language and the UI is RTL — the people
-maintaining this code read Arabic first. The rule still holds that comments
-explain _why_, never restate _what_ the next line does.
+Arabic is the product's primary language and the UI is RTL. Comments explain
+_why_, never restate _what_ the next line does.
 
 ### Guard skills are required, not optional
 
-Gates prove the code runs. They do not prove it is any good. On **every** feature
-implementation — your own or a subagent's — run the guard skills before
-presenting, committing or merging:
+Gates prove the code runs; they do not prove it is good. On **every** feature
+implementation — your own or a delegated agent's — apply the matching guard
+before presenting, committing, or merging:
 
-- **`clean-code-guard`** after any production code is written, edited, refactored
-  or fixed.
+- **`clean-code-guard`** after any production code is written, edited,
+  refactored, or fixed.
 - **`test-guard`** after any test is written or edited, and when reviewing test
   files.
-- **`docs-guard`** after any docstring, README, changelog or API-doc change.
+- **`docs-guard`** after any docstring, README, changelog, or documentation
+  change.
 
-Treat code produced by a delegated agent as untrusted until it has been through
-these: inspect the diff, run the guard skill that matches what changed, then run
-the project gates, and only then summarise or commit. A passing suite says
-nothing about a test that asserts nothing, a mock of an internal helper, or a
-catch block that swallows the error — which is exactly what the guards look for.
+## Company context & multi-company isolation
+
+Full contract: `specs/001-multi-company-saas/contracts/company-context.md`.
+
+### Hosts and route gating
+
+| Host | Serves | Company context |
+|---|---|---|
+| `ijary.app` | Temporary platform page with sign-in entry (later marketing page) | None |
+| `admin.ijary.app` | Super admin panel (`/platform/*` routes only) | None |
+| `<slug>.ijary.app` (or verified custom domain) | Company sign-in, admin panel (`/admin/*`), renter portal (`/portal/*`) | Owning company |
+| Any other host | 404 page (reveals no company) | None |
+
+- `/platform/*` returns 404 on company hosts; `/admin/*` and `/portal/*` return
+  404 on the platform root and super admin hosts.
+- Never set any cookie with a parent-domain scope (e.g., `Domain=.ijary.app`).
+
+### Request context (server)
+
+Resolved once per request by host middleware and read via `getRequestCompany()`
+or `requireRequestCompany()` (throws `COMPANY_REQUIRED` when no company is set):
+
+- `RequestCompany`: `{ id, slug, status: "active" | "suspended", host }`.
+- After authentication, `profile.company_id !== requestCompany.id` must be
+  treated as not signed in, without revealing that the account exists elsewhere.
+- When `status === "suspended"`, every route except the suspended page and public
+  webhook routes responds with the suspended page.
+
+### Database clients & role separation
+
+| Client | Postgres role | Who may import it | Company source |
+|---|---|---|---|
+| Browser `supabase` | `authenticated` / `anon` | Client code | `profiles.company_id` via `current_company_id()` |
+| `companyClient(companyId, opts?)` | `company_service` | Server functions & job handlers | Signed JWT claim |
+| `platformClient` (legacy `supabaseAdmin`) | `service_role` | Only allow-listed platform files (`src/platform/**`, `src/company/hostCompany.server.ts`, `src/worker/relay.ts`, `src/worker/scheduler.ts`) | None; bypasses RLS |
+
+- `companyClient(companyId, opts?)` throws `COMPANY_REQUIRED` if `companyId` is
+  empty or not a UUID, and signs a 5-minute JWT (`{ role: "company_service",
+  company_id, allow_suspended?: true }`).
+- `allowSuspended: true` may be passed **only** by the payment settlement path.
+- Importing `client.server.ts` outside the ESLint allow-list fails `bun run lint`.
+
+### JWT claims & SQL contract
+
+- Claims read by Postgres: `role`, `sub` (`auth.uid()`), `aal`
+  (`is_platform_admin()` requires `aal2`), `company_id` (read only for
+  `company_service`; ignored on `authenticated`), `allow_suspended`,
+  `impersonator`, and `impersonation_session`.
+- Core SQL helpers: `public.current_company_id()` (returns `null` on missing,
+  suspended, or expired context so every policy fails closed),
+  `public.is_platform_admin()`, and `public.module_enabled(_key)`.
+- Every company-scoped table policy targets `authenticated, company_service` and
+  hoists the context call inside a scalar sub-select:
+  `company_id = (select public.current_company_id())` alongside hoisted auth
+  helpers such as `(select public.is_staff((select auth.uid())))`. Never write
+  bare `is_staff(auth.uid())` or unhoisted `current_company_id()`.
+- Structure rules enforced by SQL tests:
+  1. Every `public` table off the platform allow-list (`permissions`,
+     `reserved_slugs`, platform tables) has `company_id`, forced RLS, and
+     policies containing `current_company_id`.
+  2. Every `security definer` function in `public` references
+     `current_company_id` or is on the platform allow-list; prefer
+     `security invoker` where caller rights suffice.
+  3. Never select `from companies … limit 1` ("oldest company" lookup is
+     forbidden).
+  4. Never grant `delete` on `companies` (suspension is the only access removal).
+
+### Standard company-context error codes
+
+`COMPANY_REQUIRED`, `COMPANY_SUSPENDED`, `MODULE_DISABLED`, `LIMIT_UNITS`,
+`LIMIT_STAFF`, `LIMIT_STORAGE`, `LIMIT_WHATSAPP`, `SUPPORT_SESSION_FORBIDDEN`.
 
 ## Architecture
 
@@ -101,173 +193,50 @@ catch block that swallows the error — which is exactly what the guards look fo
   `src/routes/` — read `src/routes/README.md` first; Next.js conventions
   (`src/pages/`, `app/layout.tsx`) are wrong here. `src/routeTree.gen.ts` is
   generated — never edit.
-- **Server functions** in `src/fns/` hold all money-moving logic
-  (`generateInvoices`, `applyAllocation`, `reversePayment`, `evaluateOverdue`,
-  `createPayment`, `myfatoorahWebhook`) plus jobs (`cronJobs`,
-  `contractExpiryJob`, `scheduledReportsJob`) and notification dispatch.
-  Tests sit next to the code.
-  `workflowRegistry` holds the shared pause-and-record gate: the `cron_jobs`
-  table registers both scheduled jobs and event-triggered workflows, told apart
-  by `kind` (migration 69). Event senders (`notifyDepositConfirmed`,
-  `notifyPaymentSuccess`, `notifyUserCredentials`,
-  `notifyWhatsappSessionDisconnected`) wrap themselves in
-  `runEventWorkflow` rather than checking the switch at their call sites —
-  scattered checks are where one gets missed, and a missed one is invisible.
-  `notifyWhatsappSessionDisconnected` composes `runEventWorkflow`,
-  `renderAdminEmailCopy`, and `enqueueNotification` directly (with a cheap
-  pre-read and atomic `evolution_connections` claim order) instead of
-  `notifyAdminEvent`.
-  `loadTemplateCopy` reads the admin-edited subject/body from
-  `notification_templates`; senders fall back to the built-in builder in
-  `src/lib/emailTemplates.ts` only when a row is missing or inactive. Bodies are
-  inner content wrapped by `renderEmailDocument`, unless they start with
-  `<!doctype`/`<html`, in which case they are used verbatim. `due_reminder` has
-  no sender and is seed-only.
-- **Public API routes**: `src/routes/api/public/cron.ts` (Bearer `CRON_SECRET`;
-  the ten jobs of the `JOBS` map in `src/fns/cronJobs.ts` — all idempotent, keep
-  them that way), `myfatoorah-webhook.ts` (signature-verified),
-  `evolution-webhook.ts` (constant-time `x-danat-webhook-secret` check; ingests
-  WhatsApp messages/acks and confirms QR session disconnects), and
-  `resend-webhook.ts` (Svix-signed email delivery events). The Resend one moves
-  a permanently bounced notification to `needs_review` and **never** to
-  `failed` — `runNotificationDrainJob` re-sends `failed` rows, so `failed`
-  would resend to an address that already rejected the mail.
-- **Self-hosted Supabase** (NOT Lovable Cloud): Postgres 17 + GoTrue + PostgREST +
-  Storage + Realtime behind Kong. Browser and server clients in
-  `src/integrations/supabase/`.
+- **Server functions & background worker**: `src/fns/` holds company server
+  functions, `src/platform/` holds super admin operations, `src/company/` holds
+  host/context/module/limit helpers, and `src/jobs/` + `src/worker/` run
+  deferred work via BullMQ and Redis fronted by the `job_requests` outbox table.
+  - Money-moving mutations (recording/allocating/reversing payments, marking
+    invoices paid/unpaid, closing out contracts, creating payment links) stay
+    synchronous and atomic with their audit rows; any resulting notifications or
+    events are enqueued via `enqueue_job()` inside the same SQL transaction.
+  - `workflowRegistry` registers scheduled jobs and event-triggered workflows;
+    event senders wrap themselves in `runEventWorkflow`.
+  - `loadTemplateCopy` reads per-company templates from `notification_templates`,
+    falling back to `src/lib/emailTemplates.ts` (`renderEmailDocument` wraps
+    inner bodies unless they start with `<!doctype`/`<html`). `due_reminder`
+    is seed-only.
+  - Resend webhook moves permanently bounced notifications to `needs_review` and
+    **never** to `failed` (the drain job retries `failed` rows).
+- **Self-hosted Supabase**: Postgres 17 + GoTrue + PostgREST + Storage +
+  Realtime behind Kong. Storage files are separated under
+  `companies/<company_id>/...`.
 - **Migrations are manual SQL**: `db/migrations/` in numeric order by leading
-  migration number (`sort -V` / parseInt — not bare lexicographic filename
-  order; `"100_…"` sorts before `"50_…"` under lex), then `supabase/migrations/`.
-  See `db/README.md`. Mostly idempotent, but not universally —
-  `identify_contract_expiry_reminders` changes its OUT-parameter row type
-  across 07/31/33, and `create or replace function` cannot do that, so
-  re-applying the whole set to a migrated database fails. Verify any migration
-  with `bun run test:db`, which builds a clean database from scratch.
-- **`database.types.ts` is hand-maintained**, despite looking generated. It
-  exports 73 named aliases the Supabase generator does not emit, imported by
-  ~70 files. After a schema change run `bun run gen:types` — which writes a
-  _reference_ file — then hand-copy the new table/RPC entry across. Never
-  overwrite the real file.
-- UI: Tailwind CSS 4 + shadcn/ui (Radix) in `src/components/`, forms via
-  react-hook-form + Zod, RBAC enforced through `has_permission` / RLS.
-- New RLS policies wrap the auth helpers in a scalar sub-select —
-  `(select public.is_staff((select auth.uid())))`, never `is_staff(auth.uid())`.
-  The bare form runs once per row (48 ms vs 3 ms counting invoices, migration
-  243); `src/db/rlsHoistedAuth.sqltest.ts` fails on it.
-- Archived contracts (`archived_at is not null`) are excluded from all four
-  invoice-generation entry points and both reminder paths as of migration 82.
-- Invoice state `waived` means written off; disputes are a separate flag
-  (`disputed_at` / `dispute_reason`), not a state.
-- `close_out_contract` writes audit rows from inside SQL via `write_audit` for
-  atomicity — the first user-facing path to do so (same reason as
-  `erase_all_data`: multi-table money must not commit without its audit row).
+  migration number (`sort -V` / `parseInt`, not bare lexicographic order), then
+  `supabase/migrations/`. See `db/README.md`. Verify every migration from a
+  clean database with `bun run test:db`.
+- **`database.types.ts` is hand-maintained**, despite looking generated. After a
+  schema change run `bun run gen:types` (writes `database.types.generated.ts` as
+  a reference), then hand-copy the new table/column/RPC entries into
+  `src/integrations/supabase/database.types.ts`. Never overwrite the real file.
+- **UI & domain invariants**: Tailwind CSS 4 + shadcn/ui (Radix) in
+  `src/components/`, forms via react-hook-form + Zod, RBAC enforced through
+  `has_permission` / RLS. Archived contracts (`archived_at is not null`) are
+  excluded from invoice generation and reminders. Invoice state `waived` means
+  written off; disputes use `disputed_at` / `dispute_reason`.
+  `close_out_contract` writes audit rows from SQL via `write_audit` for
+  atomicity.
 
 ## Security rules
 
-- `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS — server-only, never in a `VITE_`
-  variable (anything `VITE_`-prefixed is compiled into the browser bundle).
-- Never commit `.env` / `.env.production` or paste real keys into docs or code.
-- Admin-triggered job paths stay user-scoped (`has_permission`); only the cron
-  path runs as `service_role`.
-
-## Production — Danat-Future server (MCP access)
-
-Production moved here in July 2026. The previous host (`WaleedU`,
-`116.202.66.131`, containers `danatkuwait-*`, MCP `ssh-musalam-2-mcp`) is the
-**old** server — do not treat anything read from it as current.
-
-| Item          | Value                                                                                                                   |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Host          | `Waleed3` (OS hostname `danat-future`) — Ubuntu 24.04.4 LTS, Docker 29.x, 4 vCPU / 15 GiB RAM                           |
-| Public IP     | `49.12.59.137` (Hetzner)                                                                                                |
-| Panel         | Dokploy + Traefik (auto-TLS); Cloudflare sits in front of both domains                                                  |
-| App container | `danatfuture-danatfuture-vk5hnn` — this repo's `Dockerfile`, port 3000                                                  |
-| App domain    | https://danat-future.com                                                                                                |
-| Supabase      | Dokploy compose `danatfuture-supabase-ozoxsa` — Postgres, Kong, GoTrue, PostgREST, Storage, Realtime, Studio, Supavisor |
-| Supabase URL  | https://supabase.danat-future.com (public); internal Docker network for the app container                               |
-| DB container  | `danatfuture-supabase-ozoxsa-db-1` (`psql -U supabase_admin -d postgres`)                                               |
-
-**MCP servers for this project** (use these and only these — not contabo /
-curemed / musalam-1 / Abdelaziz / musalam-2 targets):
-
-- **`ssh-danatfuture-mcp`** (`exec`, `sudo-exec`) — shell on the production host.
-  Use for container status (`docker ps`), logs, Traefik config, psql against the
-  Supabase Postgres container.
-
-### Storage lives on a bind mount, and its metadata is in xattrs
-
-Supabase Storage files are **not** in a Docker volume:
-
-```
-/etc/dokploy/compose/danatfuture-supabase-ozoxsa/files/volumes/storage
-  └── stub/stub/<bucket>/<path>/<object-name>/<version-uuid>   ← the real file
-```
-
-Buckets: `landing` (largest by far), `branding`, `tenant-documents`,
-`tenant-messages`, `deposit-attachments`.
-
-Each **inner version file** carries its content type in POSIX extended
-attributes — `user.supabase.content-type`, `user.supabase.cache-control`.
-storage-api reads them on every request; without them it returns **HTTP 500
-`ENODATA` / "The extended attribute does not exist."**, not a 404.
-
-So **any copy, backup, or restore of this directory must preserve xattrs**:
-`rsync -aX`, or `tar --xattrs --xattrs-include='*'`. Plain `cp`, `scp`, or
-`rsync -a` silently drops them and every image 500s while looking perfectly
-present on disk. This is exactly what broke the July 2026 server move.
-
-Deploy flow: **any push or merge to `main` auto-deploys** — Dokploy watches the
-branch and builds the multi-stage Dockerfile with no manual step. Pushing a
-feature branch does **not** deploy, so branches are safe to push freely.
-`VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` are **build args** baked
-into the bundle — set them in Dokploy before building. The app container joins
-the Supabase stack's Docker network so `SUPABASE_URL` resolves internally.
-Cron: ten staggered entries hitting `POST /api/public/cron` (runbook +
-crontab lines in `deploy/README.md`).
-
-### Migrations do not auto-apply — run them over `ssh-danatfuture-mcp`
-
-Dokploy deploys code, never schema. Apply migrations yourself against
-`danatfuture-supabase-ozoxsa-db-1`, and apply them **before** the new code goes
-live, or the new bundle runs against the old schema.
-
-Getting the files onto the server is the awkward part, and the trick is that
-**the merge itself delivers them**: Dokploy clones `main` into
-`/etc/dokploy/applications/danatfuture-danatfuture-vk5hnn/code` at the start of
-every build, so the new migrations are on disk minutes before the container
-swaps. Concatenate them there rather than transferring anything:
-
-```bash
-cd /etc/dokploy/applications/danatfuture-danatfuture-vk5hnn/code/db/migrations
-cat 110_*.sql 111_*.sql … > /root/apply.sql        # numeric order, one file each
-md5sum /root/apply.sql                              # MUST match the local file
-docker exec -i danatfuture-supabase-ozoxsa-db-1 \
-  psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f - < /root/apply.sql
-docker exec danatfuture-supabase-ozoxsa-db-1 \
-  psql -U supabase_admin -d postgres -Atc "notify pgrst, 'reload schema'"
-```
-
-- **Checksum against the local file.** It is the only thing proving production
-  ran the same bytes the SQL suite validated.
-- **`notify pgrst` is required.** Without it PostgREST keeps a stale signature
-  cache and new RPCs 404 even though they exist.
-- `drop … if exists` emits `NOTICE` lines on first application. Those are not
-  errors; grep for `^ERROR` and trust `ON_ERROR_STOP=1` plus the exit code.
-- **`pg_dump` first.** Schema changes are not reversible.
-
-Two properties of the MCP bridge to plan around:
-
-- Long-running commands (`pg_dump`, a big `psql -f`) exceed the call timeout and
-  return `No response from server` while still running — or not running at all.
-  Wrap them in `nohup sh -c '… ; echo $? > /root/status.txt' &` and poll the
-  status file.
-- Command size is capped at a few KB, so a 150 KB migration set cannot be piped
-  in as an argument. Use the Dokploy checkout above rather than chunked base64.
-
-Dokploy's checkout embeds a short-lived GitHub OAuth token in `.git/config` that
-is refreshed per deploy and **is normally expired between deploys** — so
-`git fetch` of an arbitrary branch on the server does not work. Only `main`, and
-only what the last deploy pulled.
+- `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, and
+  `INTEGRATIONS_MASTER_KEY` are server-only — never in a `VITE_` variable
+  (anything `VITE_`-prefixed is compiled into the browser bundle).
+- Never commit `.env` / `.env.production` or paste real keys into docs, code,
+  or audit logs.
+- Per-company gateway and provider secrets live encrypted (AES-256-GCM) in
+  `company_secrets`; only `last4` may be returned to screens.
 
 ## graphify
 

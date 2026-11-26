@@ -14,7 +14,8 @@
     "test": "vitest run",
     "gen:types": "bash scripts/gen-types.sh",
     "test:sql": "vitest run --config vitest.sql.config.ts",
-    "test:db": "bash scripts/test-db.sh"
+    "test:db": "bash scripts/test-db.sh",
+    "worker": "bun run src/worker/main.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -57,6 +58,7 @@
     "@tiptap/extension-text-style": "3.30.0",
     "@tiptap/react": "3.30.0",
     "@tiptap/starter-kit": "3.30.0",
+    "bullmq": "^6.7.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -67,6 +69,8 @@
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.5.0",
+    "ioredis": "^6.1.0",
+    "jose": "^6.2.18",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
     "lucide-react": "^0.575.0",

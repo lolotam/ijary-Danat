@@ -39,6 +39,7 @@ import type { BrandRow } from "@/components/admin/landing-page/ShopsTable";
 function brand(id: string): BrandRow {
   return {
     id,
+    company_id: "comp-1",
     property_id: "p1",
     unit_id: null,
     name_original: "Original",

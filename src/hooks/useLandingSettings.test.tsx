@@ -59,6 +59,7 @@ import { useUpdateLandingMedia } from "@/hooks/useLandingSettings";
 function row(id: string, category: LandingMedia["category"], show: boolean): LandingMedia {
   return {
     id,
+    company_id: "comp-1",
     storage_path: `landing/${id}.jpg`,
     mime_type: "image/jpeg",
     width: 800,

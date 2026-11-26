@@ -169,6 +169,53 @@ export type TariffType = "flat" | "tiered" | "per_unit";
 export type ElectricityChargeStatus = "draft" | "issued" | "paid" | "cancelled";
 export type MaintenancePriority = "low" | "medium" | "high" | "urgent";
 export type MaintenanceStatus = "open" | "in_progress" | "completed" | "cancelled";
+/** Migration 254 — حالة الشركة في المنصة. */
+export type CompanyStatus = "active" | "suspended";
+/** Migration 254 — نوع نطاق الشركة (فرعي أو مخصص). */
+export type CompanyDomainKind = "subdomain" | "custom";
+/** Migration 254 — حالة التحقق من النطاق. */
+export type DomainVerificationStatus = "verified" | "pending" | "failed";
+
+export type CompanyDomainRow = {
+  id: string;
+  company_id: string;
+  host: string;
+  kind: CompanyDomainKind;
+  is_primary: boolean;
+  verification_status: DomainVerificationStatus;
+  provider_ref: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReservedSlugRow = {
+  slug: string;
+  created_at: string;
+};
+
+/** Migration 284 — أنواع عدّادات الترقيم المعزولة لكل شركة. */
+export type CompanyCounterKind =
+  | "invoice"
+  | "payment"
+  | "receipt"
+  | "contract"
+  | "refund"
+  | "property"
+  | "building"
+  | "unit"
+  | "tenant"
+  | "payment_request"
+  | "expense"
+  | "deposit"
+  | "electricity_charge"
+  | "employee"
+  | "maintenance_request";
+
+export type CompanyCounterRow = {
+  company_id: string;
+  kind: CompanyCounterKind;
+  last_value: number;
+};
 
 type TableDefinition<Row, RequiredInsert extends keyof Row = never> = {
   Row: Row;
@@ -186,6 +233,7 @@ export type CardVisibilityRow = {
 };
 
 export type BuildingCategoryRow = {
+  company_id: string;
   code: string;
   created_at: string;
   id: string;
@@ -196,6 +244,7 @@ export type BuildingCategoryRow = {
 };
 
 export type OptionListRow = {
+  company_id: string;
   id: string;
   code: string;
   name_ar: string;
@@ -208,6 +257,7 @@ export type OptionListRow = {
 };
 
 export type OptionListItemRow = {
+  company_id: string;
   id: string;
   list_id: string;
   value: string;
@@ -245,6 +295,7 @@ export type PropertyRow = {
 };
 
 export type BuildingRow = {
+  company_id: string;
   address_ar: string | null;
   address_en: string | null;
   area: number | null;
@@ -264,6 +315,7 @@ export type BuildingRow = {
 };
 
 export type UnitRow = {
+  company_id: string;
   area: number | null;
   building_id: string | null;
   code: string;
@@ -379,6 +431,7 @@ export type EmployeeRow = {
 
 /** Mirrors TenantDocumentRow PLUS `expiry_date`, which tenant_documents lacks. */
 export type EmployeeDocumentRow = {
+  company_id: string;
   created_at: string;
   display_name: string | null;
   document_type: string;
@@ -393,6 +446,7 @@ export type EmployeeDocumentRow = {
 
 /** One row per employee per month. `amount` is copied at generation time. */
 export type SalaryRow = {
+  company_id: string;
   amount: number;
   created_at: string;
   delivered: boolean;
@@ -411,6 +465,7 @@ export type WorkflowRecipientTarget = "admin" | "company" | "tenant";
 
 /** T14b — the cron registry. Modelled on report_schedules, plus a pause switch. */
 export type CronJobRow = {
+  company_id: string;
   created_at: string;
   description_ar: string | null;
   description_en: string | null;
@@ -496,6 +551,7 @@ export type TenantRow = {
 };
 
 export type TenantDocumentRow = {
+  company_id: string;
   /** Migration 77 — null means the document applies to the tenant as a whole. */
   contract_id: string | null;
   created_at: string;
@@ -510,6 +566,7 @@ export type TenantDocumentRow = {
 };
 
 export type ContractRow = {
+  company_id: string;
   archived_at: string | null;
   code: string;
   /** App-local commercial activity (migration 99). Free text whose vocabulary
@@ -554,6 +611,7 @@ export type ContractRow = {
 
 /** Migration 110 — a contract holds one row per rented unit. */
 export type ContractUnitRow = {
+  company_id: string;
   contract_id: string;
   created_at: string;
   id: string;
@@ -566,6 +624,7 @@ export type ContractUnitRow = {
 };
 
 export type ContractExtraChargeRow = {
+  company_id: string;
   amount: number;
   category_id: string;
   contract_id: string;
@@ -577,12 +636,14 @@ export type ContractExtraChargeRow = {
 
 /** صف ربط علامة تجارية بعقد — الجدول الوسيط لعلاقة كثير-إلى-كثير (ترحيل 162). */
 export type CommercialBrandContractRow = {
+  company_id: string;
   brand_id: string;
   contract_id: string;
   created_at: string;
 };
 
 export type ConcessionRow = {
+  company_id: string;
   contract_id: string;
   created_at: string;
   discount_amount: number | null;
@@ -599,6 +660,7 @@ export type ConcessionRow = {
 
 /** Migration 127 — one discount per invoice; unique (invoice_id). */
 export type ConcessionInvoiceRow = {
+  company_id: string;
   concession_id: string;
   created_at: string;
   invoice_id: string;
@@ -675,6 +737,7 @@ export type ContractCloseoutRow = {
 
 /** Migration 84 — deduction lines on a close-out. */
 export type ContractCloseoutDeductionRow = {
+  company_id: string;
   amount: number;
   closeout_id: string;
   created_at: string;
@@ -687,6 +750,7 @@ export type ContractCloseoutDeductionRow = {
 
 /** Migration 84 — per-invoice action recorded on a close-out. */
 export type ContractCloseoutInvoiceActionRow = {
+  company_id: string;
   action: CloseoutInvoiceActionKind;
   amount: number;
   closeout_id: string;
@@ -699,6 +763,7 @@ export type ContractCloseoutInvoiceActionRow = {
 
 /** Migration 84 — contract operational timeline (not audit_logs). */
 export type ContractOperationalEventRow = {
+  company_id: string;
   actor_id: string | null;
   closeout_id: string | null;
   contract_id: string;
@@ -711,6 +776,7 @@ export type ContractOperationalEventRow = {
 };
 
 export type InvoiceItemRow = {
+  company_id: string;
   amount: number;
   created_at: string;
   description_ar: string | null;
@@ -772,6 +838,7 @@ export type PaymentRow = {
 };
 
 export type PaymentAllocationRow = {
+  company_id: string;
   amount: number;
   created_at: string;
   id: string;
@@ -780,6 +847,7 @@ export type PaymentAllocationRow = {
 };
 
 export type ReceiptRow = {
+  company_id: string;
   amount: number;
   code: string;
   created_at: string;
@@ -794,6 +862,7 @@ export type ReceiptRow = {
 };
 
 export type PaymentRequestRow = {
+  company_id: string;
   amount: number;
   code: string;
   created_at: string;
@@ -816,6 +885,7 @@ export type PaymentRequestRow = {
 };
 
 export type WebhookEventRow = {
+  company_id: string;
   error: string | null;
   event_type: string | null;
   gateway: GatewayProvider;
@@ -837,6 +907,7 @@ export type WebhookEventRow = {
  * across retries and is therefore the replay key.
  */
 export type EmailWebhookEventRow = {
+  company_id: string;
   error: string | null;
   event_type: string | null;
   id: string;
@@ -861,6 +932,7 @@ export type EmailWebhookEventRow = {
  * which would collide for two runs starting in the same minute.
  */
 export type BackupRow = {
+  company_id: string;
   id: string;
   file_name: string;
   storage_path: string;
@@ -876,6 +948,7 @@ export type BackupRow = {
 };
 
 export type NotificationTemplateRow = {
+  company_id: string;
   allow_freeform: boolean;
   body_ar: string | null;
   body_en: string | null;
@@ -896,6 +969,7 @@ export type NotificationTemplateRow = {
 };
 
 export type ProviderConfigRow = {
+  company_id: string;
   config: Json;
   created_at: string;
   from_email: string | null;
@@ -909,6 +983,7 @@ export type ProviderConfigRow = {
 };
 
 export type NotificationRow = {
+  company_id: string;
   audience: NotificationAudience;
   body: string | null;
   channel: NotificationChannel;
@@ -938,6 +1013,7 @@ export type NotificationRow = {
 };
 
 export type ReportScheduleRow = {
+  company_id: string;
   code: string;
   created_at: string;
   frequency: ReportFrequency;
@@ -954,6 +1030,7 @@ export type ReportScheduleRow = {
 };
 
 export type ExpenseCategoryRow = {
+  company_id: string;
   code: string;
   created_at: string;
   id: string;
@@ -1015,6 +1092,7 @@ export type DepositRow = {
 };
 
 export type ElectricityTariffRow = {
+  company_id: string;
   code: string;
   created_at: string;
   currency: string;
@@ -1029,6 +1107,7 @@ export type ElectricityTariffRow = {
 };
 
 export type ElectricityMeterRow = {
+  company_id: string;
   created_at: string;
   id: string;
   installed_at: string | null;
@@ -1042,6 +1121,7 @@ export type ElectricityMeterRow = {
 };
 
 export type MeterReadingRow = {
+  company_id: string;
   consumption_kwh: number;
   created_at: string;
   id: string;
@@ -1056,6 +1136,7 @@ export type MeterReadingRow = {
 };
 
 export type ElectricityChargeRow = {
+  company_id: string;
   amount: number;
   code: string;
   consumption_kwh: number;
@@ -1074,6 +1155,7 @@ export type ElectricityChargeRow = {
 };
 
 export type GeneratedReportRow = {
+  company_id: string;
   created_at: string;
   html_content: string | null;
   id: string;
@@ -1087,6 +1169,7 @@ export type GeneratedReportRow = {
 };
 
 export type LandingMediaRow = {
+  company_id: string;
   id: string;
   storage_path: string;
   mime_type: string;
@@ -1155,6 +1238,7 @@ export type LandingPageSectionsRow = {
 };
 
 export type CommercialBrandRow = {
+  company_id: string;
   id: string;
   property_id: string;
   unit_id: string | null;
@@ -1200,6 +1284,7 @@ export type LandingCarouselSlideRow = {
 };
 
 export type ContactInquiryRow = {
+  company_id: string;
   id: string;
   name: string;
   phone: string | null;
@@ -1279,6 +1364,7 @@ export type GmailMessageRow = {
  * into fields returns wrong data as soon as the markup stops matching.
  */
 export type EmailSignatureRow = {
+  company_id: string;
   id: string;
   admin_id: string;
   name: string;
@@ -1312,6 +1398,7 @@ export type GmailConnectionRow = {
 
 /** Migration 179 — the paired Evolution API (WhatsApp QR) session, singleton row. */
 export type EvolutionConnectionRow = {
+  company_id: string;
   id: number;
   instance_name: string;
   /**
@@ -1334,6 +1421,7 @@ export type EvolutionConnectionRow = {
 
 /** Migration 180 — one WhatsApp message (inbound or outbound) in the inbox. */
 export type WhatsappMessageRow = {
+  company_id: string;
   id: string;
   message_id: string;
   chat_number: string;
@@ -1352,6 +1440,7 @@ export type WhatsappMessageRow = {
 
 /** Migration 180 — chat-list summary row, keyed by bare international digits. */
 export type WhatsappChatRow = {
+  company_id: string;
   chat_number: string;
   display_name: string | null;
   /** Migration 184 — WhatsApp CDN profile picture; expires, refreshed by Sync history. */
@@ -1365,6 +1454,7 @@ export type WhatsappChatRow = {
 
 /** Migration 186 — links a WhatsApp contact to one of a tenant's contracts. */
 export type WhatsappContactContractRow = {
+  company_id: string;
   contact_id: string;
   contract_id: string;
   created_at: string;
@@ -1372,6 +1462,7 @@ export type WhatsappContactContractRow = {
 
 /** Migration 180 — saved WhatsApp contact, auto-captured or admin-entered. */
 export type WhatsappContactRow = {
+  company_id: string;
   id: string;
   phone: string;
   name: string | null;
@@ -1388,6 +1479,7 @@ export type WhatsappContactRow = {
 };
 
 export type TenantMessageRow = {
+  company_id: string;
   id: string;
   tenant_id: string;
   sender_profile_id: string | null;
@@ -1399,6 +1491,7 @@ export type TenantMessageRow = {
 };
 
 export type InvoiceYearRow = {
+  company_id: string;
   year: number;
   created_at: string;
   created_by: string | null;
@@ -1459,9 +1552,15 @@ export interface Database {
           name_ar: string;
           name_en: string;
           phone: string | null;
+          phone_country_code: string;
           portal_apple_pay_enabled: boolean;
           portal_bg_url: string | null;
           portal_google_pay_enabled: boolean;
+          slug: string;
+          status: CompanyStatus;
+          suspended_at: string | null;
+          suspended_by: string | null;
+          suspended_reason: string | null;
           timezone: string;
           updated_at: string;
           whatsapp: string | null;
@@ -1498,9 +1597,15 @@ export interface Database {
           name_ar: string;
           name_en: string;
           phone?: string | null;
+          phone_country_code?: string;
           portal_apple_pay_enabled?: boolean;
           portal_bg_url?: string | null;
           portal_google_pay_enabled?: boolean;
+          slug?: string;
+          status?: CompanyStatus;
+          suspended_at?: string | null;
+          suspended_by?: string | null;
+          suspended_reason?: string | null;
           timezone?: string;
           updated_at?: string;
           whatsapp?: string | null;
@@ -1537,15 +1642,24 @@ export interface Database {
           name_ar?: string;
           name_en?: string;
           phone?: string | null;
+          phone_country_code?: string;
           portal_apple_pay_enabled?: boolean;
           portal_bg_url?: string | null;
           portal_google_pay_enabled?: boolean;
+          slug?: string;
+          status?: CompanyStatus;
+          suspended_at?: string | null;
+          suspended_by?: string | null;
+          suspended_reason?: string | null;
           timezone?: string;
           updated_at?: string;
           whatsapp?: string | null;
         };
         Relationships: [];
       };
+      company_domains: TableDefinition<CompanyDomainRow, "company_id" | "host" | "kind">;
+      reserved_slugs: TableDefinition<ReservedSlugRow, "slug">;
+      company_counters: TableDefinition<CompanyCounterRow, "company_id" | "kind">;
       profiles: {
         Row: {
           company_id: string | null;
@@ -1598,6 +1712,7 @@ export interface Database {
       };
       user_roles: {
         Row: {
+          company_id: string;
           created_at: string;
           granted_by: string | null;
           id: string;
@@ -1605,6 +1720,7 @@ export interface Database {
           user_id: string;
         };
         Insert: {
+          company_id?: string;
           created_at?: string;
           granted_by?: string | null;
           id?: string;
@@ -1612,6 +1728,7 @@ export interface Database {
           user_id: string;
         };
         Update: {
+          company_id?: string;
           created_at?: string;
           granted_by?: string | null;
           id?: string;
@@ -1655,18 +1772,21 @@ export interface Database {
       };
       role_permissions: {
         Row: {
+          company_id: string;
           created_at: string;
           id: string;
           permission_code: string;
           role: AppRole;
         };
         Insert: {
+          company_id?: string;
           created_at?: string;
           id?: string;
           permission_code: string;
           role: AppRole;
         };
         Update: {
+          company_id?: string;
           created_at?: string;
           id?: string;
           permission_code?: string;
@@ -1684,6 +1804,7 @@ export interface Database {
       };
       custom_roles: {
         Row: {
+          company_id: string;
           code: string;
           created_at: string;
           created_by: string | null;
@@ -1695,6 +1816,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: {
+          company_id?: string;
           code: string;
           created_at?: string;
           created_by?: string | null;
@@ -1706,6 +1828,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: {
+          company_id?: string;
           code?: string;
           created_at?: string;
           created_by?: string | null;
@@ -1720,18 +1843,21 @@ export interface Database {
       };
       custom_role_permissions: {
         Row: {
+          company_id: string;
           created_at: string;
           custom_role_id: string;
           id: string;
           permission_code: string;
         };
         Insert: {
+          company_id?: string;
           created_at?: string;
           custom_role_id: string;
           id?: string;
           permission_code: string;
         };
         Update: {
+          company_id?: string;
           created_at?: string;
           custom_role_id?: string;
           id?: string;
@@ -1749,6 +1875,7 @@ export interface Database {
       };
       audit_logs: {
         Row: {
+          company_id: string;
           action: string;
           actor_id: string | null;
           actor_label: string | null;
@@ -1768,6 +1895,7 @@ export interface Database {
           user_agent: string | null;
         };
         Insert: {
+          company_id?: string;
           action: string;
           actor_id?: string | null;
           actor_label?: string | null;
@@ -1787,6 +1915,7 @@ export interface Database {
           user_agent?: string | null;
         };
         Update: {
+          company_id?: string;
           action?: string;
           actor_id?: string | null;
           actor_label?: string | null;
@@ -1978,6 +2107,21 @@ export interface Database {
     };
     Views: { [_ in never]: never };
     Functions: {
+      /** Migration 254 — معرّف الشركة النشطة للمستدعي الحالي أو null عند عدم التحقق أو الإيقاف. */
+      current_company_id: {
+        Args: Record<PropertyKey, never>;
+        Returns: string | null;
+      };
+      /** Migration 254 — دالة مبدئية للتحقق من مشرف المنصة (تُستبدل لاحقاً في ترحيل 289). */
+      is_platform_admin: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      /** Migration 284 — يرفع عدّاد نوع مستند معيّن للشركة الحالية ذرياً ويعيد القيمة التالية. */
+      next_company_counter: {
+        Args: { p_kind: string };
+        Returns: number;
+      };
       /** Migration 180 — transactional, idempotent WhatsApp inbox ingestion.
        *  Service-role only; `authenticated` and `anon` have EXECUTE revoked. */
       ingest_whatsapp_messages: {

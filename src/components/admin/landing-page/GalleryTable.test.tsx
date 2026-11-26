@@ -28,6 +28,7 @@ import { I18nProvider } from "@/i18n/provider";
 function media(overrides: Partial<LandingMedia> = {}): LandingMedia {
   return {
     id: "m1",
+    company_id: "comp-1",
     storage_path: "landing/gallery/one.jpg",
     mime_type: "image/jpeg",
     width: 800,

@@ -27,6 +27,7 @@ const ROW: NotificationWithRelations = {
   audience: "tenant",
   body: "Invoice INV-1 is due.",
   channel: "email",
+  company_id: "comp-1",
   contract: null,
   contract_id: null,
   created_at: "2026-08-01T09:00:00.000Z",

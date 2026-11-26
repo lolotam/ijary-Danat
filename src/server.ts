@@ -54,6 +54,7 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+import { withCompanyContext } from "../server/middleware/company";
 import { validateEnv } from "./lib/env.server";
 
 /**
@@ -68,7 +69,9 @@ export default wrapFetchWithSentry({
     try {
       validateEnv();
       const handler = await getServerEntry();
-      const response = await handler.fetch(request, ...passthrough);
+      const response = await withCompanyContext(request, () =>
+        handler.fetch(request, ...passthrough),
+      );
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       // Same reason as above: returning the fallback page hides the throw from

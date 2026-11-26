@@ -20,7 +20,7 @@ Technical approach, from [research.md](./research.md):
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5 (strict); SQL for PostgreSQL 17. Web runtime Bun 1.x; worker runtime Node LTS until BullMQ on Bun is verified (R6).
+**Language/Version**: TypeScript 5 (strict); SQL for PostgreSQL 17. Web runtime Bun 1.x; worker runtime Bun as well, since the T058 spike found BullMQ stable on Bun (R6).
 
 **Primary Dependencies**: TanStack Start (React 19) on Nitro, Tailwind CSS 4, shadcn/ui, react-hook-form, Zod, `@supabase/supabase-js`, pdfkit, nodemailer, jszip. New: `bullmq`, `ioredis` (worker only), `jose` (signing company and support-session tokens).
 
@@ -202,7 +202,7 @@ Custom hostnames through Cloudflare; super admin screens to add and verify; land
 | A service-role call site is missed | RLS bypass | Lint rule with an allow-list; the build fails. |
 | The policy rewrite breaks an existing behaviour | Regression in money paths | All 133 existing SQL test files must stay green group by group; one table group per change. |
 | `current_company_id()` adds cost to every statement | Slower lists | Hoisted sub-select, stable function, primary-key lookup; measure with the existing invoice-count benchmark from migration 243. |
-| BullMQ on Bun is unstable | Worker crashes | Worker on Node LTS; web app does not use Redis at all. |
+| BullMQ on Bun is unstable under long load (the T058 spike covered behaviour, not a soak) | Worker crashes | Same worker code starts on Node with a different command; web app does not use Redis at all. |
 | Three gateways and three WhatsApp methods | Long tail of provider detail | One adapter at a time behind a fixed interface; provider specifics marked VERIFY and checked before each task. |
 | Wildcard certificate under Dokploy | Company addresses do not open | Verified first in Phase 2; fallback is a Cloudflare origin certificate. |
 | An agent follows the old `CLAUDE.md` | Action against Danat's production | `CLAUDE.md` rewritten in the first task; SC-016 check before every deployment step. |

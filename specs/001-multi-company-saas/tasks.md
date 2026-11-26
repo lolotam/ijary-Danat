@@ -162,7 +162,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Implementation for User Story 2
 
-- [ ] T058 [US2] VERIFY: spike BullMQ workers on Bun against Node LTS and record the outcome in `specs/001-multi-company-saas/research.md` R6
+- [x] T058 [US2] VERIFY: spike BullMQ workers on Bun against Node LTS and record the outcome in `specs/001-multi-company-saas/research.md` R6
 - [ ] T059 [US2] Write migration `db/migrations/305_job_requests.sql`: `job_requests`, `user_notices`, `enqueue_job()` (data-model.md: `job_requests.kind`, `job_requests.status`, `job_requests.dedupe_key`, `user_notices.level`)
 - [ ] T060 [US2] Define the job catalogue (kinds, Zod payloads, queue, section) from `contracts/jobs.md` section 5 in `src/jobs/catalog.ts`
 - [ ] T061 [US2] Implement `enqueueJob` in `src/jobs/enqueue.ts`

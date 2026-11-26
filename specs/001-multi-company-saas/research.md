@@ -99,6 +99,21 @@ Custom domains (User Story 13): Cloudflare for SaaS custom hostnames, added by t
 
 **VERIFY**: BullMQ under Bun. The worker entry point is built for and run on Node LTS until a spike shows BullMQ workers are stable on Bun.
 
+**VERIFY outcome (T058, 2026-11-26)**: BullMQ 6.7.10 with ioredis 6.1.0 against Redis 7 (alpine), the same script run twice on Bun 1.4.2 and twice on Node 22.14.0 (Windows 11 host, Redis in Docker). Every check passed on both runtimes in both runs:
+
+| Check | What it proves for this design | Bun | Node |
+|---|---|---|---|
+| 2,000 jobs, concurrency 20 | Throughput is not the bottleneck | 0.46–0.51 s | 0.56–0.60 s |
+| `attempts: 3`, exponential backoff | Retries reach attempt 3 and complete | pass | pass |
+| Same `jobId` added twice | The relay's republish adds one job (R6) | 1 job | 1 job |
+| `upsertJobScheduler` every 500 ms | Schedulers can replace the crontab (R8) | fired 3× | fired 3× |
+| `limiter` 5 per 1,000 ms, 10 jobs | Rate limiting works for WhatsApp pacing (R7) | 1.02–1.04 s | 1.05 s |
+| `close()` during an active job | Deploys wait for the running job | waited | waited |
+| Worker force-closed mid-job, second worker starts | Stalled jobs are taken over | recovered | recovered |
+| Redis restarted between two jobs | Worker and queue reconnect, the later job runs | pass | pass |
+
+**Decision after the spike**: the worker runs on Bun, the same runtime and image as the web application. The worker code has no Bun-only API, so moving it to Node needs only a different start command. Not covered by the spike: a multi-hour soak and memory growth; watch both on staging during the T077 gate before production.
+
 ## R7. Fairness between companies and WhatsApp pacing
 
 **Decision**: Separate queues by class so heavy work cannot block light work: `notify`, `docs`, `bulk`, `sync`, `inbound`, `cron`. `bulk` handlers process in chunks (default 200 rows) and re-enqueue a continuation, so two companies' bulk jobs interleave. WhatsApp pacing moves out of the request into the `notify` worker: before a send, the handler takes a Redis lock keyed by the WhatsApp connection with a TTL equal to the pace gap (1.5–3 s); if the lock is held, the job is moved to delayed. Pace is therefore per company connection (FR-067).

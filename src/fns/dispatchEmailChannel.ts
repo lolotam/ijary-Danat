@@ -1,4 +1,5 @@
-import { emailLogoFor, readPublicBranding } from "@/fns/publicBranding";
+import { emailLogoFor } from "@/fns/publicBranding";
+import { readPublicBranding } from "@/fns/publicBranding.server";
 import {
   stringArray,
   tenantOptedOut,

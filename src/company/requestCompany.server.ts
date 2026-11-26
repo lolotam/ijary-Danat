@@ -1,4 +1,7 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+// Namespace import, read only at call time: some `src/fns` modules still reach
+// the browser graph, and Vite's browser stub throws on any eager named import.
+import * as asyncHooks from "node:async_hooks";
+import type { AsyncLocalStorage } from "node:async_hooks";
 
 import { CompanyContextError } from "@/company/errors";
 import type { CompanyStatus } from "@/integrations/supabase/database.types";
@@ -34,7 +37,7 @@ const REQUEST_COMPANY_STORAGE_KEY = Symbol.for("ijary:request-company-storage");
 function getRequestHostStorage(): AsyncLocalStorage<RequestHostStore> {
   const globalObj = globalThis as Record<PropertyKey, unknown>;
   if (!globalObj[REQUEST_COMPANY_STORAGE_KEY]) {
-    globalObj[REQUEST_COMPANY_STORAGE_KEY] = new AsyncLocalStorage<RequestHostStore>();
+    globalObj[REQUEST_COMPANY_STORAGE_KEY] = new asyncHooks.AsyncLocalStorage<RequestHostStore>();
   }
   return globalObj[REQUEST_COMPANY_STORAGE_KEY] as AsyncLocalStorage<RequestHostStore>;
 }

@@ -1,4 +1,6 @@
-import { createHash } from "node:crypto";
+// Namespace import, read only at call time: this module reaches the browser
+// graph, and Vite's browser stub throws on any eager named import.
+import * as nodeCrypto from "node:crypto";
 
 import { z } from "zod";
 
@@ -34,7 +36,7 @@ function describeFailure(status: number, body: string): string {
  * still recognised, and a changed one goes out as the new message it is.
  */
 function requestIdempotencyKey(baseKey: string, payload: Record<string, unknown>): string {
-  const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  const digest = nodeCrypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   return `${baseKey}/${digest.slice(0, 32)}`;
 }
 

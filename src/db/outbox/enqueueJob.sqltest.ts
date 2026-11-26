@@ -189,3 +189,114 @@ describe("job_requests and user_notices stay inside the company", () => {
     });
   });
 });
+
+/** يزرع مهمة وإشعاراً مرتبطاً بها لمستخدم في الشركة المعطاة بصلاحية المشرف العام. */
+async function seedJobAndNotice(
+  client: PoolClient,
+  companyId: string,
+  userId: string,
+): Promise<void> {
+  await actAsSuperuser(client);
+  await client.query(
+    `with j as (
+       insert into public.job_requests (company_id, kind, payload)
+       values ($1, 'notification.bulk', '{}') returning id)
+     insert into public.user_notices (company_id, user_id, job_request_id, kind, title_key, level)
+     select $1, $2, j.id, 'notification.bulk', 'notices.bulk.done', 'success' from j`,
+    [companyId, userId],
+  );
+}
+
+describe("the server write path stays inside the company (review GR-001 to GR-004)", () => {
+  test("a server-side requester is recorded, and only if they belong to the company", async () => {
+    await withRollback(async (client) => {
+      const { A, B } = await seedTwoCompanies(client);
+      const [ownJob, foreign] = await runAsCompanyService(client, A.id, async () => [
+        (
+          await client.query<{ id: string }>(
+            "select public.enqueue_job('report.export', '{}', null, $1) as id",
+            [A.users.admin.id],
+          )
+        ).rows[0].id,
+        await captureRaise(client, () =>
+          client.query("select public.enqueue_job('report.export', '{}', null, $1)", [
+            B.users.admin.id,
+          ]),
+        ),
+      ]);
+
+      await actAsSuperuser(client);
+      const { rows } = await client.query(
+        "select requested_by from public.job_requests where id = $1",
+        [ownJob],
+      );
+      expect(rows).toEqual([{ requested_by: A.users.admin.id }]);
+      expect(foreign).toMatch(/violates foreign key constraint/);
+    });
+  });
+
+  test.each([
+    {
+      table: "job_requests",
+      forgeSql: "insert into public.job_requests (company_id, kind) values ($1, 'x.y')",
+      withUser: false,
+    },
+    {
+      table: "user_notices",
+      forgeSql: `insert into public.user_notices (company_id, user_id, kind, title_key, level)
+                 values ($1, $2, 'x.y', 't', 'success')`,
+      withUser: true,
+    },
+  ])(
+    "company_service of B cannot update $table rows of A or insert them under A",
+    async ({ table, forgeSql, withUser }) => {
+      await withRollback(async (client) => {
+        const { A, B } = await seedTwoCompanies(client);
+        await seedJobAndNotice(client, A.id, A.users.admin.id);
+        const forgeParams = withUser ? [A.id, A.users.admin.id] : [A.id];
+
+        const { updated, forged } = await runAsCompanyService(client, B.id, async () => ({
+          updated: (
+            await client.query(`update public.${table} set kind = 'x.y' where company_id = $1`, [
+              A.id,
+            ])
+          ).rowCount,
+          forged: await captureRaise(client, () => client.query(forgeSql, forgeParams)),
+        }));
+
+        expect(updated).toBe(0);
+        expect(forged).toMatch(/row-level security/);
+      });
+    },
+  );
+
+  test("company_service cannot delete outbox rows, even its own", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      await seedJobAndNotice(client, A.id, A.users.admin.id);
+
+      const error = await runAsCompanyService(client, A.id, () =>
+        captureRaise(client, () => client.query("delete from public.job_requests")),
+      );
+
+      expect(error).toMatch(/permission denied/);
+    });
+  });
+
+  test("a notice cannot name a user of another company", async () => {
+    await withRollback(async (client) => {
+      const { A, B } = await seedTwoCompanies(client);
+      const error = await runAsCompanyService(client, A.id, () =>
+        captureRaise(client, () =>
+          client.query(
+            `insert into public.user_notices (company_id, user_id, kind, title_key, level)
+             values ($1, $2, 'notification.bulk', 'notices.bulk.done', 'success')`,
+            [A.id, B.users.admin.id],
+          ),
+        ),
+      );
+
+      expect(error).toMatch(/violates foreign key constraint/);
+    });
+  });
+});

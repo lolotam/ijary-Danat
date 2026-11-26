@@ -441,6 +441,16 @@ export async function seedCompanyOpsGroup(
       [cid],
     );
   }
+  if (colMap.has("job_requests")) {
+    await client.query(
+      `with j as (
+         insert into public.job_requests (company_id, kind, payload)
+         values ($1, 'notification.bulk', '{}') returning id)
+       insert into public.user_notices (company_id, user_id, job_request_id, kind, title_key, level)
+       select $1, $2, j.id, 'notification.bulk', 'notices.bulk.done', 'success' from j`,
+      [cid, adminId],
+    );
+  }
 
   return {
     invoiceId,

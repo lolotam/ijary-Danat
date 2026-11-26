@@ -534,5 +534,37 @@ export function buildCompanyMatrixTargets(
     });
   }
 
+  if (colMap.has("job_requests")) {
+    targets.push(
+      {
+        table: "job_requests",
+        whereSql: "company_id = $1",
+        whereParams: [cid],
+        updateSetSql: "status = 'failed'",
+        updateParams: [cid],
+        buildCrossCompanyInsert: (foreignCid, cm) =>
+          buildScopedInsert(cm, "job_requests", foreignCid, {
+            company_id: foreignCid,
+            kind: "company.restore",
+          }),
+      },
+      {
+        table: "user_notices",
+        whereSql: "company_id = $1",
+        whereParams: [cid],
+        updateSetSql: "read_at = now()",
+        updateParams: [cid],
+        buildCrossCompanyInsert: (foreignCid, cm) =>
+          buildScopedInsert(cm, "user_notices", foreignCid, {
+            company_id: foreignCid,
+            user_id: adminId,
+            kind: "notification.bulk",
+            title_key: "notices.bulk.done",
+            level: "success",
+          }),
+      },
+    );
+  }
+
   return targets;
 }

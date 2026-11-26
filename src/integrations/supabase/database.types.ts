@@ -1737,6 +1737,95 @@ export interface Database {
         };
         Relationships: [];
       };
+      /** Migration 306 — صندوق المهام الخلفية؛ يضيفه `company_service` ودوال SQL، ويحدّث العامل (`service_role`) حالته. */
+      job_requests: {
+        Row: {
+          attempts: number;
+          company_id: string;
+          created_at: string;
+          dedupe_key: string | null;
+          finished_at: string | null;
+          id: string;
+          kind: string;
+          last_error: string | null;
+          payload: Json;
+          published_at: string | null;
+          requested_by: string | null;
+          result: Json | null;
+          status: "pending" | "published" | "running" | "succeeded" | "failed" | "skipped";
+        };
+        Insert: {
+          attempts?: number;
+          company_id: string;
+          created_at?: string;
+          dedupe_key?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          kind: string;
+          last_error?: string | null;
+          payload?: Json;
+          published_at?: string | null;
+          requested_by?: string | null;
+          result?: Json | null;
+          status?: "pending" | "published" | "running" | "succeeded" | "failed" | "skipped";
+        };
+        Update: {
+          attempts?: number;
+          company_id?: string;
+          created_at?: string;
+          dedupe_key?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          kind?: string;
+          last_error?: string | null;
+          payload?: Json;
+          published_at?: string | null;
+          requested_by?: string | null;
+          result?: Json | null;
+          status?: "pending" | "published" | "running" | "succeeded" | "failed" | "skipped";
+        };
+        Relationships: [];
+      };
+      /** Migration 306 — إشعارات داخل التطبيق لنتيجة مهمة خلفية؛ المستخدم يقرأ إشعاراته ويعلّمها مقروءة فقط. */
+      user_notices: {
+        Row: {
+          body: Json;
+          company_id: string;
+          created_at: string;
+          id: string;
+          job_request_id: string | null;
+          kind: string;
+          level: "success" | "error";
+          read_at: string | null;
+          title_key: string;
+          user_id: string;
+        };
+        Insert: {
+          body?: Json;
+          company_id: string;
+          created_at?: string;
+          id?: string;
+          job_request_id?: string | null;
+          kind: string;
+          level: "success" | "error";
+          read_at?: string | null;
+          title_key: string;
+          user_id: string;
+        };
+        Update: {
+          body?: Json;
+          company_id?: string;
+          created_at?: string;
+          id?: string;
+          job_request_id?: string | null;
+          kind?: string;
+          level?: "success" | "error";
+          read_at?: string | null;
+          title_key?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       permissions: {
         Row: {
           action: string;
@@ -2125,6 +2214,17 @@ export interface Database {
       next_company_counter: {
         Args: { p_kind: string };
         Returns: number;
+      };
+      /** Migration 306 — يسجّل طلب مهمة خلفية للشركة الحالية ويعيد معرّفه (أو الموجود عند تكرار مفتاح منع التكرار).
+       *  Execute granted to `company_service` only; `_requested_by` is honoured only for that role. */
+      enqueue_job: {
+        Args: {
+          _kind: string;
+          _payload?: Json;
+          _dedupe_key?: string | null;
+          _requested_by?: string | null;
+        };
+        Returns: string;
       };
       /** Migration 180 — transactional, idempotent WhatsApp inbox ingestion.
        *  Service-role only; `authenticated` and `anon` have EXECUTE revoked. */

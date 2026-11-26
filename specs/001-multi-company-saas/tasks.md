@@ -155,7 +155,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 2
 
-- [ ] T053 [P] [US2] Transactional enqueue tests (commit yields one job, rollback yields none, dedupe key returns the existing job) in `src/db/outbox/enqueueJob.sqltest.ts`
+- [x] T053 [P] [US2] Transactional enqueue tests (commit yields one job, rollback yields none, dedupe key returns the existing job) in `src/db/outbox/enqueueJob.sqltest.ts`
 - [ ] T054 [P] [US2] Relay tests (claims pending rows, republish is harmless) in `src/worker/relay.test.ts`
 - [ ] T055 [P] [US2] Handler wrapper tests (skips suspended and switched-off, statuses, notice on final failure) in `src/worker/runJob.test.ts`
 - [ ] T056 [P] [US2] Idempotency tests, one per handler family, in `src/jobs/handlers/idempotency.test.ts`
@@ -164,7 +164,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 ### Implementation for User Story 2
 
 - [x] T058 [US2] VERIFY: spike BullMQ workers on Bun against Node LTS and record the outcome in `specs/001-multi-company-saas/research.md` R6
-- [ ] T059 [US2] Write migration `db/migrations/306_job_requests.sql`: `job_requests`, `user_notices`, `enqueue_job()` (data-model.md: `job_requests.kind`, `job_requests.status`, `job_requests.dedupe_key`, `user_notices.level`)
+- [x] T059 [US2] Write migration `db/migrations/306_job_requests.sql`: `job_requests`, `user_notices`, `enqueue_job()` (data-model.md: `job_requests.kind`, `job_requests.status`, `job_requests.dedupe_key`, `user_notices.level`)
 - [ ] T060 [US2] Define the job catalogue (kinds, Zod payloads, queue, section) from `contracts/jobs.md` section 5 in `src/jobs/catalog.ts`
 - [ ] T061 [US2] Implement `enqueueJob` in `src/jobs/enqueue.ts`
 - [ ] T062 [US2] Implement queues and the worker entry point in `src/worker/queues.ts` and `src/worker/main.ts`

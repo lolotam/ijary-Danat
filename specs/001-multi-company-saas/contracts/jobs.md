@@ -6,14 +6,15 @@ How work leaves the request and how it runs. Background: [research.md](../resear
 
 ```ts
 function enqueueJob<K extends JobKind>(
-  db: SupabaseClient<Database>,      // browser-session or companyClient
+  db: SupabaseClient<Database>,      // companyClient only; browser sessions cannot enqueue
   kind: K,
   payload: JobPayload<K>,            // validated with the catalogue's Zod schema
-  opts?: { dedupeKey?: string },
+  opts?: { dedupeKey?: string; requestedBy?: string },  // requestedBy: the signed-in staff member's user id
 ): Promise<{ jobId: string }>;
 ```
 
 - Inserts one `job_requests` row. It never contacts Redis.
+- `requested_by` is who receives the job's notice. A `companyClient` JWT carries no `sub`, so server code passes the staff member in `requestedBy` (SQL `_requested_by`); `enqueue_job` honours that argument only for `company_service` and otherwise takes the JWT `sub`. A composite foreign key to `profiles (company_id, id)` rejects a user from another company. System jobs leave it null.
 - SQL functions enqueue with `perform public.enqueue_job(_kind, _payload, _dedupe_key)` inside their own transaction; this is the only way money events are emitted (FR-018).
 - A second insert with the same `(company_id, kind, dedupe_key)` returns the existing job id.
 - Payloads carry ids, never secrets, passwords or document bodies.

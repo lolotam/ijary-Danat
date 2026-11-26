@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { companyClient } from "@/company/companyClient.server";
+import { companyOriginById } from "@/company/companyUrl.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
@@ -119,8 +120,7 @@ async function claimAndEnqueueAlert(
   try {
     const { locale } = await loadCompanyDefaults(companyId);
     const parkedCount = await countParkedWhatsappMessages(db);
-    const baseUrl = (process.env.APP_BASE_URL || "https://danat-future.com").replace(/\/+$/, "");
-    const settingsUrl = `${baseUrl}/admin/settings/integrations`;
+    const settingsUrl = `${await companyOriginById(db, companyId)}/admin/settings/integrations`;
     const observedState = claimed.last_connection_state ?? "unknown";
     const connectedNumber = claimed.connected_number ?? "-";
     const disconnectedAt = formatKuwaitDisconnectTime(claimed.disconnected_at, locale);

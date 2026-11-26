@@ -81,6 +81,22 @@ async function loadConnectionRow(
 }
 
 /**
+ * يشتق اسم نسخة Evolution الخاصة بالشركة من معرّفها، ولا يقرأه من الصف المخزَّن.
+ *
+ * Evolution instance names are global on a shared Evolution server, and the
+ * stored column defaults to the single-company `danat` (migration 179), so a
+ * stored name could point at another company's paired session. Deriving it
+ * means pairing, re-hooking and logging out can only ever touch this
+ * company's own instance (T052s).
+ *
+ * Limit until T157/T158/T172: the webhook route is still platform-wide, so the
+ * deployment supports one company with WhatsApp connected at a time.
+ */
+export function companyInstanceName(companyId: string): string {
+  return `ijary-${companyId}`;
+}
+
+/**
  * يبني عنوان الويبهوك العام الذي يستدعيه Evolution عند وصول الأحداث.
  */
 function webhookUrl(): string {
@@ -122,7 +138,7 @@ export const beginEvolutionSession = createServerFn({ method: "POST" })
     const providerConfig = await loadEvolutionProviderConfig(companyId);
     const client = evolutionClientFromConfig(providerConfig.config);
     const existing = await loadConnectionRow(companyId);
-    const instanceName = existing?.instance_name ?? "danat";
+    const instanceName = companyInstanceName(companyId);
     const secret = randomBytes(32).toString("base64url");
     const webhook: EvolutionWebhookConfig = {
       url: webhookUrl(),
@@ -195,20 +211,21 @@ export const getEvolutionQrStatus = createServerFn({ method: "POST" })
     const providerConfig = await loadEvolutionProviderConfig(companyId);
     const client = evolutionClientFromConfig(providerConfig.config);
 
+    const instanceName = companyInstanceName(companyId);
     let qr = row.last_qr;
     if (data.refreshQr) {
-      const connection = await client.connect(row.instance_name);
+      const connection = await client.connect(instanceName);
       qr = extractQr(connection) ?? qr;
     }
 
     const state = await client
-      .connectionState(row.instance_name)
+      .connectionState(instanceName)
       .then(extractState)
       .catch(() => row.last_connection_state);
 
     if (state === "open") {
       const connectedNumber =
-        row.connected_number ?? (await connectedNumberFor(client, row.instance_name));
+        row.connected_number ?? (await connectedNumberFor(client, instanceName));
       const update = await db
         .from("evolution_connections")
         .update({
@@ -258,14 +275,15 @@ export const disconnectEvolutionSession = createServerFn({ method: "POST" })
       .eq("id", 1);
     if (disarm.error) throw new Error(disarm.error.message);
 
+    const instanceName = companyInstanceName(companyId);
     let remoteOk = true;
     try {
-      await client.logout(row.instance_name);
+      await client.logout(instanceName);
     } catch {
       remoteOk = false;
     }
     try {
-      await client.deleteInstance(row.instance_name);
+      await client.deleteInstance(instanceName);
     } catch {
       remoteOk = false;
     }

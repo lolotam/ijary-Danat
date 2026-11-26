@@ -47,6 +47,12 @@ const TEST_COMPANY = {
   status: "active" as const,
 };
 
+// The company address is a database read at a boundary this file does not test
+// (see src/company/companyUrl.test.ts).
+vi.mock("@/company/companyUrl.server", () => ({
+  companyOriginById: async () => "https://danat.ijary.app",
+}));
+
 vi.mock("@/company/requestCompany.server", () => ({
   getRequestCompany: () => TEST_COMPANY,
   requireRequestCompany: () => TEST_COMPANY,

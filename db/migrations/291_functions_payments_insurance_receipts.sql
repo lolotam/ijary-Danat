@@ -1,8 +1,9 @@
 -- 291_functions_payments_insurance_receipts.sql
 -- T035: function audit — insurance, partial-payment edit, breakdown, portal, receipt HTML.
 -- Split from 281_functions_payments.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يحذف سجل التأمين المرتبط بالعقد ضمن شركة المستدعي ويسجّل الحدث.
 CREATE OR REPLACE FUNCTION public.delete_contract_insurance(p_contract_id uuid)
@@ -12,13 +13,10 @@ CREATE OR REPLACE FUNCTION public.delete_contract_insurance(p_contract_id uuid)
  SET search_path TO 'public', 'auth'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_row public.insurance_payments;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'insurance_delete_forbidden' using errcode = '42501';
-  end if;
-  if current_user in ('authenticated', 'anon')
+  if public.request_api_role() = 'authenticated'
      and not public.has_permission(auth.uid(), 'insurance.delete') then
     raise exception 'insurance_delete_forbidden' using errcode = '42501';
   end if;
@@ -50,16 +48,13 @@ CREATE OR REPLACE FUNCTION public.edit_partial_payment(
  SET search_path TO 'public', 'auth'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_partial public.partial_payments%rowtype;
   v_old_contract uuid;
   v_new_contract uuid;
   v_lock_key uuid;
   v_updated public.partial_payments%rowtype;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
      and not public.has_permission(auth.uid(), 'partial_payments.update') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -124,14 +119,11 @@ CREATE OR REPLACE FUNCTION public.get_invoice_payment_breakdown(p_invoice_id uui
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_invoice public.invoices%rowtype;
   v_paid_from numeric(14,3);
   v_groups jsonb;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    return null;
-  end if;
 
   if auth.role() not in ('service_role', 'company_service') then
     if not exists (
@@ -227,13 +219,10 @@ CREATE OR REPLACE FUNCTION public.portal_hidden_payment_ids(p_tenant_id uuid)
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
 begin
   if p_tenant_id is null then
     raise exception 'Tenant is required';
-  end if;
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Permission denied' using errcode = '42501';
   end if;
 
   if auth.role() = 'authenticated' and not (
@@ -284,14 +273,11 @@ CREATE OR REPLACE FUNCTION public.portal_insurance_total(
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_total numeric(14, 3);
 begin
   if p_tenant_id is null then
     raise exception 'Tenant is required';
-  end if;
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Permission denied' using errcode = '42501';
   end if;
 
   if auth.role() = 'authenticated' and not (
@@ -375,13 +361,9 @@ AS $function$
   join public.tenants t on t.id = p.tenant_id and t.company_id = p.company_id
   left join public.companies c on c.id = p.company_id
   where p.id = p_payment_id
-    and (
-      public.current_company_id() = p.company_id
-      or (
-        public.current_company_id() is null
-        and current_user not in ('authenticated', 'company_service', 'anon')
-      )
-    )
+    -- Null only for platform callers (the worker, the migration runner); an API
+    -- role without a company raises COMPANY_REQUIRED instead of seeing every receipt.
+    and p.company_id = coalesce(public.current_company_id_strict(), p.company_id)
 $function$;
 
 

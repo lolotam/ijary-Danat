@@ -49,6 +49,12 @@ vi.mock("@/company/companyClient.server", () => ({
   companyClient: () => dbClient,
 }));
 
+// The company address is a database read at a boundary this file does not test
+// (see src/company/companyUrl.test.ts).
+vi.mock("@/company/companyUrl.server", () => ({
+  companyOriginById: async () => "https://danat.ijary.app",
+}));
+
 vi.mock("@/company/requestCompany.server", () => ({
   requireRequestCompany: () => ({
     id: "11111111-1111-4111-8111-111111111111",
@@ -213,7 +219,7 @@ describe("the stored template decides the overdue reminder", () => {
         subject_ar: "س",
         subject_en: "S",
         body_ar: "<p>AR</p>",
-        body_en: "<p>Pay at https://danat-future.com/portal/invoices</p>",
+        body_en: "<p>Pay at https://danat.ijary.app/portal/invoices</p>",
         channel: "both",
       },
       error: null,
@@ -232,7 +238,7 @@ describe("the stored template decides the overdue reminder", () => {
     await runOverdueRemindersJob("2026-07-13");
 
     const wa = enqueue.mock.calls.map(([a]) => a).find((a) => a.channel === "whatsapp");
-    expect(wa.payload.pay_now_url).toContain("/portal/invoices");
+    expect(wa.payload.pay_now_url).toBe("https://danat.ijary.app/portal/invoices");
   });
 
   test("a missing template falls back to the built-in copy and still sends", async () => {

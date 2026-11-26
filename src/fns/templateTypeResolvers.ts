@@ -4,6 +4,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { companyClient } from "@/company/companyClient.server";
+import { companyOrigin } from "@/company/companyUrl.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import type {
   Database,
@@ -105,7 +106,7 @@ export async function resolveOverdueVariables(
     return {
       outstanding: "",
       days_overdue: "",
-      pay_now_url: portalInvoicesUrl(),
+      pay_now_url: portalInvoicesUrl(companyOrigin(requireRequestCompany().host)),
     };
   }
 
@@ -119,7 +120,7 @@ export async function resolveOverdueVariables(
   return {
     outstanding: formatKwd(balance, locale),
     days_overdue: String(daysBetween(oldestDue, asOf)),
-    pay_now_url: portalInvoicesUrl(),
+    pay_now_url: portalInvoicesUrl(companyOrigin(requireRequestCompany().host)),
   };
 }
 

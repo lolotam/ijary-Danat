@@ -1,35 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { overdueReminderTemplate, portalInvoicesUrl } from "./emailTemplates";
 import { stripMarkup } from "./templateRender";
 
-const originalBaseUrl = process.env.APP_BASE_URL;
-
-afterEach(() => {
-  if (originalBaseUrl === undefined) delete process.env.APP_BASE_URL;
-  else process.env.APP_BASE_URL = originalBaseUrl;
-});
-
 describe("portalInvoicesUrl", () => {
-  it("points at the portal invoices tab", () => {
-    process.env.APP_BASE_URL = "https://danat-future.com";
-
-    expect(portalInvoicesUrl()).toBe("https://danat-future.com/portal/invoices");
-  });
-
-  it("does not double the slash when the base url has a trailing one", () => {
-    process.env.APP_BASE_URL = "https://danat-future.com/";
-
-    expect(portalInvoicesUrl()).toBe("https://danat-future.com/portal/invoices");
-  });
-
-  it("falls back to production rather than emitting a relative link", () => {
-    // A relative href in an email resolves against nothing — the link would be
-    // dead in every mail client. Better a hardcoded correct host than that.
-    delete process.env.APP_BASE_URL;
-
-    expect(portalInvoicesUrl()).toBe("https://danat-future.com/portal/invoices");
-  });
+  it.each(["https://acme.ijary.app", "https://acme.ijary.app/"])(
+    "points %s at its own portal invoices tab without doubling the slash",
+    (origin) => {
+      expect(portalInvoicesUrl(origin)).toBe("https://acme.ijary.app/portal/invoices");
+    },
+  );
 });
 
 describe("overdueReminderTemplate Pay Now link", () => {

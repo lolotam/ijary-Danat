@@ -76,4 +76,26 @@ describe("company isolation structure: security definer functions (T013)", () =>
       expect(offending).toEqual([]);
     });
   });
+
+  // Regression (T052p): inside SECURITY DEFINER `current_user` is the owner, so
+  // `current_user in ('authenticated', ...)` never matches and the guard is dead.
+  test("no public SECURITY DEFINER function compares current_user with a role list", async () => {
+    await withRollback(async (client) => {
+      await actAsSuperuser(client);
+
+      const { rows } = await client.query<DefinerRow>(`
+        select p.oid::regprocedure::text as signature, p.proname, p.prosrc as body
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public'
+           and p.prosecdef
+         order by 1
+      `);
+
+      const offending = rows
+        .filter((fn) => /\bcurrent_user\s+(?:not\s+)?in\s*\(/i.test(stripSqlComments(fn.body)))
+        .map((fn) => fn.signature);
+      expect(offending).toEqual([]);
+    });
+  });
 });

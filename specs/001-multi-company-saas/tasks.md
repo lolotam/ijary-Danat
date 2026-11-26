@@ -131,6 +131,17 @@ Lower-severity findings from the same review:
 - [x] T052l [US1] Split migrations 279–283 (1289–2468 lines) by responsibility into 279–302 (each under 520 lines, bodies unchanged, grants moved next to their functions); `284_company_counters` and `285_storage_company_paths` renumbered to 303 and 304
 - [x] T052m [US1] The `to public` select on `branding`, `landing` and `property-images` let anyone list every company's file names; it is now `to authenticated` and scoped to the caller's company (public URLs are served without RLS and keep working) in `db/migrations/304_storage_company_paths.sql`; `src/company/storagePath.ts` lowercases the company id
 
+### Second review fixes for User Story 1 (found after T052m, 2026-11-26)
+
+An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned BLOCK:
+
+- [x] T052n [US1] Regression tests first: call every SECURITY DEFINER RPC in migrations 290–297 as `authenticated` and as `company_service` with a null company context and another company's ids, expecting `COMPANY_REQUIRED` or `42501` and no change; a renter and a `readonly` user calling `delete_contract_insurance` get `42501`, in `src/db/isolation/definerNullContext.sqltest.ts`
+- [x] T052o [US1] Inside a SECURITY DEFINER function `current_user` is the owner, so every `current_user in ('authenticated', …)` check in 290–297 never fired: `delete_contract_insurance` lost its `insurance.delete` check and 19 functions ran unscoped on a null context. Add `public.request_api_role()` in `db/migrations/254_company_context.sql`; read the company from `current_company_id_strict()` and the role from `request_api_role()` in `db/migrations/290`–`297`
+- [x] T052p [US1] `src/db/isolation/definerFunctions.sqltest.ts` also rejects `current_user in (` inside a SECURITY DEFINER body
+- [x] T052q [US1] Payment redirect and the WhatsApp-disconnect link fell back to Danat's production domain; build them from the request company's host and drop the `danat-future.com` fallback in `src/fns/createPayment.ts`, `src/fns/notifyWhatsappSessionDisconnected.ts`, `src/lib/emailTemplates/reminders.ts`
+- [x] T052r [US1] `signInWithIdentifier` returned tokens and logged a success for another company's account; it now checks the signed-in profile belongs to the host company and answers `INVALID_CREDENTIALS` otherwise, in `src/fns/signInWithIdentifier.ts`
+- [x] T052s [US1] Evolution pairing fell back to instance `danat` and could re-point another company's webhook; the instance name is now per company (`ijary-<company_id>`) and pairing, status, disconnect and delete-for-everyone never read a stored or literal name, in `src/fns/evolutionSession.ts` and `src/fns/whatsappChat.ts`. Webhook URLs stay platform-wide until T157, T158 and T172: until then only one company may connect WhatsApp or Resend
+
 **Checkpoint**: Isolation suite 100% green. Until then no second company exists in any shared environment.
 
 ---
@@ -152,7 +163,7 @@ Lower-severity findings from the same review:
 ### Implementation for User Story 2
 
 - [ ] T058 [US2] VERIFY: spike BullMQ workers on Bun against Node LTS and record the outcome in `specs/001-multi-company-saas/research.md` R6
-- [ ] T059 [US2] Write migration `db/migrations/286_job_requests.sql`: `job_requests`, `user_notices`, `enqueue_job()` (data-model.md: `job_requests.kind`, `job_requests.status`, `job_requests.dedupe_key`, `user_notices.level`)
+- [ ] T059 [US2] Write migration `db/migrations/305_job_requests.sql`: `job_requests`, `user_notices`, `enqueue_job()` (data-model.md: `job_requests.kind`, `job_requests.status`, `job_requests.dedupe_key`, `user_notices.level`)
 - [ ] T060 [US2] Define the job catalogue (kinds, Zod payloads, queue, section) from `contracts/jobs.md` section 5 in `src/jobs/catalog.ts`
 - [ ] T061 [US2] Implement `enqueueJob` in `src/jobs/enqueue.ts`
 - [ ] T062 [US2] Implement queues and the worker entry point in `src/worker/queues.ts` and `src/worker/main.ts`
@@ -164,7 +175,7 @@ Lower-severity findings from the same review:
 - [ ] T068 [US2] Document handlers (`invoice.send`, `payment.receipt`, `company.info.send`, `contract.pdf`, `report.run`, `report.export`) in `src/jobs/handlers/documents.ts`; make `sendInvoiceToTenant.ts`, `notifyPaymentSuccess.ts`, `sendCompanyInfo.ts`, `runReportSchedule.ts`, `resendGeneratedReport.ts` enqueue
 - [ ] T069 [US2] Bulk handlers with 200-row chunks (`notification.bulk`, `invoices.generate`, `invoices.regenerate`, `import.run`, `electricity.generate`, `salaries.generate`) in `src/jobs/handlers/bulk.ts`; make `sendBulkNotification.ts`, `generateInvoices.ts`, `regenerateContractInvoices.ts`, `bulkImport.ts`, `generateElectricityCharges.ts` enqueue
 - [ ] T070 [US2] Sync handlers (`company.export`, `company.restore`, `whatsapp.history.sync`, `whatsapp.avatars.sync`, `gmail.sync`, `payment.reconcile`) in `src/jobs/handlers/sync.ts`; make `backup.ts`, `restoreBackup.ts`, `evolutionHistorySync.ts`, `evolutionAvatars.ts` enqueue
-- [ ] T071 [US2] Write migration `db/migrations/287_money_event_outbox.sql`: emit `payment.succeeded`, `payment.reversed`, `deposit.confirmed`, `refund.recorded`, `invoice.written_off`, `invoice.disputed`, `contract.closed_out`, `contract.restored` with `enqueue_job` inside the owning SQL functions
+- [ ] T071 [US2] Write migration `db/migrations/306_money_event_outbox.sql`: emit `payment.succeeded`, `payment.reversed`, `deposit.confirmed`, `refund.recorded`, `invoice.written_off`, `invoice.disputed`, `contract.closed_out`, `contract.restored` with `enqueue_job` inside the owning SQL functions
 - [ ] T072 [US2] Event handlers mapping each money event to its existing sender in `src/jobs/handlers/events.ts`; remove the direct sender calls from their call sites
 - [ ] T073 [US2] Notices: `src/fns/notices.ts` (`myNotices`, `markNoticeRead`), `src/hooks/useNotices.ts` (Realtime with 30-second polling fallback), `src/components/admin/NoticesBell.tsx`
 - [ ] T074 [US2] Failed jobs: `src/fns/companyJobs.ts` (`companyFailedJobs`, `retryJob`) and `src/components/admin/settings/FailedJobsCard.tsx`
@@ -363,7 +374,7 @@ Lower-severity findings from the same review:
 
 ### Implementation for User Story 9
 
-- [ ] T158 [US9] Write migration `db/migrations/295_whatsapp_connections.sql`: `whatsapp_connections` replacing `evolution_connections`; `connection_id` on the four `whatsapp_*` tables (data-model.md: `whatsapp_connections.method`, `whatsapp_connections.status`, `whatsapp_connections.is_active`, `whatsapp_connections.connected_number`, `whatsapp_connections.phone_number_id`)
+- [ ] T158 [US9] Write migration `db/migrations/<next free number>_whatsapp_connections.sql` (295 is taken since the T052l split): `whatsapp_connections` replacing `evolution_connections`; `connection_id` on the four `whatsapp_*` tables (data-model.md: `whatsapp_connections.method`, `whatsapp_connections.status`, `whatsapp_connections.is_active`, `whatsapp_connections.connected_number`, `whatsapp_connections.phone_number_id`)
 - [ ] T159 [US9] Per-company Evolution instance lifecycle in `src/whatsapp/evolutionInstance.ts`
 - [ ] T160 [US9] Route `src/routes/api/public/webhooks/evolution.$connectionId.ts` and connection lookup in `src/fns/evolutionWebhook.ts`; delete `src/routes/api/public/evolution-webhook.ts`
 - [ ] T161 [US9] Per-company disconnect detection and alert in `src/fns/evolutionSessionWatch.ts` and `src/fns/notifyWhatsappSessionDisconnected.ts`

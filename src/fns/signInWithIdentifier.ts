@@ -69,15 +69,14 @@ function anonClient() {
   });
 }
 
-/** نتيجة تحويل المعرّف: معرّف الحساب وبريده وحالة تفعيله. */
-type ResolvedAccount = { id: string; email: string; isActive: boolean };
+/** نتيجة تحويل المعرّف: معرّف الحساب وبريده. */
+type ResolvedAccount = { id: string; email: string };
 
 /**
- * يحوّل المعرّف المكتوب إلى بريد الحساب وحالته، أو null إذا تعذّر التحديد.
+ * يحوّل المعرّف المكتوب إلى بريد الحساب، أو null إذا تعذّر التحديد.
  *
- * `is_active` travels with the email rather than being fetched later so the
- * deactivation decision cannot race a second round-trip, and so an ambiguous
- * match still resolves to nothing at all.
+ * Whether the account may sign in here (company, `is_active`) is decided after
+ * the password verifies, from the id GoTrue returns — see `companyMember`.
  *
  * Ambiguity is refused rather than resolved. `profiles.username` is unique, but
  * `email` and `phone` are not — two tenants can share a household number. If a
@@ -96,15 +95,9 @@ async function findAccountEmail(
     // `username` and `email` are both citext, so this is case-insensitive in
     // the database rather than by lowercasing here.
     const column = kind === "email" ? "email" : "username";
-    const { data } = await db
-      .from("profiles")
-      .select("id, email, is_active")
-      .eq(column, value)
-      .limit(2);
+    const { data } = await db.from("profiles").select("id, email").eq(column, value).limit(2);
     if (data?.length !== 1) return null;
-    return data[0].email
-      ? { id: data[0].id, email: data[0].email, isActive: data[0].is_active }
-      : null;
+    return data[0].email ? { id: data[0].id, email: data[0].email } : null;
   }
 
   const digits = nationalPhoneDigits(value);
@@ -117,18 +110,24 @@ async function findAccountEmail(
     _digits: digits,
   });
   const matches = (data ?? []) as Array<{ id: string; email: string | null }>;
-  if (matches.length !== 1) return null;
-  if (!matches[0].email) return null;
+  if (matches.length !== 1 || !matches[0].email) return null;
+  return { id: matches[0].id, email: matches[0].email };
+}
 
-  // The phone RPC projects only `id` and `email`; the account flag needs its
-  // own read, keyed by the id the RPC already proved unambiguous.
-  const { data: profile } = await db
-    .from("profiles")
-    .select("is_active")
-    .eq("id", matches[0].id)
-    .single();
-  if (!profile) return null;
-  return { id: matches[0].id, email: matches[0].email, isActive: profile.is_active };
+/**
+ * يقرأ ملف المستخدم الذي صادق عليه GoTrue داخل شركة الطلب فقط، أو null إن لم يكن من موظفيها أو مستأجريها.
+ *
+ * GoTrue accounts span every company, so a correct password proves who the
+ * person is, not that they belong here. `db` is the request company's client,
+ * so RLS hides every other company's profile and "not found" is the answer for
+ * an account of another company.
+ */
+async function companyMember(
+  db: SupabaseClient<Database>,
+  userId: string,
+): Promise<{ id: string; isActive: boolean } | null> {
+  const { data } = await db.from("profiles").select("id, is_active").eq("id", userId).maybeSingle();
+  return data ? { id: data.id, isActive: data.is_active } : null;
 }
 
 export const signInWithIdentifier = createServerFn({ method: "POST" })
@@ -148,7 +147,8 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
     const resolved = await findAccountEmail(db, data.identifier);
     const email = resolved?.email ?? loginIdentifierToEmail(data.identifier);
 
-    const { data: session, error } = await anonClient().auth.signInWithPassword({
+    const loginClient = anonClient();
+    const { data: session, error } = await loginClient.auth.signInWithPassword({
       email,
       password: data.password,
     });
@@ -186,15 +186,34 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
       return { ok: false as const, error: "INVALID_CREDENTIALS" };
     }
 
+    // GoTrue has just authenticated this person, so its own answer identifies
+    // them even when the identifier lookup did not (the legacy `@users.local`
+    // fallback). Review finding on PR #206: taking the id only from `resolved`
+    // recorded those logins as "system" with no account attached.
+    const member = await companyMember(db, session.session.user.id);
+
+    // Same answer as a wrong password, so the form does not reveal that the
+    // account exists in another company; the session GoTrue just issued is
+    // revoked (local scope: only this session, not the person's others).
+    if (!member) {
+      await loginClient.auth.signOut({ scope: "local" });
+      await recordFailedLoginAttempt({
+        identifier: data.identifier,
+        accountId: null,
+        errorCode: "INVALID_CREDENTIALS",
+      });
+      return { ok: false as const, error: "INVALID_CREDENTIALS" };
+    }
+
     // Checked only after the password verifies. Returning this on a failed password
     // would turn the form into an oracle for which accounts exist and are disabled.
-    if (resolved && !resolved.isActive) {
+    if (!member.isActive) {
       // The password verified, so a session exists — but the account is refused,
       // and attributing the row to it would read as a successful sign-in in the
       // actor column. Recorded as a service-role failure instead.
       await recordLoginAttempt({
         identifier: data.identifier,
-        accountId: resolved.id,
+        accountId: member.id,
         actorId: null,
         result: "failure",
         errorCode: "ACCOUNT_DEACTIVATED",
@@ -202,13 +221,7 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
       return { ok: false as const, error: "ACCOUNT_DEACTIVATED" };
     }
 
-    // GoTrue has just authenticated this person, so its own answer identifies
-    // them even when the profiles lookup did not. Review finding on PR #206:
-    // taking the id only from `resolved` recorded the legacy `@users.local`
-    // fallback — and any login whose profiles read failed — as a successful
-    // sign-in by "system" with no account attached, which is precisely the
-    // login nobody could then trace.
-    const signedInUserId = session.session.user?.id ?? resolved?.id ?? null;
+    const signedInUserId = member.id;
 
     await recordLoginAttempt({
       identifier: data.identifier,

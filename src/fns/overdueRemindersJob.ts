@@ -1,4 +1,5 @@
 import { companyClient } from "@/company/companyClient.server";
+import { companyOriginById } from "@/company/companyUrl.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
@@ -26,7 +27,8 @@ import { WHATSAPP_SKIP } from "@/lib/whatsappSkipReasons";
  * has no answer anywhere.
  */
 export async function runOverdueRemindersJob(asOf: string | null = null, companyId?: string) {
-  const db = companyClient(companyId ?? requireRequestCompany().id);
+  const jobCompanyId = companyId ?? requireRequestCompany().id;
+  const db = companyClient(jobCompanyId);
   // Scheduled jobs read the gate themselves — cronJobs.ts only checks pause
   // before dispatch; targets filter what this job enqueues.
   const { targets } = await readWorkflowGate("overdue-reminders");
@@ -78,6 +80,7 @@ export async function runOverdueRemindersJob(asOf: string | null = null, company
 
   const queued: string[] = [];
   const skipped: Array<{ tenant_id: string; reason: string }> = [];
+  const origin = byTenant.size ? await companyOriginById(db, jobCompanyId) : "";
   for (const [tenantId, aggregate] of byTenant) {
     const tenantResult = await db.from("tenants").select("*").eq("id", tenantId).single();
     if (tenantResult.error || !tenantResult.data) continue;
@@ -114,7 +117,7 @@ export async function runOverdueRemindersJob(asOf: string | null = null, company
       ),
     );
     const outstanding = formatKwd(aggregate.balance, locale);
-    const payNowUrl = portalInvoicesUrl();
+    const payNowUrl = portalInvoicesUrl(origin);
     const variables = {
       tenant_name: tenant.name,
       outstanding,

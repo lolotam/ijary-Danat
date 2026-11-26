@@ -13,11 +13,11 @@ import { wrapLayout, type EmailLocale, type TemplateResult } from "./layout";
  * is bounced to `/portal/auth?redirect=/portal/invoices` by the portal layout
  * guard and lands back here after signing in; the auth route only honours a
  * redirect beginning with `/portal`, so this cannot be turned into an open
- * redirect.
+ * redirect. `companyOrigin` is the renter's own company address (see
+ * `src/company/companyUrl.server.ts`): each company's portal lives on its own host.
  */
-export function portalInvoicesUrl(): string {
-  const base = process.env.APP_BASE_URL || "https://danat-future.com";
-  return `${base.replace(/\/$/, "")}/portal/invoices`;
+export function portalInvoicesUrl(companyOrigin: string): string {
+  return `${companyOrigin.replace(/\/$/, "")}/portal/invoices`;
 }
 
 /**
@@ -49,10 +49,9 @@ export function overdueReminderTemplate(params: {
   tenantName: string;
   outstanding: string;
   daysOverdue: number;
-  payNowUrl?: string;
+  payNowUrl: string;
 }): TemplateResult {
-  const { locale, tenantName, outstanding, daysOverdue } = params;
-  const payNowUrl = params.payNowUrl ?? portalInvoicesUrl();
+  const { locale, tenantName, outstanding, daysOverdue, payNowUrl } = params;
   const isAr = locale === "ar";
   const subject = isAr
     ? `تذكير بمبالغ متأخرة (${daysOverdue} يوم)`

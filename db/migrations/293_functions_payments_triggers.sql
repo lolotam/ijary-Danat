@@ -1,8 +1,9 @@
 -- 293_functions_payments_triggers.sql
 -- T035: function audit — payment triggers and refund void.
 -- Split from 281_functions_payments.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يزامن وسيلة الدفع في الفاتورة عند تغيّر تخصيصاتها ضمن نفس الشركة.
 CREATE OR REPLACE FUNCTION public.sync_invoice_payment_method()
@@ -443,12 +444,9 @@ CREATE OR REPLACE FUNCTION public.void_refund(p_refund_id uuid, p_reason text)
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_original public.refunds%rowtype;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
     and not public.has_permission(auth.uid(), 'refunds.void') then
     raise exception 'Permission denied' using errcode = '42501';

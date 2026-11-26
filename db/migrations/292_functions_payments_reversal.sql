@@ -1,8 +1,9 @@
 -- 292_functions_payments_reversal.sql
 -- T035: function audit — payment/refund reversal, settlement revert, deposit sync.
 -- Split from 281_functions_payments.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يعكس دفعة مؤكدة ويعيد أرصدة الفواتير ضمن نطاق شركة المستدعي.
 CREATE OR REPLACE FUNCTION public.reverse_payment(p_payment_id uuid, p_reason text)
@@ -12,7 +13,7 @@ CREATE OR REPLACE FUNCTION public.reverse_payment(p_payment_id uuid, p_reason te
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_original public.payments%rowtype;
   v_reversal_id uuid;
   v_allocation public.payment_allocations%rowtype;
@@ -21,9 +22,6 @@ declare
   v_new_state public.invoice_states;
   v_grace_days integer;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
     and not public.has_permission(auth.uid(), 'payments.reverse') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -109,13 +107,10 @@ CREATE OR REPLACE FUNCTION public.reverse_refund(p_refund_id uuid, p_reason text
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_original public.refunds%rowtype;
   v_reversal_id uuid;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
     and not public.has_permission(auth.uid(), 'refunds.reverse') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -191,9 +186,6 @@ declare
   v_payment_id uuid;
   v_invoice_id uuid;
 begin
-  if current_user in ('authenticated', 'anon', 'service_role', 'company_service') then
-    raise exception 'deposit_settlement_internal_only' using errcode = '42501';
-  end if;
 
   select p.id into v_payment_id
     from public.payments p
@@ -228,9 +220,6 @@ declare
   v_payment_id uuid;
   v_invoice_id uuid;
 begin
-  if current_user in ('authenticated', 'anon', 'service_role', 'company_service') then
-    raise exception 'partial_payment_settlement_internal_only' using errcode = '42501';
-  end if;
 
   select p.id into v_payment_id
     from public.payments p
@@ -258,16 +247,13 @@ CREATE OR REPLACE FUNCTION public.sync_contract_deposit_from_insurance(p_insuran
  SET search_path TO 'public', 'auth', 'pg_temp'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_row public.contracts;
   v_contract_id uuid;
   v_company_id uuid;
   v_amount numeric;
   v_old numeric;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
      and not public.has_permission(auth.uid(), 'insurance.create')
      and not public.has_permission(auth.uid(), 'insurance.update') then
@@ -310,8 +296,8 @@ end;
 $function$;
 
 
-REVOKE ALL ON FUNCTION public.revert_deposit_settlement(uuid) FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION public.revert_partial_payment_settlement(uuid) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.revert_deposit_settlement(uuid) FROM PUBLIC, anon, authenticated, company_service, service_role;
+REVOKE ALL ON FUNCTION public.revert_partial_payment_settlement(uuid) FROM PUBLIC, anon, authenticated, company_service, service_role;
 REVOKE ALL ON FUNCTION public.reverse_payment(uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.reverse_payment(uuid, text) TO authenticated, company_service, service_role;
 REVOKE ALL ON FUNCTION public.reverse_refund(uuid, text) FROM PUBLIC, anon;

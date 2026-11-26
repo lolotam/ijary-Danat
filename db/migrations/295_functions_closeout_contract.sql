@@ -1,8 +1,9 @@
 -- 295_functions_closeout_contract.sql
 -- T036: function audit — contract close-out.
 -- Split from 282_functions_closeout_electricity_hr.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- ينفذ تصفية العقد ذرياً مع الحفاظ على عدم الكتابة على profiles وتقييد مفتاح التكرار بالشركة.
 CREATE OR REPLACE FUNCTION public.close_out_contract(
@@ -17,7 +18,7 @@ CREATE OR REPLACE FUNCTION public.close_out_contract(
  SET search_path TO 'public', 'auth', 'pg_temp'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_contract_company uuid;
   v_contract public.contracts%rowtype;
   v_closeout public.contract_closeouts%rowtype;
@@ -52,9 +53,6 @@ declare
   v_deduction_rows jsonb := '[]'::jsonb;
   v_contract_before jsonb;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
      and not public.has_permission(v_actor, 'contracts.close_out') then
     raise exception 'Permission denied' using errcode = '42501';

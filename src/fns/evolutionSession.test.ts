@@ -22,18 +22,23 @@ const state = {
 
 const logoutMock = vi.fn();
 const deleteInstanceMock = vi.fn();
+const createInstanceMock = vi.fn();
 
-vi.mock("@tanstack/react-start", () => {
-  const fn: any = (data: any) => fn._handler({ data, context: fn._context });
-  fn.middleware = vi.fn().mockReturnValue(fn);
-  fn.validator = vi.fn().mockReturnValue(fn);
-  fn.inputValidator = vi.fn().mockReturnValue(fn);
-  fn.handler = vi.fn().mockImplementation((h: any) => {
-    fn._handler = h;
+// One builder per server function: a shared one would leave every export
+// running whichever handler the module registered last.
+vi.mock("@tanstack/react-start", () => ({
+  createServerFn: () => {
+    const fn: any = (data: any) => fn._handler({ data, context: fn._context });
+    fn.middleware = () => fn;
+    fn.validator = () => fn;
+    fn.inputValidator = () => fn;
+    fn.handler = (h: any) => {
+      fn._handler = h;
+      return fn;
+    };
     return fn;
-  });
-  return { createServerFn: vi.fn().mockReturnValue(fn) };
-});
+  },
+}));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
 vi.mock("@/fns/requirePermission", () => ({ requirePermission: vi.fn() }));
@@ -60,6 +65,10 @@ vi.mock("@/company/companyClient.server", () => ({
               maybeSingle: async () => ({ data: state.connectionRow, error: null }),
             }),
           }),
+          upsert: async (values: Record<string, unknown>) => {
+            state.updates.push(values);
+            return { data: null, error: null };
+          },
           update: (values: Record<string, unknown>) => ({
             eq: async () => {
               state.updates.push(values);
@@ -99,6 +108,9 @@ vi.mock("@/company/companyClient.server", () => ({
 vi.mock("@/lib/providers/evolution", () => ({
   connectedNumberFor: vi.fn(),
   evolutionClientFromConfig: () => ({
+    createInstance: (...args: unknown[]) => createInstanceMock(...args),
+    setWebhook: async () => undefined,
+    connect: async () => ({ base64: "qr-payload" }),
     logout: async (...args: unknown[]) => {
       callOrder.push("logout");
       return logoutMock(...args);
@@ -110,15 +122,40 @@ vi.mock("@/lib/providers/evolution", () => ({
   }),
 }));
 
-const { disconnectEvolutionSession } = await import("./evolutionSession");
+const { beginEvolutionSession, disconnectEvolutionSession } = await import("./evolutionSession");
 
 beforeEach(() => {
   vi.clearAllMocks();
   callOrder.length = 0;
   state.disarmError = null;
   state.updates = [];
+  state.connectionRow.instance_name = "danat";
   logoutMock.mockResolvedValue(undefined);
   deleteInstanceMock.mockResolvedValue(undefined);
+  createInstanceMock.mockResolvedValue(undefined);
+  process.env.APP_BASE_URL = "https://ijary.app";
+});
+
+// Regression (T052s, second US1 review 2026-11-26): the instance name came from
+// the stored row, whose column default is the single-company `danat`. On a
+// shared Evolution server a second company would pair, re-hook or log out the
+// instance another company owns.
+describe("the Evolution instance is always this company's own", () => {
+  const ownInstance = `ijary-${TEST_COMPANY.id}`;
+
+  test("pairing creates and stores the company's own instance, whatever the row says", async () => {
+    await beginEvolutionSession();
+
+    expect(createInstanceMock.mock.calls[0][0]).toMatchObject({ instanceName: ownInstance });
+    expect(state.updates[0]).toMatchObject({ instance_name: ownInstance });
+  });
+
+  test("disconnecting logs out and deletes only the company's own instance", async () => {
+    await disconnectEvolutionSession();
+
+    expect(logoutMock).toHaveBeenCalledWith(ownInstance);
+    expect(deleteInstanceMock).toHaveBeenCalledWith(ownInstance);
+  });
 });
 
 describe("disconnectEvolutionSession intentional disarm", () => {

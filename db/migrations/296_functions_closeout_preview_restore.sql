@@ -1,8 +1,9 @@
 -- 296_functions_closeout_preview_restore.sql
 -- T036: function audit — close-out preview and contract restore.
 -- Split from 282_functions_closeout_electricity_hr.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يرجع معاينة تصفية العقد دون كتابة مع التحقق من نطاق الشركة.
 CREATE OR REPLACE FUNCTION public.get_contract_closeout_preview(
@@ -14,14 +15,11 @@ CREATE OR REPLACE FUNCTION public.get_contract_closeout_preview(
  SET search_path TO 'public', 'auth', 'pg_temp'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_contract public.contracts%rowtype;
   v_settlement jsonb;
   v_unit_status public.unit_status;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
      and not public.has_permission(auth.uid(), 'contracts.read') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -68,7 +66,7 @@ CREATE OR REPLACE FUNCTION public.restore_contract(
  SET search_path TO 'public', 'auth', 'pg_temp'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_contract public.contracts%rowtype;
   v_actor uuid := auth.uid();
   v_unit_status public.unit_status;
@@ -76,9 +74,6 @@ declare
   v_holder uuid;
   v_holder_unit uuid;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
      and not public.has_permission(v_actor, 'contracts.restore') then
     raise exception 'Permission denied' using errcode = '42501';

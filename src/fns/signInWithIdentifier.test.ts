@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
     from: vi.fn(),
     rpc: vi.fn(),
     signInWithPassword: vi.fn(),
+    signOut: vi.fn(),
     recordLoginAttempt: vi.fn(),
     recordFailedLoginAttempt: vi.fn(),
     serverFunction,
@@ -133,14 +134,20 @@ describe("signInWithIdentifier", () => {
       error: null,
     };
     mocks.createClient.mockReturnValue({
-      auth: { signInWithPassword: mocks.signInWithPassword },
+      auth: { signInWithPassword: mocks.signInWithPassword, signOut: mocks.signOut },
     });
-    // An identifier that classifies as an email resolves through profiles.
-    // Reads through `profileRows`/`signInResult` at call time so a test can
-    // stage its own state after this reset.
+    mocks.signOut.mockResolvedValue({ error: null });
+    // An identifier that classifies as an email resolves through profiles, and
+    // the signed-in id is looked up again by `id`. `profileRows` stands for this
+    // company's profiles only (the company client's RLS), read at call time so a
+    // test can stage its own state after this reset.
     mocks.from.mockReturnValue({
       select: () => ({
-        eq: () => ({ limit: () => Promise.resolve({ data: profileRows }) }),
+        eq: (_column: string, value: string) => ({
+          limit: () => Promise.resolve({ data: profileRows }),
+          maybeSingle: () =>
+            Promise.resolve({ data: profileRows.find((row) => row.id === value) ?? null }),
+        }),
       }),
     });
     mocks.signInWithPassword.mockImplementation(() => Promise.resolve(signInResult));
@@ -194,7 +201,13 @@ describe("signInWithIdentifier", () => {
       { id: "22222222-2222-4222-8222-222222222222", email: "active@example.test", is_active: true },
     ];
     signInResult = {
-      data: { session: { access_token: "a", refresh_token: "r", user: { id: "u-1" } } },
+      data: {
+        session: {
+          access_token: "a",
+          refresh_token: "r",
+          user: { id: "22222222-2222-4222-8222-222222222222" },
+        },
+      },
       error: null,
     };
 
@@ -203,12 +216,45 @@ describe("signInWithIdentifier", () => {
     expect(result).toEqual({ ok: true, accessToken: "a", refreshToken: "r" });
   });
 
+  // Regression (T052r, second US1 review 2026-11-26): the identifier lookup is
+  // company-scoped, but its fallback hands any email to GoTrue, whose accounts
+  // span every company. A correct password for another company's account
+  // returned a session on this company's host.
+  it("refuses another company's account with the same opaque failure and revokes its session", async () => {
+    profileRows = [];
+    signInResult = {
+      data: {
+        session: { access_token: "a", refresh_token: "r", user: { id: "other-company-user" } },
+      },
+      error: null,
+    };
+
+    const result = await callHandler({ identifier: "owner@other.test", password: "correct-pw" });
+
+    expect(result).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mocks.recordLoginAttempt).not.toHaveBeenCalled();
+    // The other company's account id must not land in this company's audit trail.
+    expect(lastAuditInput()).toMatchObject({
+      identifier: "owner@other.test",
+      accountId: null,
+      result: "failure",
+      errorCode: "INVALID_CREDENTIALS",
+    });
+  });
+
   it("a deactivated account is refused even with the correct password", async () => {
     profileRows = [
       { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
     ];
     signInResult = {
-      data: { session: { access_token: "a", refresh_token: "r", user: { id: "u-1" } } },
+      data: {
+        session: {
+          access_token: "a",
+          refresh_token: "r",
+          user: { id: "33333333-3333-4333-8333-333333333333" },
+        },
+      },
       error: null,
     };
 
@@ -322,7 +368,13 @@ describe("signInWithIdentifier", () => {
         { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
       ];
       signInResult = {
-        data: { session: { access_token: "a", refresh_token: "r", user: { id: "u-1" } } },
+        data: {
+          session: {
+            access_token: "a",
+            refresh_token: "r",
+            user: { id: "33333333-3333-4333-8333-333333333333" },
+          },
+        },
         error: null,
       };
 
@@ -356,7 +408,9 @@ describe("signInWithIdentifier", () => {
      * just authenticated the person, so its own answer identifies them.
      */
     it("attributes a legacy fallback login from the authentication response", async () => {
-      profileRows = [];
+      // A legacy account has a profile in this company but no real address, so
+      // the identifier lookup resolves nothing and the `@users.local` mapping signs in.
+      profileRows = [{ id: "legacy-user-id", email: null, is_active: true }];
       signInResult = {
         data: {
           session: { access_token: "a", refresh_token: "r", user: { id: "legacy-user-id" } },

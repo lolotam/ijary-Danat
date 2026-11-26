@@ -55,6 +55,7 @@ const CASES = [
         tenantName: "أحمد المطيري",
         outstanding: "500.000 KWD",
         daysOverdue: 12,
+        payNowUrl: "https://acme.ijary.app/portal/invoices",
       }),
   },
   {

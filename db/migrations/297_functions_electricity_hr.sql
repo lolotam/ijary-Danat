@@ -1,8 +1,9 @@
 -- 297_functions_electricity_hr.sql
 -- T036: function audit — electricity charges and salaries.
 -- Split from 282_functions_closeout_electricity_hr.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يحسب مبلغ الكهرباء وفق التعرفة والشرائح ضمن نطاق شركة المستدعي.
 CREATE OR REPLACE FUNCTION public.compute_electricity_amount(p_tariff_id uuid, p_consumption numeric)
@@ -12,7 +13,7 @@ CREATE OR REPLACE FUNCTION public.compute_electricity_amount(p_tariff_id uuid, p
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_tariff public.electricity_tariffs%rowtype;
   v_tier jsonb;
   v_from numeric;
@@ -22,9 +23,6 @@ declare
   v_amount numeric := 0;
   v_open_ended boolean := false;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if p_consumption is null or p_consumption < 0 then
     raise exception 'Consumption must be zero or positive';
   end if;
@@ -91,13 +89,10 @@ CREATE OR REPLACE FUNCTION public.generate_electricity_charges(
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_period_start date;
   v_period_end date;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
     and not public.has_permission(auth.uid(), 'electricity.create') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -343,13 +338,10 @@ CREATE OR REPLACE FUNCTION public.generate_salaries_for_month(
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_year integer := coalesce(p_year, extract(year from current_date)::integer);
   v_month integer := coalesce(p_month, extract(month from current_date)::integer);
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
     and not public.has_permission(auth.uid(), 'salaries.create') then
     raise exception 'Permission denied' using errcode = '42501';

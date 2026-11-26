@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
+import { companyOrigin } from "@/company/companyUrl.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json, Tables } from "@/integrations/supabase/database.types";
@@ -445,7 +446,9 @@ export const createPayment = createServerFn({ method: "POST" })
       contractId: requestInput.contractId,
     });
     const gatewayConfig = gatewayConfigFromEnv();
-    const appBaseUrl = process.env.APP_BASE_URL || "https://danat-future.com";
+    // The renter returns to the host they paid from, so the callback stays on
+    // this company's address and its session cookie.
+    const appBaseUrl = companyOrigin(company.host);
     const reservation = await reservePaymentRequest({
       companyId: company.id,
       tenantId: tenantContext.tenant.id,

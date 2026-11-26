@@ -208,7 +208,7 @@ begin
       v_allow_suspended := (v_claims ->> 'allow_suspended')::boolean;
     end if;
   elsif v_role = 'authenticated' then
-    -- Support-session lookup is added in migration 297; fail closed if the claim appears early.
+    -- Support-session lookup arrives with support access (US11); fail closed if the claim appears early.
     if nullif(btrim(coalesce(v_claims ->> 'impersonation_session', '')), '') is not null then
       return null;
     end if;
@@ -252,7 +252,7 @@ grant execute on function public.current_company_id() to authenticated, company_
 /**
  * دالة مبدئية للتحقق من مشرف المنصة — تُستبدل في ترحيل جدول مشرفي المنصة لاحقاً.
  *
- * Fail-closed stub until `platform_admins` and `aal2` enforcement arrive in migration 289.
+ * Fail-closed stub until `platform_admins` and `aal2` enforcement arrive with the super admin panel (US4).
  */
 create or replace function public.is_platform_admin()
 returns boolean
@@ -418,6 +418,33 @@ revoke execute on function public._legacy_single_company_id()
 ------------------------------------------------------------
 
 /**
+ * يرجع دور الـ API للطلب الحالي (`authenticated` أو `company_service` أو `anon` أو `service_role`)، أو نصاً فارغاً لاتصال مباشر.
+ *
+ * Inside a SECURITY DEFINER function `current_user` is the function owner, so
+ * `current_user in ('authenticated', ...)` never matches and such a guard is
+ * dead. The `role` setting keeps the caller's role through the definer switch
+ * (PostgREST sets it per request); the JWT claim covers connections that only
+ * carry claims.
+ */
+create or replace function public.request_api_role()
+returns text
+language sql
+stable
+set search_path = public, auth
+as $$
+  select coalesce(
+    nullif(nullif(current_setting('role', true), 'none'), ''),
+    nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', ''),
+    auth.role(),
+    ''
+  );
+$$;
+
+revoke execute on function public.request_api_role() from public, anon;
+grant execute on function public.request_api_role()
+  to authenticated, company_service, service_role;
+
+/**
  * يرجع شركة الطلب الحالي، ويرفض بـ COMPANY_REQUIRED أي دور API بدون شركة؛ يرجع null للمنصة فقط.
  *
  * Security definer functions bypass RLS and used to filter with
@@ -434,12 +461,7 @@ set search_path = public, auth
 as $$
 declare
   v_company_id uuid := public.current_company_id();
-  v_role text := coalesce(
-    nullif(nullif(current_setting('role', true), 'none'), ''),
-    nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', ''),
-    auth.role(),
-    ''
-  );
+  v_role text := public.request_api_role();
 begin
   if v_company_id is null
      and v_role not in ('', 'service_role', 'postgres', 'supabase_admin') then

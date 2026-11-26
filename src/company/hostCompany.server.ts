@@ -248,6 +248,13 @@ export async function resolveHostCompany(
 }
 
 /**
+ * يبني عنوان الشركة التلقائي `<slug>.<root>` من المعرّف المختصر.
+ */
+export function companySubdomainHost(slug: string): string {
+  return `${slug}.${readPlatformHosts().rootHost}`;
+}
+
+/**
  * يعيد قائمة الشركات النشطة لتشغيل المهام الدورية المعزولة لكل شركة.
  */
 export async function listActiveCompanies(): Promise<RequestCompany[]> {
@@ -261,6 +268,5 @@ export async function listActiveCompanies(): Promise<RequestCompany[]> {
     throw new Error(`Could not list active companies: ${error.message}`);
   }
 
-  const { rootHost } = readPlatformHosts();
-  return (data ?? []).map((row) => toRequestCompany(row, `${row.slug}.${rootHost}`));
+  return (data ?? []).map((row) => toRequestCompany(row, companySubdomainHost(row.slug)));
 }

@@ -1,8 +1,9 @@
 -- 294_functions_closeout_settlement.sql
 -- T036: function audit — closeout cancel and settlement computation.
 -- Split from 282_functions_closeout_electricity_hr.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يلغي مسودة تصفية العقد ضمن نطاق شركة المستدعي.
 CREATE OR REPLACE FUNCTION public.cancel_contract_closeout(p_closeout_id uuid, p_reason text)
@@ -12,14 +13,11 @@ CREATE OR REPLACE FUNCTION public.cancel_contract_closeout(p_closeout_id uuid, p
  SET search_path TO 'public', 'auth', 'pg_temp'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_closeout public.contract_closeouts%rowtype;
   v_actor uuid := auth.uid();
   v_result jsonb;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
      and not public.has_permission(v_actor, 'contracts.close_out') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -84,7 +82,7 @@ CREATE OR REPLACE FUNCTION public.closeout_compute_settlement(
  SET search_path TO 'public', 'auth', 'pg_temp'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_contract_company uuid;
   v_deductions jsonb := coalesce(p_deductions, '[]'::jsonb);
   v_actions jsonb := coalesce(p_invoice_actions, '[]'::jsonb);
@@ -104,9 +102,6 @@ declare
   v_missing uuid;
   v_orphan uuid;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
 
   select c.company_id into v_contract_company
     from public.contracts c

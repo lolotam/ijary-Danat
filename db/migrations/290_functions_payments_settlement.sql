@@ -1,8 +1,9 @@
 -- 290_functions_payments_settlement.sql
 -- T035: function audit — deposit/partial settlement and payment allocation.
 -- Split from 281_functions_payments.sql (T052l) to keep each migration under 600 lines;
--- bodies are unchanged. Every SECURITY DEFINER function scopes by
--- `public.current_company_id()` or runs as SECURITY INVOKER. Idempotent.
+-- T052o: callable functions read the company from `public.current_company_id_strict()`,
+-- which raises COMPANY_REQUIRED for an API role with no company. Trigger and internal
+-- functions fall back to the row's own company_id; no API role can execute them. Idempotent.
 
 -- يسوّي الإيداع المؤكد إلى دفعة وتوزيع ضمن شركة الإيداع (داخلي للمحفّزات فقط).
 CREATE OR REPLACE FUNCTION public.apply_deposit_settlement(p_deposit_id uuid)
@@ -18,9 +19,6 @@ declare
   v_amount numeric(14,3);
   v_payment_id uuid;
 begin
-  if current_user in ('authenticated', 'anon', 'service_role', 'company_service') then
-    raise exception 'deposit_settlement_internal_only' using errcode = '42501';
-  end if;
 
   select d.* into v_deposit from public.deposits d where d.id = p_deposit_id;
   if not found or v_deposit.invoice_id is null or v_deposit.status <> 'confirmed' then
@@ -98,14 +96,11 @@ $function$;
 CREATE OR REPLACE FUNCTION public.apply_partial_payment_settlement(p_partial_payment_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
- SECURITY DEFINER
+ SECURITY INVOKER
  SET search_path TO 'public'
 AS $function$
 begin
-  if current_user in ('authenticated', 'anon', 'service_role', 'company_service') then
-    raise exception 'partial_payment_settlement_internal_only' using errcode = '42501';
-  end if;
-  perform public.current_company_id();
+  -- Only delegates: the three-argument version below holds the company check.
   return public.apply_partial_payment_settlement(p_partial_payment_id, false, false);
 end;
 $function$;
@@ -129,9 +124,6 @@ declare
   v_payment_id uuid;
   v_note text;
 begin
-  if current_user in ('authenticated', 'anon', 'service_role', 'company_service') then
-    raise exception 'partial_payment_settlement_internal_only' using errcode = '42501';
-  end if;
 
   select pp.* into v_partial
     from public.partial_payments pp where pp.id = p_partial_payment_id;
@@ -218,7 +210,7 @@ CREATE OR REPLACE FUNCTION public.apply_payment_allocation(p_payment_id uuid, p_
  SET search_path TO 'public'
 AS $function$
 declare
-  v_caller_company uuid := public.current_company_id();
+  v_caller_company uuid := public.current_company_id_strict();
   v_payment public.payments%rowtype;
   v_allocation record;
   v_invoice public.invoices%rowtype;
@@ -229,9 +221,6 @@ declare
   v_grace_days integer;
   v_blocked_code text;
 begin
-  if current_user in ('authenticated', 'company_service', 'anon') and v_caller_company is null then
-    raise exception 'Company context required' using errcode = '42501';
-  end if;
   if auth.role() = 'authenticated'
     and not public.has_permission(auth.uid(), 'payments.create') then
     raise exception 'Permission denied' using errcode = '42501';
@@ -368,8 +357,8 @@ end;
 $function$;
 
 
-REVOKE ALL ON FUNCTION public.apply_deposit_settlement(uuid) FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION public.apply_partial_payment_settlement(uuid) FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION public.apply_partial_payment_settlement(uuid, boolean, boolean) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.apply_deposit_settlement(uuid) FROM PUBLIC, anon, authenticated, company_service, service_role;
+REVOKE ALL ON FUNCTION public.apply_partial_payment_settlement(uuid) FROM PUBLIC, anon, authenticated, company_service, service_role;
+REVOKE ALL ON FUNCTION public.apply_partial_payment_settlement(uuid, boolean, boolean) FROM PUBLIC, anon, authenticated, company_service, service_role;
 REVOKE ALL ON FUNCTION public.apply_payment_allocation(uuid, jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.apply_payment_allocation(uuid, jsonb) TO authenticated, company_service, service_role;

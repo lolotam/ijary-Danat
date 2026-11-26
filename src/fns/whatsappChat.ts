@@ -4,6 +4,7 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { deliverEvolutionNotification } from "@/fns/evolutionDelivery";
+import { companyInstanceName } from "@/fns/evolutionSession";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import { toInternationalDigits } from "@/lib/providers/types";
@@ -177,7 +178,8 @@ export const deleteWhatsAppMessage = createServerFn({ method: "POST" })
   .validator(deleteMessageSchema)
   .handler(async ({ data, context }) => {
     await assertPermission(context, "notifications.delete");
-    const db = companyClient(requireRequestCompany().id);
+    const companyId = requireRequestCompany().id;
+    const db = companyClient(companyId);
     const row = await db
       .from("whatsapp_messages")
       .select("message_id, chat_number, direction")
@@ -193,11 +195,9 @@ export const deleteWhatsAppMessage = createServerFn({ method: "POST" })
       try {
         const config = await requireEnabledEvolutionConfig();
         const client = evolutionClientFromConfig(config.config);
-        const instanceName = String(
-          (config.config as Record<string, unknown>).instance_name ??
-            (config.config as Record<string, unknown>).instanceName ??
-            "danat",
-        );
+        // Never a name from config or a literal: either could be another
+        // company's instance on the shared Evolution server (T052s).
+        const instanceName = companyInstanceName(companyId);
         await client.deleteMessageForEveryone(instanceName, {
           id: row.data.message_id,
           remoteJid: `${toInternationalDigits(row.data.chat_number)}@s.whatsapp.net`,

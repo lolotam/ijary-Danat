@@ -1,12 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import type { Database } from "@/integrations/supabase/database.types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
 import { notifyUserCredentials, type CredentialSendResult } from "@/fns/notifyUserCredentials";
 import { normalisePhoneForSave } from "@/lib/phoneConflicts.server";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getAuthAdmin } from "@/platform/authAdmin.server";
 import { syncTenantContact } from "@/fns/syncTenantContact";
 import { isTenantAccountConflict, TENANT_ALREADY_HAS_ACCOUNT } from "@/lib/tenantPortalAccount";
 import { TENANT_PAUSED_REASON } from "@/lib/tenantNotificationsPaused";
@@ -84,14 +89,17 @@ export type CredentialDelivery = {
  * switch is on the tenant, so the admin has to know that unpausing it (or
  * resending later) is what would deliver the password.
  */
-async function describeDelivery(notify: CredentialSendResult): Promise<CredentialDelivery> {
+async function describeDelivery(
+  db: SupabaseClient<Database>,
+  notify: CredentialSendResult,
+): Promise<CredentialDelivery> {
   if (notify.skipped) return { status: "paused", reason: notify.reason ?? null };
   // Only the rows aimed at the account owner. The managerial path also mails a
   // copy to the company and admin addresses; a delivered copy says nothing
   // about whether the person who needs the password received anything.
   if (notify.recipientIds.length === 0) return { status: "no-recipients", reason: null };
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("notifications")
     .select("state, failure_reason")
     .in("id", notify.recipientIds);
@@ -122,11 +130,12 @@ async function describeDelivery(notify: CredentialSendResult): Promise<Credentia
  * about the half of the operation that failed.
  */
 async function recordCredentialSendFailure(
+  db: SupabaseClient<Database>,
   userId: string,
   username: string,
   delivery: CredentialDelivery,
 ): Promise<void> {
-  const { error } = await supabaseAdmin.rpc("write_audit", {
+  const { error } = await db.rpc("write_audit", {
     p_action: "user.credentials_send",
     p_entity_type: "user",
     p_entity_id: userId,
@@ -155,12 +164,15 @@ export const createAppUser = createServerFn({ method: "POST" })
       throw new Error("role is required for managerial users");
     }
 
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
     // One portal login per tenant. The create dialog already hides linked
     // tenants, but its list can be stale. Checked before the auth user exists
     // so the usual refusal has nothing to undo; two admins saving at once both
     // pass it, and migration 224's unique index refuses the second upsert.
     if (data.kind === "tenant") {
-      const linked = await supabaseAdmin
+      const linked = await db
         .from("profiles")
         .select("id")
         .eq("tenant_id", data.tenantId!)
@@ -183,11 +195,12 @@ export const createAppUser = createServerFn({ method: "POST" })
     const email = data.email.toLowerCase();
 
     // 1. Create auth user (email-confirmed so they can sign in immediately)
-    const createRes = await supabaseAdmin.auth.admin.createUser({
+    const createRes = await getAuthAdmin().createUser({
       email,
       password: data.password,
       email_confirm: true,
       user_metadata: {
+        company_id: company.id,
         username: data.username,
         display_name: data.displayName,
       },
@@ -203,10 +216,11 @@ export const createAppUser = createServerFn({ method: "POST" })
     const userId = createRes.data.user.id;
 
     // 2. Upsert profile
-    const profileRes = await supabaseAdmin
+    const profileRes = await db
       .from("profiles")
       .upsert({
         id: userId,
+        company_id: company.id,
         username: data.username,
         display_name: data.displayName,
         email,
@@ -218,7 +232,7 @@ export const createAppUser = createServerFn({ method: "POST" })
       .single();
     if (profileRes.error) {
       // Roll back auth user on failure
-      await supabaseAdmin.auth.admin.deleteUser(userId);
+      await getAuthAdmin().deleteUser(userId);
       if (isUsernameConflict(profileRes.error)) {
         throw usernameTakenError(data.username);
       }
@@ -231,11 +245,11 @@ export const createAppUser = createServerFn({ method: "POST" })
 
     // 3. Grant role
     const role = data.kind === "tenant" ? "tenant" : data.role!;
-    const roleRes = await supabaseAdmin
+    const roleRes = await db
       .from("user_roles")
-      .insert({ user_id: userId, role, granted_by: context.userId } as any);
+      .insert({ company_id: company.id, user_id: userId, role, granted_by: context.userId } as any);
     if (roleRes.error) {
-      await supabaseAdmin.auth.admin.deleteUser(userId);
+      await getAuthAdmin().deleteUser(userId);
       throw new Error(roleRes.error.message);
     }
 
@@ -248,7 +262,7 @@ export const createAppUser = createServerFn({ method: "POST" })
     let tenantPortalEnabled = true;
     let tenantContactSynced = true;
     if (data.kind === "tenant") {
-      const portalRes = await supabaseAdmin
+      const portalRes = await db
         .from("tenants")
         .update({ tenant_portal_enabled: true })
         .eq("id", data.tenantId!);
@@ -256,10 +270,14 @@ export const createAppUser = createServerFn({ method: "POST" })
         console.error("tenant_portal_enabled update failed", portalRes.error.message);
         tenantPortalEnabled = false;
       }
-      const contactSync = await syncTenantContact(data.tenantId!, {
-        email,
-        phone: phone ?? undefined,
-      });
+      const contactSync = await syncTenantContact(
+        data.tenantId!,
+        {
+          email,
+          phone: phone ?? undefined,
+        },
+        company.id,
+      );
       if (!contactSync.synced) {
         console.error("Tenant contact sync failed", contactSync.error);
         tenantContactSynced = false;
@@ -267,7 +285,7 @@ export const createAppUser = createServerFn({ method: "POST" })
     }
 
     // 5. Audit
-    await supabaseAdmin.rpc("write_audit", {
+    await db.rpc("write_audit", {
       p_action: "user.create",
       p_entity_type: "user",
       p_entity_id: userId,
@@ -298,7 +316,7 @@ export const createAppUser = createServerFn({ method: "POST" })
         mobile: phone,
         tenantId: data.kind === "tenant" ? data.tenantId : null,
       });
-      credentialDelivery = await describeDelivery(notify);
+      credentialDelivery = await describeDelivery(db, notify);
     } catch (error) {
       console.error("Failed to send user credentials notifications", error);
       credentialDelivery = {
@@ -308,7 +326,7 @@ export const createAppUser = createServerFn({ method: "POST" })
     }
 
     if (credentialDelivery.status !== "sent") {
-      await recordCredentialSendFailure(userId, data.username, credentialDelivery);
+      await recordCredentialSendFailure(db, userId, data.username, credentialDelivery);
     }
 
     return {

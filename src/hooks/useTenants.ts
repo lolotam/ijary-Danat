@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { resolveUploadCompanyId } from "@/company/browserCompany";
+import { companyStoragePath, extractCompanyIdFromStoragePath } from "@/company/storagePath";
 import { attachActiveLocations } from "@/hooks/attachTenantLocations";
 import { type ArchiveMode, DEFAULT_ARCHIVE_MODE } from "@/hooks/archiveMode";
 import { pageRange } from "@/hooks/pagination";
@@ -314,7 +316,7 @@ function documentStoragePath(companyId: string, tenantId: string, file: File) {
     ?.toLowerCase()
     .replace(/[^a-z0-9]/g, "");
   const filename = `${crypto.randomUUID()}${extension ? `.${extension}` : ""}`;
-  return `companies/${companyId}/tenants/${tenantId}/documents/${filename}`;
+  return companyStoragePath(companyId, `tenants/${tenantId}/documents/${filename}`);
 }
 
 /**
@@ -348,7 +350,8 @@ export function useUploadTenantDocument() {
     }: TenantDocumentUpload) => {
       if (!permissions.can(PERMISSIONS.TENANTS_UPDATE)) throw new Error("Permission denied.");
       validateDocumentFile(file);
-      const path = documentStoragePath(companyId, tenantId, file);
+      const resolvedCompanyId = await resolveUploadCompanyId(companyId);
+      const path = documentStoragePath(resolvedCompanyId, tenantId, file);
       let uploaded: { error: { message?: string; statusCode?: string | number } | null };
       try {
         uploaded = await withTimeout(
@@ -433,7 +436,9 @@ export function useUpdateTenantDocument() {
 
       if (input.mode === "replace") {
         validateDocumentFile(input.file);
-        const companyId = before.storage_path.split("/")[1] ?? "unassigned";
+        const companyId = await resolveUploadCompanyId(
+          extractCompanyIdFromStoragePath(before.storage_path),
+        );
         const newPath = documentStoragePath(companyId, before.tenant_id, input.file);
         const { error: uploadError } = await supabase.storage
           .from("tenant-documents")

@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   deliverEvolutionNotification,
   loadEvolutionInstanceName,
@@ -10,7 +12,6 @@ import {
 } from "@/fns/evolutionDelivery";
 import { requireEnabledEvolutionConfig } from "@/fns/whatsappChat";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import type { WhatsAppMediaPart } from "@/lib/providers/types";
@@ -93,7 +94,7 @@ function mediatypeForMime(mimeType: string): WhatsAppMediaPart["mediatype"] {
 }
 
 async function loadMediaRow(messageId: string): Promise<Tables<"whatsapp_messages">> {
-  const result = await supabaseAdmin
+  const result = await companyClient(requireRequestCompany().id)
     .from("whatsapp_messages")
     .select("*")
     .eq("message_id", messageId)
@@ -120,6 +121,8 @@ interface FetchedMedia {
  */
 async function fetchMediaWithCache(row: Tables<"whatsapp_messages">): Promise<FetchedMedia> {
   if (!row.media_type) throw new Error("This message carries no file.");
+  const companyId = requireRequestCompany().id;
+  const db = companyClient(companyId);
   // The cache leaf must be computable BEFORE the MIME type is known, so
   // nameless media stores under the constant "file"; the user-facing download
   // name is derived from the real MIME type at return time instead.
@@ -127,9 +130,10 @@ async function fetchMediaWithCache(row: Tables<"whatsapp_messages">): Promise<Fe
     row.chat_number,
     row.message_id,
     safeMediaFileName(row.media_filename, "file"),
+    companyId,
   );
 
-  const cached = await supabaseAdmin.storage.from(BUCKET).download(path);
+  const cached = await db.storage.from(BUCKET).download(path);
   if (!cached.error && cached.data) {
     const buffer = Buffer.from(await cached.data.arrayBuffer());
     const mimeType = cached.data.type || "application/octet-stream";
@@ -142,7 +146,7 @@ async function fetchMediaWithCache(row: Tables<"whatsapp_messages">): Promise<Fe
 
   if (!row.media_id) throw new Error("This message carries no file.");
   const providerConfig = await requireEnabledEvolutionConfig();
-  const instanceName = await loadEvolutionInstanceName();
+  const instanceName = await loadEvolutionInstanceName(companyId);
   const client = evolutionClientFromConfig(providerConfig.config);
   const payload = (await client.getBase64FromMediaMessage(instanceName, row.media_id)) as {
     base64?: unknown;
@@ -163,7 +167,7 @@ async function fetchMediaWithCache(row: Tables<"whatsapp_messages">): Promise<Fe
       ? payload.mimetype
       : "application/octet-stream";
 
-  const upload = await supabaseAdmin.storage
+  const upload = await db.storage
     .from(BUCKET)
     .upload(path, buffer, { contentType: mimeType, upsert: true });
   if (upload.error) {

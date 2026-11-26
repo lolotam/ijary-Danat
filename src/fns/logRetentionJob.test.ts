@@ -1,10 +1,22 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { runLogRetentionJob } from "@/fns/logRetentionJob";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: vi.fn() },
+const supabaseAdmin = vi.hoisted(() => ({
+  rpc: vi.fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => supabaseAdmin,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 const rpc = vi.mocked(supabaseAdmin.rpc);

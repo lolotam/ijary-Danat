@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useFormContext, type FieldPath, type UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
+import { resolveBrowserCompanyId } from "@/company/browserCompany";
+import { companyStoragePath } from "@/company/storagePath";
 import { AnnouncementSettingsCard } from "@/components/admin/AnnouncementSettingsCard";
 import { PortalPaymentMethodsCard } from "@/components/admin/PortalPaymentMethodsCard";
 import { Button } from "@/components/ui/button";
@@ -96,6 +98,7 @@ function BrandingAssetField({
       if (file.size > STORAGE_UPLOAD_MAX_BYTES || !file.type.startsWith("image/")) {
         throw new Error(t("settings.brandingFileInvalid"));
       }
+      const companyId = await resolveBrowserCompanyId();
       const extension =
         file.name
           .split(".")
@@ -104,7 +107,7 @@ function BrandingAssetField({
           .replace(/[^a-z0-9]/g, "") || "png";
       const folder =
         name === "favicon_url" ? "favicon" : name === "bank_logo_url" ? "bank-logo" : "logo";
-      const path = `${folder}/${Date.now()}.${extension}`;
+      const path = companyStoragePath(companyId, `${folder}/${Date.now()}.${extension}`);
       const upload = await supabase.storage
         .from("branding")
         .upload(path, file, { upsert: true, cacheControl: "3600" });

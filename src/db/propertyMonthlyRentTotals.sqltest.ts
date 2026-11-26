@@ -9,6 +9,7 @@ import {
   captureRaise,
   captureRaiseError,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
@@ -99,21 +100,16 @@ async function totals(
  * exists there — it only creates a permission-less user. The real pattern lives
  * in anonExecute.sqltest.ts (`seedUserWithRole`) and is copied from there.
  */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "pmrt");
 }
 
 interface RentScenario {
+  companyId: string;
   aPropertyId: string;
   bPropertyId: string;
   sPropertyId: string;
@@ -136,11 +132,13 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
     units: [{ monthlyAmount: 300 }],
   });
   const b = await seedContract(client, {
+    companyId: a.companyId,
     startDate: termStart,
     endDate: termEnd,
     units: [{ monthlyAmount: 200 }],
   });
   const s = await seedContract(client, {
+    companyId: a.companyId,
     startDate: termStart,
     endDate: termEnd,
     units: [{ monthlyAmount: 300 }, { monthlyAmount: 200 }],
@@ -162,6 +160,7 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
   // increased rent, contradicting the "base rent before the anniversary"
   // assertion. after_years = 2 keeps both assertions true.
   const r = await seedContract(client, {
+    companyId: a.companyId,
     startDate: iso(monthStart(-24)),
     endDate: iso(monthEnd(36)),
     units: [{ monthlyAmount: 100 }],
@@ -177,6 +176,7 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
 
   // F: starts 13 months ahead — a future contract bills nothing this month.
   const f = await seedContract(client, {
+    companyId: a.companyId,
     startDate: iso(monthStart(13)),
     endDate: iso(monthEnd(36)),
     units: [{ monthlyAmount: 400 }],
@@ -188,6 +188,7 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
 
   // E: still `active` but its end_date was last month — expired, excluded.
   const e = await seedContract(client, {
+    companyId: a.companyId,
     startDate: iso(monthStart(-24)),
     endDate: iso(monthEnd(-1)),
     state: "active",
@@ -200,6 +201,7 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
 
   // X: archived — excluded even though the term covers this month.
   const x = await seedContract(client, {
+    companyId: a.companyId,
     startDate: termStart,
     endDate: termEnd,
     units: [{ monthlyAmount: 600 }],
@@ -214,6 +216,7 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
 
   // T: terminated — excluded even though the term covers this month.
   const t = await seedContract(client, {
+    companyId: a.companyId,
     startDate: termStart,
     endDate: termEnd,
     state: "terminated",
@@ -228,6 +231,7 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
   // month) — excluded from B this month, the way the invoice generator skips
   // it via period_in_free_months.
   const c = await seedContract(client, {
+    companyId: a.companyId,
     startDate: termStart,
     endDate: termEnd,
     units: [{ monthlyAmount: 250 }],
@@ -238,12 +242,17 @@ async function seedRentScenario(client: PoolClient): Promise<RentScenario> {
   ]);
   await client.query(
     `insert into public.concessions
-       (contract_id, type, status, start_date, end_date, free_months)
-     values ($1, 'free_months', 'active', $2::date, $3::date, 12)`,
-    [c.contractId, iso(monthStart(0)), iso(monthEnd(11))],
+       (company_id, contract_id, type, status, start_date, end_date, free_months)
+     values ($1, $2, 'free_months', 'active', $3::date, $4::date, 12)`,
+    [a.companyId, c.contractId, iso(monthStart(0)), iso(monthEnd(11))],
   );
 
-  return { aPropertyId: a.propertyId, bPropertyId: b.propertyId, sPropertyId: s.propertyId };
+  return {
+    companyId: a.companyId,
+    aPropertyId: a.propertyId,
+    bPropertyId: b.propertyId,
+    sPropertyId: s.propertyId,
+  };
 }
 
 describe("get_property_monthly_rent_totals", () => {
@@ -251,7 +260,7 @@ describe("get_property_monthly_rent_totals", () => {
     await withRollback(async (client) => {
       await actAsSuperuser(client);
       const fx = await seedRentScenario(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const result = await totals(client, undefined);
@@ -269,7 +278,7 @@ describe("get_property_monthly_rent_totals", () => {
     await withRollback(async (client) => {
       await actAsSuperuser(client);
       const fx = await seedRentScenario(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const result = await totals(client, iso(monthStart(-12)));
@@ -283,8 +292,8 @@ describe("get_property_monthly_rent_totals", () => {
   test("a NULL period behaves as the current month", async () => {
     await withRollback(async (client) => {
       await actAsSuperuser(client);
-      await seedRentScenario(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const fx = await seedRentScenario(client);
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const { rows: fromNull } = await client.query<TotalRow>(
@@ -324,12 +333,17 @@ describe("get_property_monthly_rent_totals", () => {
   test("an authenticated user without properties.read is refused", async () => {
     await withRollback(async (client) => {
       await actAsSuperuser(client);
-      await seedRentScenario(client);
+      const fx = await seedRentScenario(client);
       const { rows } = await client.query<{ id: string }>(
         `insert into auth.users (id, instance_id, aud, role, email)
          values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
                  'authenticated', 'authenticated', 'nobody-rent-totals@example.test')
          returning id`,
+      );
+      await client.query(
+        `insert into public.profiles (id, company_id, display_name, is_active)
+         values ($1, $2, 'No Role', true)`,
+        [rows[0].id, fx.companyId],
       );
       // No role assignment, so has_permission() returns false for every code.
       await actAs(client, "authenticated", rows[0].id);

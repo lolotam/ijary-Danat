@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { Link2, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
+import { resolveBrowserCompanyId } from "@/company/browserCompany";
+import { companyStoragePath } from "@/company/storagePath";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,19 +16,22 @@ import {
   withTimeout,
 } from "@/lib/landingImageUpload";
 
-/** Upload a file to a public bucket and return its public URL. */
+/**
+ * يرفع ملفاً إلى حاوية تخزين عامة تحت مسار الشركة ويعيد رابطه العام.
+ */
 export async function uploadImageToBucket(
   bucket: string,
   folder: string,
   file: File,
 ): Promise<string> {
+  const companyId = await resolveBrowserCompanyId();
   const extension =
     file.name
       .split(".")
       .pop()
       ?.toLowerCase()
       .replace(/[^a-z0-9]/g, "") || "png";
-  const path = `${folder}/${crypto.randomUUID()}.${extension}`;
+  const path = companyStoragePath(companyId, `${folder}/${crypto.randomUUID()}.${extension}`);
   const upload = await supabase.storage
     .from(bucket)
     .upload(path, file, { upsert: true, cacheControl: "3600" });

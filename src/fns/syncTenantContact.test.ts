@@ -6,6 +6,19 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from },
 }));
 
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({ from: mocks.from }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+}));
+
 import { syncTenantContact } from "./syncTenantContact";
 
 const TENANT_ID = "33333333-3333-3333-3333-333333333333";

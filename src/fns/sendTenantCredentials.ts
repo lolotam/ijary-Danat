@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildTenantCredentialMessage } from "@/fns/notifyUserCredentials";
 import { type EmailLocale } from "@/lib/emailTemplates";
 import { requireRole } from "@/fns/requirePermission";
@@ -30,7 +31,9 @@ export const sendTenantCredentials = createServerFn({ method: "POST" })
       refusal: "Only an admin may send a tenant their portal credentials.",
     });
 
-    const tenantRes = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+
+    const tenantRes = await db
       .from("tenants")
       .select("id, name, email, whatsapp, mobile, preferred_language")
       .eq("id", data.tenantId)

@@ -1,7 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { companyClient } from "@/company/companyClient.server";
+import { CompanyContextError } from "@/company/errors";
+import { getRequestCompany } from "@/company/requestCompany.server";
+import { companyStoragePath } from "@/company/storagePath";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { parseServerInput } from "@/lib/parseServerInput";
 import {
   ALLOWED_SHOP_IMAGE_TYPES,
@@ -34,16 +37,20 @@ export const uploadShopMedia = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => parseServerInput(uploadShopMediaSchema, data))
   .handler(async ({ data, context }) => {
-    const profile = await supabaseAdmin
+    const profile = await context.supabase
       .from("profiles")
-      .select("tenant_id")
+      .select("company_id, tenant_id")
       .eq("id", context.userId)
       .maybeSingle();
     if (profile.error) throw new Error(profile.error.message);
+    const companyId = getRequestCompany()?.id ?? profile.data?.company_id;
+    if (!companyId) throw new CompanyContextError("COMPANY_REQUIRED");
     const tenantId = profile.data?.tenant_id;
     if (!tenantId) throw new Error("Permission denied");
 
-    const owned = await supabaseAdmin.rpc("_shop_brand_owned_by_tenant", {
+    const client = companyClient(companyId);
+
+    const owned = await client.rpc("_shop_brand_owned_by_tenant", {
       p_brand_id: data.brandId,
       p_tenant_id: tenantId,
     });
@@ -61,20 +68,24 @@ export const uploadShopMedia = createServerFn({ method: "POST" })
 
     const extension = ALLOWED_SHOP_IMAGE_TYPES[data.mimeType];
     const folder = data.kind === "logo" ? "shops/logos" : "shops/cards";
-    const path = `${folder}/${tenantId}/${data.brandId}/${crypto.randomUUID()}.${extension}`;
+    const path = companyStoragePath(
+      companyId,
+      `${folder}/${tenantId}/${data.brandId}/${crypto.randomUUID()}.${extension}`,
+    );
 
-    const upload = await supabaseAdmin.storage.from("landing").upload(path, buffer, {
+    const upload = await client.storage.from("landing").upload(path, buffer, {
       contentType: data.mimeType,
       upsert: false,
       cacheControl: "3600",
     });
     if (upload.error) throw new Error(upload.error.message);
 
-    const publicUrl = supabaseAdmin.storage.from("landing").getPublicUrl(path).data.publicUrl;
+    const publicUrl = client.storage.from("landing").getPublicUrl(path).data.publicUrl;
 
-    const media = await supabaseAdmin
+    const media = await client
       .from("landing_media")
       .insert({
+        company_id: companyId,
         storage_path: publicUrl,
         mime_type: data.mimeType,
         category: data.kind === "logo" ? "logo" : "shops",
@@ -89,7 +100,7 @@ export const uploadShopMedia = createServerFn({ method: "POST" })
     if (media.error) {
       // The object is already in a public bucket, and nothing references it —
       // leaving it would be a file the operator can neither see nor remove.
-      await supabaseAdmin.storage.from("landing").remove([path]);
+      await client.storage.from("landing").remove([path]);
       throw new Error(media.error.message);
     }
 

@@ -4,7 +4,14 @@ import { readFile } from "node:fs/promises";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { actAs, actAsSuperuser, closePool, seedContract, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  closePool,
+  seedContract,
+  setCompanyClaimContext,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -42,26 +49,35 @@ async function seedUserWithRole(client: PoolClient, role: string): Promise<strin
   return userId;
 }
 
-/** A bare unit with no contract, for the cases seedContract cannot express. */
-async function seedBareUnit(client: PoolClient, status?: string): Promise<string> {
+/** وحدة مجردة بلا عقد للحالات التي لا يعبّر عنها seedContract، ضمن شركة محددة أو جديدة. */
+async function seedBareUnit(
+  client: PoolClient,
+  status?: string,
+  existingCompanyId?: string,
+): Promise<string> {
   const tag = randomUUID().slice(0, 8);
-  const company = await client.query<{ id: string }>(
-    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
-    [`شركة ${tag}`, `Co ${tag}`],
-  );
+  let companyId = existingCompanyId;
+  if (!companyId) {
+    const company = await client.query<{ id: string }>(
+      `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+      [`شركة ${tag}`, `Co ${tag}`],
+    );
+    companyId = company.rows[0].id;
+  }
+  await setCompanyClaimContext(client, companyId);
   const property = await client.query<{ id: string }>(
     `insert into public.properties (code, company_id, name_ar, name_en)
      values ($1, $2, $3, $4) returning id`,
-    [`P-${tag}`, company.rows[0].id, `عقار ${tag}`, `Property ${tag}`],
+    [`P-${tag}`, companyId, `عقار ${tag}`, `Property ${tag}`],
   );
   const unit = await client.query<{ id: string }>(
     status === undefined
-      ? `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`
-      : `insert into public.units (code, property_id, name, status)
-         values ($1, $2, $3, $4::public.unit_status) returning id`,
+      ? `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`
+      : `insert into public.units (company_id, code, property_id, name, status)
+         values ($1, $2, $3, $4, $5::public.unit_status) returning id`,
     status === undefined
-      ? [`U-${tag}`, property.rows[0].id, `Unit ${tag}`]
-      : [`U-${tag}`, property.rows[0].id, `Unit ${tag}`, status],
+      ? [companyId, `U-${tag}`, property.rows[0].id, `Unit ${tag}`]
+      : [companyId, `U-${tag}`, property.rows[0].id, `Unit ${tag}`, status],
   );
   return unit.rows[0].id;
 }
@@ -109,11 +125,15 @@ describe("occupancy follows the contract", () => {
     // The classic omission in this pattern: recomputing only NEW.unit_id leaves
     // the origin unit stuck on 'occupied' forever.
     await withRollback(async (client) => {
-      const { unitId: fromUnit, contractId } = await seedContract(client, {
+      const {
+        companyId,
+        unitId: fromUnit,
+        contractId,
+      } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const toUnit = await seedBareUnit(client);
+      const toUnit = await seedBareUnit(client, undefined, companyId);
       await client.query(`update public.contract_units set unit_id = $1 where contract_id = $2`, [
         toUnit,
         contractId,

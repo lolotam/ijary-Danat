@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
 import {
@@ -8,10 +9,23 @@ import {
   captureRaise,
   closePool,
   seedContract,
+  setCompanyClaimContext,
   withRollback,
 } from "@/db/testDb";
 
 afterAll(closePool);
+
+/** ينشئ شركة اختبار جديدة ويهيئ سياق المطالبة الخاص بها. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
+  );
+  const companyId = rows[0].id;
+  await setCompanyClaimContext(client, companyId);
+  return companyId;
+}
 
 describe("Backup & Restore (migration 146)", () => {
   test("backup_table_names includes contracts, excludes backups", async () => {
@@ -28,7 +42,7 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("backup_dump_all returns matching fingerprint and [] for empty tables", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      await seedCompany(client);
       const fingerprint = await client.query<{ backup_schema_fingerprint: string }>(
         `select public.backup_schema_fingerprint()`,
       );
@@ -50,18 +64,16 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("invoices round trip: restores row and recomputes GENERATED ALWAYS balance", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
-
-      const { contractId, tenantId } = await seedContract(client, {
+      const { companyId, contractId, tenantId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
 
       const invoiceId = randomUUID();
       await client.query(
-        `insert into public.invoices (id, contract_id, tenant_id, idempotency_key, code, period_year, period_month, issue_date, due_date, total, paid, discount)
-         values ($1, $2, $3, $4, $5, 2026, 1, '2026-01-01', '2026-01-05', 500, 200, 0)`,
-        [invoiceId, contractId, tenantId, randomUUID(), `INV-1`],
+        `insert into public.invoices (id, company_id, contract_id, tenant_id, idempotency_key, code, period_year, period_month, issue_date, due_date, total, paid, discount)
+         values ($1, $2, $3, $4, $5, $6, 2026, 1, '2026-01-01', '2026-01-05', 500, 200, 0)`,
+        [invoiceId, companyId, contractId, tenantId, randomUUID(), `INV-1`],
       );
 
       const preRestore = await client.query<{ balance: number }>(
@@ -99,7 +111,11 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("schema drift: wrong fingerprint raises before deleting any rows", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const { contractId } = await seedContract(client, {
+        startDate: "2026-01-01",
+        endDate: "2026-12-31",
+      });
+
       const payload = await client.query<{ backup_dump_all: any }>(
         `select public.backup_dump_all()`,
       );
@@ -107,11 +123,6 @@ describe("Backup & Restore (migration 146)", () => {
       dump.schema_fingerprint = "fake_drifted_hash";
 
       const adminId = randomUUID();
-
-      const { contractId } = await seedContract(client, {
-        startDate: "2026-01-01",
-        endDate: "2026-12-31",
-      });
 
       const error = await captureRaise(client, () =>
         client.query(`select public.backup_restore($1::jsonb, $2::uuid)`, [dump, adminId]),
@@ -128,16 +139,17 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("audit_logs rows written after the archive still exist after restore", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
 
       const payload = await client.query<{ backup_dump_all: any }>(
         `select public.backup_dump_all()`,
       );
 
       const auditId = randomUUID();
-      await client.query(`insert into public.audit_logs (id, action) values ($1, 'test_action')`, [
-        auditId,
-      ]);
+      await client.query(
+        `insert into public.audit_logs (id, company_id, action) values ($1, $2, 'test_action')`,
+        [auditId, companyId],
+      );
 
       const adminId = randomUUID();
       await client.query(`select public.backup_restore($1::jsonb, $2::uuid)`, [
@@ -154,7 +166,10 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("auth.users FKs: set-null is nulled, cascade/restrict skips row", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const { companyId, tenantId } = await seedContract(client, {
+        startDate: "2026-01-01",
+        endDate: "2026-12-31",
+      });
 
       const keepUserId = randomUUID();
       const dropUserId1 = randomUUID();
@@ -167,21 +182,16 @@ describe("Backup & Restore (migration 146)", () => {
         );
       }
 
-      const { contractId, tenantId } = await seedContract(client, {
-        startDate: "2026-01-01",
-        endDate: "2026-12-31",
-      });
-
       const paymentId = randomUUID();
       await client.query(
-        `insert into public.payments (id, tenant_id, amount, currency, method, code, payment_date, created_by)
-         values ($1, $2, 100, 'KWD', 'cash', 'PAY-1', '2026-01-01', $3)`,
-        [paymentId, tenantId, dropUserId1],
+        `insert into public.payments (id, company_id, tenant_id, amount, currency, method, code, payment_date, created_by)
+         values ($1, $2, $3, 100, 'KWD', 'cash', 'PAY-1', '2026-01-01', $4)`,
+        [paymentId, companyId, tenantId, dropUserId1],
       );
 
       await client.query(
-        `insert into public.profiles (id, display_name) values ($1, 'Drop Me') on conflict (id) do update set display_name = excluded.display_name`,
-        [dropUserId2],
+        `insert into public.profiles (id, company_id, display_name) values ($1, $2, 'Drop Me') on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name`,
+        [dropUserId2, companyId],
       );
 
       const payload = await client.query<{ backup_dump_all: any }>(
@@ -216,7 +226,7 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("actor keeps admin role when payload omits them", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
 
       const payload = await client.query<{ backup_dump_all: any }>(
         `select public.backup_dump_all()`,
@@ -236,26 +246,29 @@ describe("Backup & Restore (migration 146)", () => {
       const profile = await client.query(`select 1 from public.profiles where id = $1`, [adminId]);
       expect(profile.rows).toHaveLength(1);
 
-      const role = await client.query(`select role from public.user_roles where user_id = $1`, [
-        adminId,
-      ]);
+      const role = await client.query(
+        `select role from public.user_roles where company_id = $1 and user_id = $2`,
+        [companyId, adminId],
+      );
       expect(role.rows[0].role).toBe("admin");
     });
   });
 
   test("unique (kind, period_key) rejects a second automatic backup", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
 
       await client.query(
-        `insert into public.backups (file_name, storage_path, sha256, size_bytes, table_count, row_count, kind, period_key)
-         values ('file1.zip', 'path1', 'hash1', 1, 1, 1, 'automatic', 'd:2026-08-17')`,
+        `insert into public.backups (company_id, file_name, storage_path, sha256, size_bytes, table_count, row_count, kind, period_key)
+         values ($1, 'file1.zip', 'path1', 'hash1', 1, 1, 1, 'automatic', 'd:2026-08-17')`,
+        [companyId],
       );
 
       const error = await captureRaise(client, () =>
         client.query(
-          `insert into public.backups (file_name, storage_path, sha256, size_bytes, table_count, row_count, kind, period_key)
-           values ('file2.zip', 'path2', 'hash2', 1, 1, 1, 'automatic', 'd:2026-08-17')`,
+          `insert into public.backups (company_id, file_name, storage_path, sha256, size_bytes, table_count, row_count, kind, period_key)
+           values ($1, 'file2.zip', 'path2', 'hash2', 1, 1, 1, 'automatic', 'd:2026-08-17')`,
+          [companyId],
         ),
       );
       expect(error).toMatch(/duplicate key value/);
@@ -264,8 +277,6 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("incomplete payload raises before deleting any rows", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
-
       const { contractId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -294,7 +305,7 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("duplicate table entry in payload is rejected", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      await seedCompany(client);
 
       const payloadRes = await client.query<{ backup_dump_all: any }>(
         `select public.backup_dump_all()`,
@@ -316,7 +327,10 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("dangling profile reference raises and rolls back", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const { companyId, tenantId } = await seedContract(client, {
+        startDate: "2026-01-01",
+        endDate: "2026-12-31",
+      });
 
       const adminId = randomUUID();
       const profileId = randomUUID();
@@ -331,23 +345,18 @@ describe("Backup & Restore (migration 146)", () => {
       );
 
       await client.query(
-        `insert into public.profiles (id, display_name) values ($1, 'Admin') on conflict (id) do update set display_name = excluded.display_name`,
-        [adminId],
+        `insert into public.profiles (id, company_id, display_name) values ($1, $2, 'Admin') on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name`,
+        [adminId, companyId],
       );
       await client.query(
-        `insert into public.profiles (id, display_name) values ($1, 'Sender') on conflict (id) do update set display_name = excluded.display_name`,
-        [profileId],
+        `insert into public.profiles (id, company_id, display_name) values ($1, $2, 'Sender') on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name`,
+        [profileId, companyId],
       );
 
-      const { tenantId } = await seedContract(client, {
-        startDate: "2026-01-01",
-        endDate: "2026-12-31",
-      });
-
       await client.query(
-        `insert into public.tenant_messages (id, sender_profile_id, tenant_id, subject, body)
-         values ($1, $2, $3, 'Subj', 'Content')`,
-        [randomUUID(), profileId, tenantId],
+        `insert into public.tenant_messages (id, company_id, sender_profile_id, tenant_id, subject, body)
+         values ($1, $2, $3, $4, 'Subj', 'Content')`,
+        [randomUUID(), companyId, profileId, tenantId],
       );
 
       const payloadRes = await client.query<{ backup_dump_all: any }>(
@@ -364,8 +373,8 @@ describe("Backup & Restore (migration 146)", () => {
           [restoreAdminId],
         );
         await client.query(
-          `insert into public.profiles (id, display_name) values ($1, 'Admin') on conflict (id) do update set display_name = excluded.display_name`,
-          [restoreAdminId],
+          `insert into public.profiles (id, company_id, display_name) values ($1, $2, 'Admin') on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name`,
+          [restoreAdminId, companyId],
         );
         return client.query(`select public.backup_restore($1::jsonb, $2::uuid)`, [
           dump,
@@ -399,7 +408,7 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("successful restore leaves an audit_logs row for backup.restore", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
 
       const adminId = randomUUID();
       await client.query(
@@ -407,8 +416,8 @@ describe("Backup & Restore (migration 146)", () => {
         [adminId],
       );
       await client.query(
-        `insert into public.profiles (id, display_name) values ($1, 'Admin') on conflict (id) do update set display_name = excluded.display_name`,
-        [adminId],
+        `insert into public.profiles (id, company_id, display_name) values ($1, $2, 'Admin') on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name`,
+        [adminId, companyId],
       );
 
       const payloadRes = await client.query<{ backup_dump_all: any }>(
@@ -430,8 +439,8 @@ describe("Backup & Restore (migration 146)", () => {
         [restoreAdminId],
       );
       await client.query(
-        `insert into public.profiles (id, display_name) values ($1, 'Admin2') on conflict (id) do update set display_name = excluded.display_name`,
-        [restoreAdminId],
+        `insert into public.profiles (id, company_id, display_name) values ($1, $2, 'Admin2') on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name`,
+        [restoreAdminId, companyId],
       );
 
       await client.query(`select public.backup_restore($1::jsonb, $2::uuid)`, [
@@ -453,7 +462,7 @@ describe("Backup & Restore (migration 146)", () => {
 
   test("actor profile active state and admin role are preserved", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
 
       const adminId = randomUUID();
       await client.query(
@@ -462,9 +471,9 @@ describe("Backup & Restore (migration 146)", () => {
       );
       // In backup, actor is inactive
       await client.query(
-        `insert into public.profiles (id, display_name, is_active) values ($1, 'Admin Inactive', false)
-         on conflict (id) do update set display_name = excluded.display_name, is_active = excluded.is_active`,
-        [adminId],
+        `insert into public.profiles (id, company_id, display_name, is_active) values ($1, $2, 'Admin Inactive', false)
+         on conflict (id) do update set company_id = excluded.company_id, display_name = excluded.display_name, is_active = excluded.is_active`,
+        [adminId, companyId],
       );
 
       const payloadRes = await client.query<{ backup_dump_all: any }>(

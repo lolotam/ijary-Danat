@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { actAs, actAsSuperuser, closePool, seedContract, withRollback } from "@/db/testDb";
+import { actAs, closePool, seedContract, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -41,6 +43,17 @@ afterAll(closePool);
 
 type SummaryJson = Record<string, any>;
 
+/** ينشئ شركة اختبارية معزولة ويضبط سياقها لاستدعاء ملخصات الوحدات. */
+async function seedSummaryCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة ملخص ${tag}`, `Summary Co ${tag}`],
+  );
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
+}
+
 async function summaryWith(
   client: PoolClient,
   fn: string,
@@ -62,7 +75,6 @@ function num(value: unknown): number {
 describe("get_payments_summary", () => {
   test("counts only confirmed, non-reversed payments", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -87,7 +99,6 @@ describe("get_payments_summary", () => {
 
   test("a reversed payment drops out of the total", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -127,7 +138,6 @@ describe("get_payments_summary", () => {
 
   test("net excludes insurance but subtracts refunds", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -164,7 +174,6 @@ describe("get_payments_summary", () => {
 describe("get_expenses_summary", () => {
   test("splits approved from pending and honours the property filter", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -193,7 +202,7 @@ describe("get_expenses_summary", () => {
 
   test("an unmatched property filter zeroes the totals", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      await seedSummaryCompany(client);
       const scoped = await summaryWith(
         client,
         "get_expenses_summary",
@@ -207,7 +216,6 @@ describe("get_expenses_summary", () => {
 
   test("the date range bounds `total` but never `this month`", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -237,7 +245,6 @@ describe("get_expenses_summary", () => {
 describe("get_contracts_summary", () => {
   test("counts active contracts and flags those ending within 60 days", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       // Ends inside the 60-day window relative to whatever `current_date` is.
       const endDate = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
       const fixture = await seedContract(client, {
@@ -262,7 +269,6 @@ describe("get_contracts_summary", () => {
 
   test("a contract ending beyond 60 days is active but not expiring", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: new Date(Date.now() + 200 * 864e5).toISOString().slice(0, 10),
@@ -280,7 +286,6 @@ describe("get_contracts_summary", () => {
 
   test("excludes archived contracts", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -305,13 +310,13 @@ describe("get_contracts_summary", () => {
 
   test("archived_count is identical across all three archive modes", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const live = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         state: "active",
       });
       const archived = await seedContract(client, {
+        companyId: live.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         state: "terminated",
@@ -377,7 +382,6 @@ describe("get_contracts_summary", () => {
 describe("get_tenants_summary", () => {
   test("sums overdue invoice balances into arrears", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -421,7 +425,6 @@ describe("get_tenants_summary", () => {
 
   test("a settled invoice contributes nothing to arrears", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -451,7 +454,6 @@ describe("get_tenants_summary", () => {
 
   test("archived_count is identical across all three archive modes", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -483,7 +485,6 @@ describe("get_tenants_summary", () => {
 describe("get_units_summary", () => {
   test("occupied reflects the trigger-derived status, and the buckets partition", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       // seedContract inserts the unit first, so migration 76's trigger flips it
       // to `occupied` when the active contract lands.
       const fixture = await seedContract(client, {
@@ -508,7 +509,6 @@ describe("get_units_summary", () => {
 
   test("rent_potential sums default_rent and tolerates nulls", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fixture = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
@@ -548,7 +548,6 @@ describe("grants", () => {
     ["get_units_summary(text,uuid,uuid,text,text,text)"],
   ])("anon cannot execute %s", async (signature) => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const { rows } = await client.query<{ allowed: boolean }>(
         `select has_function_privilege('anon', 'public.${signature}', 'execute') as allowed`,
       );
@@ -568,7 +567,7 @@ describe("permission guard", () => {
    */
   test("an authenticated user without payments.read is refused", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedSummaryCompany(client);
       const { rows } = await client.query<{ id: string }>(
         `insert into auth.users (id, instance_id, aud, role, email)
          values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
@@ -576,6 +575,12 @@ describe("permission guard", () => {
          returning id`,
       );
       const userId = rows[0].id;
+      await client.query(
+        `insert into public.profiles (id, company_id, display_name, is_active)
+         values ($1, $2, 'No Role', true)
+         on conflict (id) do update set company_id = excluded.company_id, is_active = true`,
+        [userId, companyId],
+      );
       // No role assignment, so has_permission() returns false for every code.
       await actAs(client, "authenticated", userId);
 
@@ -587,12 +592,18 @@ describe("permission guard", () => {
 
   test("an authenticated user without expenses.read is refused", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedSummaryCompany(client);
       const { rows } = await client.query<{ id: string }>(
         `insert into auth.users (id, instance_id, aud, role, email)
          values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
                  'authenticated', 'authenticated', 'nobody2@example.test')
          returning id`,
+      );
+      await client.query(
+        `insert into public.profiles (id, company_id, display_name, is_active)
+         values ($1, $2, 'No Role 2', true)
+         on conflict (id) do update set company_id = excluded.company_id, is_active = true`,
+        [rows[0].id, companyId],
       );
       await actAs(client, "authenticated", rows[0].id);
 

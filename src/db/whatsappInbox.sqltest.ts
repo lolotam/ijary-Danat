@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, captureRaise, closePool, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  captureRaise,
+  closePool,
+  seedCompanyUser,
+  setCompanyClaimContext,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -19,26 +26,35 @@ afterAll(closePool);
  * twice is invisible to unit tests that fake the database.
  */
 
-/** Creates an auth user holding `role`, so is_staff/has_role resolve for it. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار معزولة ويضبط سياق الشركة للاتصال الحالي. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة واتساب ${tag}`, `WA Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
 }
 
-async function seedConnection(client: PoolClient) {
+/** ينشئ مستخدم Auth بدور محدّد ضمن الشركة المحددة لاختبار الصلاحيات. */
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "wa");
+}
+
+/** يزرع اتصال Evolution الوحيد (id=1) ويربطه بالشركة المحددة. */
+async function seedConnection(client: PoolClient, companyId: string) {
   await client.query(
-    `insert into public.evolution_connections (id, instance_name, webhook_secret, connected_number)
-     values (1, 'danat', 'super-secret-webhook-key', '96550000000')
-     on conflict (id) do update set webhook_secret = excluded.webhook_secret`,
+    `insert into public.evolution_connections (id, company_id, instance_name, webhook_secret, connected_number)
+     values (1, $1, 'danat', 'super-secret-webhook-key', '96550000000')
+     on conflict (id) do update
+       set company_id = excluded.company_id,
+           webhook_secret = excluded.webhook_secret`,
+    [companyId],
   );
 }
 
@@ -73,8 +89,9 @@ describe("evolution_connections secrets", () => {
     // The webhook secret authenticates the public endpoint and the QR is a
     // pairing credential; both must never be readable through PostgREST.
     await withRollback(async (client) => {
-      await seedConnection(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId);
+      const admin = await seedUserWithRole(client, companyId, "admin");
 
       await actAs(client, "authenticated", admin);
 
@@ -109,8 +126,9 @@ describe("evolution_connections secrets", () => {
 
   test("a non-admin staff member sees no connection row at all", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client);
-      const accountant = await seedUserWithRole(client, "accountant");
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId);
+      const accountant = await seedUserWithRole(client, companyId, "accountant");
 
       await actAs(client, "authenticated", accountant);
       const { rows } = await client.query(`select instance_name from public.evolution_connections`);
@@ -120,10 +138,12 @@ describe("evolution_connections secrets", () => {
 
   test("the table is a singleton: a second row is rejected", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client);
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId);
       await expect(
         client.query(
-          `insert into public.evolution_connections (id, webhook_secret) values (2, 'x')`,
+          `insert into public.evolution_connections (id, company_id, webhook_secret) values (2, $1, 'x')`,
+          [companyId],
         ),
       ).rejects.toThrow(/check constraint/i);
     });
@@ -133,8 +153,9 @@ describe("evolution_connections secrets", () => {
 describe("whatsapp inbox RLS", () => {
   test("an admin reads chats and messages; clients cannot write them", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await ingest(client, [ingestRow({ message_id: "wamid-rls-1" })]);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, companyId, "admin");
 
       await actAs(client, "authenticated", admin);
 
@@ -156,6 +177,7 @@ describe("whatsapp inbox RLS", () => {
 
   test("a signed-in non-staff user sees nothing", async () => {
     await withRollback(async (client) => {
+      await seedCompany(client);
       await ingest(client, [ingestRow({ message_id: "wamid-rls-2" })]);
 
       await actAs(client, "authenticated", randomUUID());
@@ -178,12 +200,15 @@ describe("whatsapp inbox RLS", () => {
 describe("ingest_whatsapp_messages", () => {
   test("a webhook replay of the same message does not bump unread twice", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       const row = ingestRow({ message_id: "wamid-replay" });
       expect(await ingest(client, [row])).toBe(1);
       expect(await ingest(client, [row])).toBe(0);
 
       const { rows } = await client.query(
-        `select unread_count from public.whatsapp_chats where chat_number = '96550123456'`,
+        `select unread_count from public.whatsapp_chats
+          where company_id = $1 and chat_number = '96550123456'`,
+        [companyId],
       );
       expect(rows[0].unread_count).toBe(1);
     });
@@ -192,12 +217,14 @@ describe("ingest_whatsapp_messages", () => {
   test("history rows (count_unread=false) advance the chat without lighting the badge", async () => {
     // Migration 181 — a backfilled year of old chats must not show as unread.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await ingest(client, [
         ingestRow({ message_id: "hist-1", body: "قديمة", count_unread: false }),
       ]);
       const { rows } = await client.query(
         `select unread_count, last_message_preview from public.whatsapp_chats
-          where chat_number = '96550123456'`,
+          where company_id = $1 and chat_number = '96550123456'`,
+        [companyId],
       );
       expect(rows[0].unread_count).toBe(0);
       expect(rows[0].last_message_preview).toBe("قديمة");
@@ -206,11 +233,14 @@ describe("ingest_whatsapp_messages", () => {
 
   test("outbound (fromMe) rows never increment unread", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await ingest(client, [
         ingestRow({ message_id: "out-1", direction: "outbound", from_me: true, push_name: null }),
       ]);
       const { rows } = await client.query(
-        `select unread_count from public.whatsapp_chats where chat_number = '96550123456'`,
+        `select unread_count from public.whatsapp_chats
+          where company_id = $1 and chat_number = '96550123456'`,
+        [companyId],
       );
       expect(rows[0].unread_count).toBe(0);
     });
@@ -218,6 +248,7 @@ describe("ingest_whatsapp_messages", () => {
 
   test("a delayed older message cannot regress the chat preview", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await ingest(client, [
         ingestRow({ message_id: "new-1", body: "الأحدث", sent_at: "2026-09-01T12:00:00Z" }),
       ]);
@@ -227,7 +258,8 @@ describe("ingest_whatsapp_messages", () => {
 
       const { rows } = await client.query(
         `select last_message_preview, unread_count from public.whatsapp_chats
-          where chat_number = '96550123456'`,
+          where company_id = $1 and chat_number = '96550123456'`,
+        [companyId],
       );
       expect(rows[0].last_message_preview).toBe("الأحدث");
       // Both messages are real and unread — only the preview is ordered.
@@ -237,13 +269,18 @@ describe("ingest_whatsapp_messages", () => {
 
   test("contact auto-capture fills an empty name but never overwrites an admin's", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await client.query(
-        `insert into public.whatsapp_contacts (phone, name) values ('96550123456', 'اسم يدوي')`,
+        `insert into public.whatsapp_contacts (company_id, phone, name)
+         values ($1, '96550123456', 'اسم يدوي')`,
+        [companyId],
       );
       await ingest(client, [ingestRow({ message_id: "cap-1", push_name: "اسم تلقائي" })]);
 
       const { rows } = await client.query(
-        `select name from public.whatsapp_contacts where phone = '96550123456'`,
+        `select name from public.whatsapp_contacts
+          where company_id = $1 and phone = '96550123456'`,
+        [companyId],
       );
       expect(rows[0].name).toBe("اسم يدوي");
     });
@@ -251,6 +288,7 @@ describe("ingest_whatsapp_messages", () => {
 
   test("a media-only message gets a bracketed preview", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await ingest(client, [
         ingestRow({
           message_id: "doc-1",
@@ -261,7 +299,9 @@ describe("ingest_whatsapp_messages", () => {
         }),
       ]);
       const { rows } = await client.query(
-        `select last_message_preview from public.whatsapp_chats where chat_number = '96550123456'`,
+        `select last_message_preview from public.whatsapp_chats
+          where company_id = $1 and chat_number = '96550123456'`,
+        [companyId],
       );
       expect(rows[0].last_message_preview).toBe("[document]");
     });

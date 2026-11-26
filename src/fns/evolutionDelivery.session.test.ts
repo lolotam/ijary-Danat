@@ -12,24 +12,27 @@ const state = {
 const sendWithEvolutionMock = vi.fn();
 const reportSendMock = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "evolution_connections") {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: state.connectionRow, error: null }),
+vi.mock("@/company/companyClient.server", () => ({
+  serverCompanyClient: () => ({
+    companyId: "11111111-1111-4111-8111-111111111111",
+    client: {
+      from: (table: string) => {
+        if (table === "evolution_connections") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: state.connectionRow, error: null }),
+              }),
             }),
-          }),
-          update: () => ({
-            eq: async () => ({ data: null, error: null }),
-          }),
-        };
-      }
-      throw new Error(`Unexpected table: ${table}`);
+            update: () => ({
+              eq: async () => ({ data: null, error: null }),
+            }),
+          };
+        }
+        throw new Error(`Unexpected table: ${table}`);
+      },
     },
-  },
+  }),
 }));
 
 vi.mock("@/lib/providers/evolution", async (importOriginal) => {

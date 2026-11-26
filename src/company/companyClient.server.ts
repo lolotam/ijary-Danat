@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SignJWT } from "jose";
 
 import { CompanyContextError } from "@/company/errors";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { Database } from "@/integrations/supabase/database.types";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -143,4 +144,18 @@ export function companyClient(
       autoRefreshToken: false,
     },
   });
+}
+
+/**
+ * يعيد معرّف الشركة وعميل `companyClient` إما من المعرّف الممرَّر صراحة أو من سياق الطلب الحالي.
+ */
+export function serverCompanyClient(
+  companyId?: string | null,
+  opts?: CompanyClientOptions,
+): { companyId: string; client: SupabaseClient<Database> } {
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  return {
+    companyId: resolvedCompanyId,
+    client: companyClient(resolvedCompanyId, opts),
+  };
 }

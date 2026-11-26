@@ -19,16 +19,23 @@ vi.mock("@tanstack/react-start", () => {
   };
 });
 
-// Mock supabaseAdmin inline to avoid hoisting ReferenceError
-vi.mock("@/integrations/supabase/client.server", () => {
-  return {
-    supabaseAdmin: {
-      rpc: vi.fn(),
-    },
-  };
-});
+const supabaseAdmin = vi.hoisted(() => ({
+  rpc: vi.fn(),
+}));
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => supabaseAdmin,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+}));
+
 import { evaluateOverdue, runEvaluateOverdueJob } from "./evaluateOverdue";
 
 describe("evaluateOverdue server function and job", () => {

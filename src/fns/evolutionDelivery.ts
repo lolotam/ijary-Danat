@@ -1,7 +1,11 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { serverCompanyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import { companyStoragePath } from "@/company/storagePath";
 import { backfillChatAvatarsInBackground } from "@/fns/evolutionAvatars";
 import { reportSendSessionDisconnected } from "@/fns/evolutionSessionWatch";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/database.types";
+import type { Database, Json } from "@/integrations/supabase/database.types";
 import { extractState } from "@/lib/evolution/client";
 import {
   evolutionClientFromConfig,
@@ -40,26 +44,35 @@ export function safeMediaFileName(value: string | null, fallback: string): strin
 }
 
 /**
- * مسار الملف في مخزن whatsapp-media: chat/<الرقم>/<معرّف الرسالة>/<الاسم>.
+ * مسار الملف في مخزن whatsapp-media: companies/<الشركة>/chat/<الرقم>/<معرّف الرسالة>/<الاسم>.
  */
-export function whatsappMediaPath(chatNumber: string, messageId: string, fileName: string): string {
-  return `chat/${chatNumber}/${messageId}/${fileName}`;
+export function whatsappMediaPath(
+  chatNumber: string,
+  messageId: string,
+  fileName: string,
+  explicitCompanyId?: string,
+): string {
+  const companyId = explicitCompanyId ?? requireRequestCompany().id;
+  return companyStoragePath(companyId, `chat/${chatNumber}/${messageId}/${fileName}`);
 }
 
 type ConnectionRow = { instance_name: string; last_connection_state: string | null };
 
 /**
- * يقرأ صف الاقتران المفرد؛ غيابه يعني أن أحداً لم يمسح رمز QR قط.
+ * يقرأ صف الاقتران الخاص بالشركة؛ غيابه يعني أن أحداً لم يمسح رمز QR قط.
  *
  * A missing row is the same terminal condition as a logged-out session, so it
  * carries the same `session_disconnected` code and the drain job parks the
  * notification for the same human fix.
  */
-async function loadConnectionRow(): Promise<ConnectionRow> {
-  const result = await supabaseAdmin
+async function loadConnectionRow(
+  client: SupabaseClient<Database>,
+  companyId: string,
+): Promise<ConnectionRow> {
+  const result = await client
     .from("evolution_connections")
     .select("instance_name, last_connection_state")
-    .eq("id", 1)
+    .eq("company_id", companyId)
     .maybeSingle();
   if (result.error) throw new Error(result.error.message);
   if (!result.data) {
@@ -73,44 +86,39 @@ async function loadConnectionRow(): Promise<ConnectionRow> {
 }
 
 /**
- * يقرأ اسم النسخة المقترنة من صف evolution_connections المفرد.
+ * يقرأ اسم النسخة المقترنة من صف evolution_connections الخاص بالشركة.
  *
  * Existence only — used by the media fetch path, which reads from Evolution's
  * store and does not need a live session. Sends go through
  * {@link requireOpenSession} instead.
  */
-export async function loadEvolutionInstanceName(): Promise<string> {
-  return (await loadConnectionRow()).instance_name;
+export async function loadEvolutionInstanceName(explicitCompanyId?: string): Promise<string> {
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
+  return (await loadConnectionRow(client, companyId)).instance_name;
 }
 
 /**
  * يتأكد أن الجلسة مفتوحة قبل الإرسال؛ يشفي سجلاً بالياً بفحص حيّ واحد.
- *
- * The webhook writes `last_connection_state` the moment WhatsApp unlinks the
- * device, so a send that trusts a `close` row saves a round-trip to a gateway
- * that will answer 500 — and, more importantly, fails with the code that parks
- * the row for a human instead of one that retries it three times.
- *
- * A recorded state other than `open` is verified live before it is believed:
- * a webhook that never arrived (Evolution restarted while the app was
- * deploying) must not silence every WhatsApp until someone opens the settings
- * page. When the probe says `open` the row is healed here, best effort.
  */
-async function requireOpenSession(config: Json): Promise<string> {
-  const row = await loadConnectionRow();
+async function requireOpenSession(
+  client: SupabaseClient<Database>,
+  companyId: string,
+  config: Json,
+): Promise<string> {
+  const row = await loadConnectionRow(client, companyId);
   if (row.last_connection_state === "open") return row.instance_name;
 
-  const client = evolutionClientFromConfig(config);
-  const live = await client
+  const evolutionClient = evolutionClientFromConfig(config);
+  const live = await evolutionClient
     .connectionState(row.instance_name)
     .then(extractState)
     .catch(() => null);
   if (live !== "open") throw sessionDisconnectedError(live ?? row.last_connection_state);
 
-  const heal = await supabaseAdmin
+  const heal = await client
     .from("evolution_connections")
     .update({ last_connection_state: "open" })
-    .eq("id", 1);
+    .eq("company_id", companyId);
   if (heal.error) {
     console.error("[evolutionDelivery] failed to record the healed session state", heal.error);
   }
@@ -136,7 +144,11 @@ type OutboundPart = {
  * same value the webhook would later stamp — so without it here a cache miss
  * can never fall back to Evolution's media store.
  */
-async function recordOutboundMessages(chatNumber: string, parts: OutboundPart[]): Promise<void> {
+async function recordOutboundMessages(
+  client: SupabaseClient<Database>,
+  chatNumber: string,
+  parts: OutboundPart[],
+): Promise<void> {
   if (!parts.length) return;
   const sentAt = new Date().toISOString();
   const rows = parts.map((part) => ({
@@ -153,7 +165,7 @@ async function recordOutboundMessages(chatNumber: string, parts: OutboundPart[])
     push_name: null,
     raw: null,
   }));
-  const result = await supabaseAdmin.rpc("ingest_whatsapp_messages", { p_rows: rows });
+  const result = await client.rpc("ingest_whatsapp_messages", { p_rows: rows });
   if (result.error) {
     console.error("[evolutionDelivery] failed to record outbound inbox rows", result.error.message);
     return;
@@ -175,15 +187,21 @@ async function recordOutboundMessages(chatNumber: string, parts: OutboundPart[])
  * trips to the gateway. A failed cache write is logged, not thrown: the tenant
  * already has the file.
  */
-async function cacheOutboundMedia(chatNumber: string, parts: OutboundPart[]): Promise<void> {
+async function cacheOutboundMedia(
+  client: SupabaseClient<Database>,
+  companyId: string,
+  chatNumber: string,
+  parts: OutboundPart[],
+): Promise<void> {
   for (const part of parts) {
     if (!part.media) continue;
     const path = whatsappMediaPath(
       chatNumber,
       part.messageId,
       safeMediaFileName(part.media.fileName, "file"),
+      companyId,
     );
-    const upload = await supabaseAdmin.storage
+    const upload = await client.storage
       .from(WHATSAPP_MEDIA_BUCKET)
       .upload(path, Buffer.from(part.media.base64, "base64"), {
         contentType: part.media.mimeType ?? "application/octet-stream",
@@ -208,10 +226,12 @@ async function cacheOutboundMedia(chatNumber: string, parts: OutboundPart[]): Pr
  */
 export async function deliverEvolutionNotification(
   message: WhatsAppProviderMessage,
+  explicitCompanyId?: string,
 ): Promise<ProviderResult> {
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
   let result: Awaited<ReturnType<typeof sendWithEvolution>>;
   try {
-    const instanceName = await requireOpenSession(message.config);
+    const instanceName = await requireOpenSession(client, companyId, message.config);
     result = await sendWithEvolution(message, instanceName);
   } catch (error) {
     if (
@@ -231,8 +251,8 @@ export async function deliverEvolutionNotification(
     const mediaIndex = body ? index - 1 : index;
     return { messageId, body, media: mediaIndex >= 0 ? (media[mediaIndex] ?? null) : null };
   });
-  await recordOutboundMessages(chatNumber, parts);
-  await cacheOutboundMedia(chatNumber, parts);
+  await recordOutboundMessages(client, chatNumber, parts);
+  await cacheOutboundMedia(client, companyId, chatNumber, parts);
 
   return { messageId: result.messageId };
 }

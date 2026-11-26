@@ -1,9 +1,10 @@
 ﻿import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { deliverEvolutionNotification } from "@/fns/evolutionDelivery";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import { toInternationalDigits } from "@/lib/providers/types";
 import { type PermissionContext, requirePermission } from "@/fns/requirePermission";
@@ -32,7 +33,7 @@ async function assertPermission(context: PermissionContext, code: string): Promi
  * يعيد إعداد مزوّد evolution_api إن كان هو مزوّد واتساب المفعّل، وإلا يرفض.
  */
 export async function requireEnabledEvolutionConfig() {
-  const result = await supabaseAdmin
+  const result = await companyClient(requireRequestCompany().id)
     .from("provider_configs")
     .select("*")
     .eq("provider", "evolution_api")
@@ -88,7 +89,7 @@ export const markWhatsAppChatRead = createServerFn({ method: "POST" })
   .validator(markReadSchema)
   .handler(async ({ data, context }) => {
     await assertPermission(context, "notifications.update");
-    const result = await supabaseAdmin
+    const result = await companyClient(requireRequestCompany().id)
       .from("whatsapp_chats")
       .update({ unread_count: 0 })
       .eq("chat_number", data.chatNumber);
@@ -116,6 +117,7 @@ export const saveWhatsAppContact = createServerFn({ method: "POST" })
   .validator(contactSchema)
   .handler(async ({ data, context }) => {
     await assertPermission(context, "notifications.update");
+    const db = companyClient(requireRequestCompany().id);
     const phone = toInternationalDigits(data.phone);
     const values = {
       phone,
@@ -126,13 +128,8 @@ export const saveWhatsAppContact = createServerFn({ method: "POST" })
       tenant_id: data.tenantId ?? null,
     };
     const result = data.id
-      ? await supabaseAdmin
-          .from("whatsapp_contacts")
-          .update(values)
-          .eq("id", data.id)
-          .select("id")
-          .single()
-      : await supabaseAdmin
+      ? await db.from("whatsapp_contacts").update(values).eq("id", data.id).select("id").single()
+      : await db
           .from("whatsapp_contacts")
           .upsert(values, { onConflict: "phone" })
           .select("id")
@@ -142,13 +139,13 @@ export const saveWhatsAppContact = createServerFn({ method: "POST" })
     // Contract links are replaced as a set: the form always submits the full
     // selection, so delete-then-insert mirrors exactly what the admin sees.
     if (data.contractIds) {
-      const cleared = await supabaseAdmin
+      const cleared = await db
         .from("whatsapp_contact_contracts")
         .delete()
         .eq("contact_id", result.data.id);
       if (cleared.error) throw new Error(cleared.error.message);
       if (data.contractIds.length) {
-        const linked = await supabaseAdmin.from("whatsapp_contact_contracts").insert(
+        const linked = await db.from("whatsapp_contact_contracts").insert(
           data.contractIds.map((contractId) => ({
             contact_id: result.data.id,
             contract_id: contractId,
@@ -180,7 +177,8 @@ export const deleteWhatsAppMessage = createServerFn({ method: "POST" })
   .validator(deleteMessageSchema)
   .handler(async ({ data, context }) => {
     await assertPermission(context, "notifications.delete");
-    const row = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+    const row = await db
       .from("whatsapp_messages")
       .select("message_id, chat_number, direction")
       .eq("message_id", data.messageId)
@@ -217,10 +215,7 @@ export const deleteWhatsAppMessage = createServerFn({ method: "POST" })
       }
     }
 
-    const deleted = await supabaseAdmin
-      .from("whatsapp_messages")
-      .delete()
-      .eq("message_id", data.messageId);
+    const deleted = await db.from("whatsapp_messages").delete().eq("message_id", data.messageId);
     if (deleted.error) throw new Error(deleted.error.message);
     return { ok: true };
   });
@@ -239,15 +234,10 @@ export const deleteWhatsAppChat = createServerFn({ method: "POST" })
   .validator(deleteChatSchema)
   .handler(async ({ data, context }) => {
     await assertPermission(context, "notifications.delete");
-    const messages = await supabaseAdmin
-      .from("whatsapp_messages")
-      .delete()
-      .eq("chat_number", data.chatNumber);
+    const db = companyClient(requireRequestCompany().id);
+    const messages = await db.from("whatsapp_messages").delete().eq("chat_number", data.chatNumber);
     if (messages.error) throw new Error(messages.error.message);
-    const chat = await supabaseAdmin
-      .from("whatsapp_chats")
-      .delete()
-      .eq("chat_number", data.chatNumber);
+    const chat = await db.from("whatsapp_chats").delete().eq("chat_number", data.chatNumber);
     if (chat.error) throw new Error(chat.error.message);
     return { ok: true };
   });
@@ -262,7 +252,10 @@ export const deleteWhatsAppContact = createServerFn({ method: "POST" })
   .validator(deleteContactSchema)
   .handler(async ({ data, context }) => {
     await assertPermission(context, "notifications.update");
-    const result = await supabaseAdmin.from("whatsapp_contacts").delete().eq("id", data.id);
+    const result = await companyClient(requireRequestCompany().id)
+      .from("whatsapp_contacts")
+      .delete()
+      .eq("id", data.id);
     if (result.error) throw new Error(result.error.message);
     return { ok: true };
   });
@@ -291,6 +284,7 @@ export const exportWhatsAppContactsCsv = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     await assertPermission(context, "notifications.read");
 
+    const db = companyClient(requireRequestCompany().id);
     const rows: Array<{
       phone: string;
       name: string | null;
@@ -301,7 +295,7 @@ export const exportWhatsAppContactsCsv = createServerFn({ method: "POST" })
     }> = [];
     const pageSize = 1000;
     for (let from = 0; ; from += pageSize) {
-      const page = await supabaseAdmin
+      const page = await db
         .from("whatsapp_contacts")
         .select("phone, name, commercial_name, email, notes, created_at")
         .order("created_at", { ascending: true })

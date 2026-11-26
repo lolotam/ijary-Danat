@@ -13,18 +13,23 @@ const renderAndStorePdf = vi.fn();
  * these tests prove what actually reaches the renderer and the returned
  * document, not what a stubbed helper was asked for.
  */
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "companies") {
-        return {
-          select: () => ({ order: () => ({ limit: () => ({ maybeSingle: companyRow }) }) }),
-        };
-      }
-      return { select: () => ({ maybeSingle: companyRow }) };
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+
+vi.mock("@/company/companyClient.server", () => ({
+  serverCompanyClient: (explicitCompanyId?: string) => ({
+    companyId: explicitCompanyId ?? COMPANY_ID,
+    client: {
+      from: (table: string) => {
+        if (table === "companies") {
+          return {
+            select: () => ({ eq: () => ({ maybeSingle: companyRow }) }),
+          };
+        }
+        return { select: () => ({ maybeSingle: companyRow }) };
+      },
+      rpc: (name: string, args: Record<string, unknown>) => breakdownRpc(name, args),
     },
-    rpc: (name: string, args: Record<string, unknown>) => breakdownRpc(name, args),
-  },
+  }),
 }));
 
 vi.mock("@/lib/invoiceRelations", () => ({
@@ -39,6 +44,7 @@ const { renderInvoiceDocumentPdf } = await import("./invoiceDocumentPdf");
 
 const INVOICE = {
   id: "inv-1",
+  company_id: COMPANY_ID,
   code: "INV-1",
   tenant_id: "tenant-1",
   period_month: 8,

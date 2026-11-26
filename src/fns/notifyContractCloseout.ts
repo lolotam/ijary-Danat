@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   loadContractCode,
@@ -14,7 +16,6 @@ import {
 import { requirePermission } from "@/fns/requirePermission";
 import { translatorFor } from "@/i18n/dictionary";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 const WORKFLOW_KEY = "contract-closeout-completed";
@@ -61,7 +62,11 @@ export async function notifyContractCloseoutRecord(
     type: "contract_closeout",
     load: async () =>
       rowOrThrow(
-        await supabaseAdmin.from("contract_closeouts").select("*").eq("id", closeoutId).single(),
+        await companyClient(requireRequestCompany().id)
+          .from("contract_closeouts")
+          .select("*")
+          .eq("id", closeoutId)
+          .single(),
       ),
     dedupeMatch: { closeout_id: closeoutId },
     build: buildCloseoutMessage,

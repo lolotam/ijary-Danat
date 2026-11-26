@@ -42,18 +42,24 @@ describe("migration 125 — template locale collapse", () => {
   // fixtures contain no notification rows.
   test("history pointing at a legacy code is re-pointed, not orphaned", async () => {
     await withRollback(async (client) => {
+      const { rows: companies } = await client.query<{ id: string }>(
+        `select id from public.companies order by created_at asc limit 1`,
+      );
+      const companyId = companies[0].id;
       const { rows } = await client.query<{ ok: boolean }>(
         `select exists(
-           select 1 from public.notification_templates where code = 'receipt'
+           select 1 from public.notification_templates where company_id = $1 and code = 'receipt'
          ) as ok`,
+        [companyId],
       );
       expect(rows[0]?.ok).toBe(true);
       // Inserting with a legacy code must now fail the FK, proving the rows are
       // gone and that any old-bundle write would have been caught.
       await expect(
         client.query(
-          `insert into public.notifications (audience, type, channel, locale, template_code, state)
-             values ('tenant','receipt','email','ar','receipt-ar','queued')`,
+          `insert into public.notifications (company_id, audience, type, channel, locale, template_code, state)
+             values ($1,'tenant','receipt','email','ar','receipt-ar','queued')`,
+          [companyId],
         ),
       ).rejects.toThrow(/foreign key/i);
     });

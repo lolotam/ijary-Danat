@@ -31,12 +31,21 @@ vi.mock("@tanstack/react-start", () => ({
   createMiddleware: () => ({ server: (handler: unknown) => handler }),
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    auth: { admin: { updateUserById: mocks.updateUserById } },
-    from: mocks.from,
-    rpc: mocks.rpc,
-  },
+vi.mock("@/platform/authAdmin.server", () => ({
+  getAuthAdmin: () => ({ updateUserById: mocks.updateUserById }),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 import { setUserActive } from "./setUserActive";

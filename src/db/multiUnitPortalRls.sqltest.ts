@@ -24,6 +24,7 @@ describe("portal RLS with several units", () => {
         units: [{ monthlyAmount: 400 }, { monthlyAmount: 400 }, { monthlyAmount: 400 }],
       });
       const theirs = await seedContract(client, {
+        companyId: mine.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         state: "active",
@@ -35,13 +36,14 @@ describe("portal RLS with several units", () => {
          values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
         [portalUser, `${portalUser}@example.test`],
       );
-      // handle_new_user (migration 02) already inserted a public.profiles row
-      // for portalUser (tenant_id NULL) via the on_auth_user_created trigger;
-      // update it into the seeded tenant rather than inserting a second row,
-      // which would violate the profiles primary key.
       await client.query(
-        `update public.profiles set tenant_id = $2, is_active = true where id = $1`,
-        [portalUser, mine.tenantId],
+        `insert into public.profiles (id, company_id, tenant_id, display_name, is_active)
+         values ($1, $2, $3, 'Portal User', true)
+         on conflict (id) do update
+           set company_id = excluded.company_id,
+               tenant_id = excluded.tenant_id,
+               is_active = true`,
+        [portalUser, mine.companyId, mine.tenantId],
       );
 
       // actAs sets all four GUCs. Do not hand-roll this: setting only

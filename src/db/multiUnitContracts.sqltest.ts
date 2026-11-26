@@ -127,6 +127,7 @@ describe("contract_units", () => {
         first.contractId,
       ]);
       const second = await seedContract(client, {
+        companyId: first.companyId,
         startDate: "2027-01-01",
         endDate: "2027-12-31",
         state: "active",
@@ -219,6 +220,7 @@ describe("contract_units", () => {
         units: [{ monthlyAmount: 400 }, { monthlyAmount: 300 }],
       });
       const destination = await seedContract(client, {
+        companyId: source.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         units: [{ monthlyAmount: 100 }],

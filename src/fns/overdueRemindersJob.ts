@@ -1,9 +1,10 @@
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { templateAllowsChannel } from "@/fns/templateChannelPolicy";
 import { readWorkflowGate } from "@/fns/workflowRegistry";
 import { translatorFor } from "@/i18n/dictionary";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   overdueReminderTemplate,
   portalInvoicesUrl,
@@ -24,14 +25,15 @@ import { WHATSAPP_SKIP } from "@/lib/whatsappSkipReasons";
  * audit row carries the reason — otherwise "why did nobody get a reminder?"
  * has no answer anywhere.
  */
-export async function runOverdueRemindersJob(asOf: string | null = null) {
+export async function runOverdueRemindersJob(asOf: string | null = null, companyId?: string) {
+  const db = companyClient(companyId ?? requireRequestCompany().id);
   // Scheduled jobs read the gate themselves — cronJobs.ts only checks pause
   // before dispatch; targets filter what this job enqueues.
   const { targets } = await readWorkflowGate("overdue-reminders");
   const asOfDate = asOf ?? new Date().toISOString().slice(0, 10);
   const monthKey = asOfDate.slice(0, 7); // YYYY-MM
 
-  const overdueInvoices = await supabaseAdmin
+  const overdueInvoices = await db
     .from("invoices")
     .select("id, tenant_id, contract_id, balance, due_date, period_month, period_year, code")
     .eq("state", "overdue")
@@ -53,11 +55,7 @@ export async function runOverdueRemindersJob(asOf: string | null = null) {
   const liveContracts =
     contractIds.length === 0
       ? { data: [] as Array<{ id: string }>, error: null }
-      : await supabaseAdmin
-          .from("contracts")
-          .select("id")
-          .in("id", contractIds)
-          .is("archived_at", null);
+      : await db.from("contracts").select("id").in("id", contractIds).is("archived_at", null);
   if (liveContracts.error) throw new Error(liveContracts.error.message);
   const liveContractIds = new Set((liveContracts.data ?? []).map((row) => row.id));
 
@@ -81,11 +79,7 @@ export async function runOverdueRemindersJob(asOf: string | null = null) {
   const queued: string[] = [];
   const skipped: Array<{ tenant_id: string; reason: string }> = [];
   for (const [tenantId, aggregate] of byTenant) {
-    const tenantResult = await supabaseAdmin
-      .from("tenants")
-      .select("*")
-      .eq("id", tenantId)
-      .single();
+    const tenantResult = await db.from("tenants").select("*").eq("id", tenantId).single();
     if (tenantResult.error || !tenantResult.data) continue;
     const tenant = tenantResult.data;
     if (!tenant.reminders_enabled) {
@@ -94,7 +88,7 @@ export async function runOverdueRemindersJob(asOf: string | null = null) {
     }
 
     // Idempotency: one overdue_reminder set per tenant per month
-    const existing = await supabaseAdmin
+    const existing = await db
       .from("notifications")
       .select("id")
       .eq("tenant_id", tenantId)
@@ -203,7 +197,7 @@ export async function runOverdueRemindersJob(asOf: string | null = null) {
     }
   }
 
-  await supabaseAdmin.rpc("write_audit", {
+  await db.rpc("write_audit", {
     p_action: "job.overdue_reminders",
     p_entity_type: "notification",
     p_entity_id: null,

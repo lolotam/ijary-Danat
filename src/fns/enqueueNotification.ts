@@ -1,7 +1,11 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { loadTemplateChannel, templateAllowsChannel } from "@/fns/templateChannelPolicy";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type {
+  Database,
   Json,
   LocaleCode,
   NotificationAudience,
@@ -27,6 +31,7 @@ export interface EnqueueNotificationInput {
    */
   bypassTemplateChannel?: boolean;
   channel: NotificationChannel;
+  companyId?: string;
   contractId?: string | null;
   dispatch?: boolean;
   deliveryKey?: string | null;
@@ -44,7 +49,7 @@ export interface EnqueueNotificationInput {
 }
 
 /**
- * ينشئ صف إشعار — ما لم تكن قناة القالب النشط تمنع هذه القناة — ويُرسله فوراً.
+ * ينشئ صف إشعار ضمن نطاق الشركة — ما لم تكن قناة القالب النشط تمنع هذه القناة — ويُرسله فوراً.
  *
  * Returns null when an active template excludes `input.channel`, so the row is
  * never created. The Notification Log is a user-facing audit surface: a
@@ -62,6 +67,9 @@ export interface EnqueueNotificationInput {
 export async function enqueueNotification(
   input: EnqueueNotificationInput,
 ): Promise<Tables<"notifications"> | null> {
+  const companyId = input.companyId ?? requireRequestCompany().id;
+  const db = companyClient(companyId);
+
   if (input.templateCode && !input.bypassTemplateChannel) {
     const templateChannel = await loadTemplateChannel(input.templateCode);
     if (!templateAllowsChannel(templateChannel, input.channel)) return null;
@@ -90,13 +98,14 @@ export async function enqueueNotification(
   // tenant is not even read for it.
   const paused =
     sendsNow && isTenantBoundAudience(input.audience) && input.tenantId
-      ? await tenantNotificationsPaused(input.tenantId)
+      ? await tenantNotificationsPaused(db, input.tenantId)
       : false;
 
   const row: TablesInsert<"notifications"> = {
     audience: input.audience ?? "tenant",
     body: input.body ?? null,
     channel: input.channel,
+    company_id: companyId,
     contract_id: input.contractId ?? null,
     delivery_key: input.deliveryKey ?? null,
     failure_reason: paused ? TENANT_PAUSED_REASON : null,
@@ -114,7 +123,7 @@ export async function enqueueNotification(
     type: input.type,
   };
 
-  const insertResult = await supabaseAdmin.from("notifications").insert(row).select("*").single();
+  const insertResult = await db.from("notifications").insert(row).select("*").single();
   if (insertResult.error) {
     if (input.deliveryKey && insertResult.error.code === "23505") {
       // المفتاح الفريد رفض صفاً ثانياً بنفسه — فالتسليم موجود أصلاً.
@@ -122,25 +131,7 @@ export async function enqueueNotification(
       // تُقرأ كل الصفوف التي تحمل المفتاح نفسه في لقطة واحدة، ثم يُختار الصف
       // في الكود: صف `queued` أو `sent` هو التسليم نفسه، وإلا فأحدث صف من
       // الصفوف القابلة للشحن.
-      //
-      // One snapshot, one choice. The old code read two snapshots — first
-      // `queued`/`sent`, then `failed`/`needs_review`/`skipped` — and a row
-      // that moved from `failed` to `sent` between them was missed by both, so
-      // the duplicate surfaced as a false 23505. One read cannot straddle a
-      // state change.
-      //
-      // A queued or sent row is the delivery itself, so it wins: the
-      // contract-expiry index only covers those two states, and that job can
-      // leave newer failed or skipped rows under the same key, which must not
-      // be mistaken for the delivery. Only when none exists is the refusing
-      // row one of the other dispatchable states that the payment index
-      // (migration 251) also covers — the FAILED row the drain job will
-      // retry, or the SKIPPED row a paused tenant receives once unpaused —
-      // and returning it makes that dispatch reuse the existing row instead
-      // of a second row being created next to it.
-      //
-      // No cap: rows per key are few — one payment row under index 251, one contract-expiry row per day.
-      const existing = await supabaseAdmin
+      const existing = await db
         .from("notifications")
         .select("*")
         .eq("delivery_key", input.deliveryKey)
@@ -159,7 +150,7 @@ export async function enqueueNotification(
     ? new Date(insertResult.data.scheduled_at).getTime()
     : 0;
   if (scheduled > Date.now() + 5_000) return insertResult.data;
-  return dispatchNotificationRecord(insertResult.data.id);
+  return dispatchNotificationRecord(insertResult.data.id, { companyId });
 }
 
 /**
@@ -199,8 +190,11 @@ function createdAtMs(row: { created_at?: string | null }): number {
  * asked to silence is the one outcome this switch exists to prevent. A missing
  * row counts as not paused — there is no such tenant to notify.
  */
-async function tenantNotificationsPaused(tenantId: string): Promise<boolean> {
-  const tenant = await supabaseAdmin
+async function tenantNotificationsPaused(
+  db: SupabaseClient<Database>,
+  tenantId: string,
+): Promise<boolean> {
+  const tenant = await db
     .from("tenants")
     .select("notifications_paused")
     .eq("id", tenantId)
@@ -210,15 +204,13 @@ async function tenantNotificationsPaused(tenantId: string): Promise<boolean> {
 }
 
 /**
- * Company inbox from the first companies row. Throws on a select error.
+ * يقرأ بريد صندوق الشركة المحددة. يرمي عند فشل الاستعلام.
  */
-async function companyEmail(): Promise<string | null> {
-  const company = await supabaseAdmin
-    .from("companies")
-    .select("email")
-    .order("created_at")
-    .limit(1)
-    .maybeSingle();
+async function companyEmail(
+  db: SupabaseClient<Database>,
+  companyId: string,
+): Promise<string | null> {
+  const company = await db.from("companies").select("email").eq("id", companyId).maybeSingle();
   if (company.error) throw new Error(company.error.message);
   return company.data?.email ? String(company.data.email).toLowerCase() : null;
 }
@@ -227,11 +219,11 @@ async function companyEmail(): Promise<string | null> {
  * Active admin profile emails. Swallows user_roles / profiles errors, unlike
  * companyEmail above, which throws.
  */
-async function adminProfileEmails(): Promise<string[]> {
+async function adminProfileEmails(db: SupabaseClient<Database>): Promise<string[]> {
   const emails: string[] = [];
-  const admins = await supabaseAdmin.from("user_roles").select("user_id").eq("role", "admin");
+  const admins = await db.from("user_roles").select("user_id").eq("role", "admin");
   if (!admins.error && admins.data?.length) {
-    const profiles = await supabaseAdmin
+    const profiles = await db
       .from("profiles")
       .select("email")
       .in(
@@ -257,17 +249,20 @@ async function adminProfileEmails(): Promise<string[]> {
  */
 export async function resolveNotificationRecipients(
   targets: WorkflowRecipientTarget[],
+  companyId?: string,
 ): Promise<string[]> {
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  const db = companyClient(resolvedCompanyId);
   const emails = new Set<string>();
   const wantCompany = targets.includes("company");
   const wantAdmin = targets.includes("admin");
 
   if (wantCompany) {
-    const email = await companyEmail();
+    const email = await companyEmail(db, resolvedCompanyId);
     if (email) emails.add(email);
   }
   if (wantAdmin) {
-    for (const email of await adminProfileEmails()) {
+    for (const email of await adminProfileEmails(db)) {
       emails.add(email);
     }
   }

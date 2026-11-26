@@ -38,7 +38,19 @@ const db = {
   uploads: [] as string[],
 };
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   function builder() {
     const chain: any = {
       select: () => chain,
@@ -47,36 +59,37 @@ vi.mock("@/integrations/supabase/client.server", () => {
     };
     return chain;
   }
-  return {
-    supabaseAdmin: {
-      from: () => builder(),
-      storage: {
-        from: () => ({
-          download: (path: string) => {
-            const file = db.storage[path];
-            if (!file) return Promise.resolve({ data: null, error: { message: "not found" } });
-            return Promise.resolve({
-              data: {
-                type: file.type,
-                arrayBuffer: () =>
-                  Promise.resolve(
-                    file.bytes.buffer.slice(
-                      file.bytes.byteOffset,
-                      file.bytes.byteOffset + file.bytes.byteLength,
-                    ),
+  const client = {
+    from: () => builder(),
+    storage: {
+      from: () => ({
+        download: (path: string) => {
+          const file = db.storage[path];
+          if (!file) return Promise.resolve({ data: null, error: { message: "not found" } });
+          return Promise.resolve({
+            data: {
+              type: file.type,
+              arrayBuffer: () =>
+                Promise.resolve(
+                  file.bytes.buffer.slice(
+                    file.bytes.byteOffset,
+                    file.bytes.byteOffset + file.bytes.byteLength,
                   ),
-              },
-              error: null,
-            });
-          },
-          upload: (path: string, bytes: Buffer, opts: { contentType: string }) => {
-            db.storage[path] = { bytes, type: opts.contentType };
-            db.uploads.push(path);
-            return Promise.resolve({ data: { path }, error: null });
-          },
-        }),
-      },
+                ),
+            },
+            error: null,
+          });
+        },
+        upload: (path: string, bytes: Buffer, opts: { contentType: string }) => {
+          db.storage[path] = { bytes, type: opts.contentType };
+          db.uploads.push(path);
+          return Promise.resolve({ data: { path }, error: null });
+        },
+      }),
     },
+  };
+  return {
+    companyClient: () => client,
   };
 });
 
@@ -133,7 +146,9 @@ describe("gmailAttachment caching", () => {
     expect(result).toMatchObject({ filename: "lease.pdf", data: base64url });
     expect(db.uploads).toHaveLength(1);
     expect(db.uploads[0]).toMatch(
-      new RegExp(`^message/${MESSAGE_ROW_ID}/[0-9a-f]{16}/lease\\.pdf$`),
+      new RegExp(
+        `^companies/${TEST_COMPANY.id}/message/${MESSAGE_ROW_ID}/[0-9a-f]{16}/lease\\.pdf$`,
+      ),
     );
     expect(db.storage[db.uploads[0]].bytes.toString()).toBe("%PDF-1.7 lease");
   });

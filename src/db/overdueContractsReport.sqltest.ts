@@ -10,7 +10,9 @@ import {
   actAsSuperuser,
   captureRaiseError,
   closePool,
+  seedCompanyUser,
   seedContract,
+  setCompanyClaimContext,
   withRollback,
 } from "@/db/testDb";
 
@@ -29,24 +31,34 @@ const MIGRATION_241_SQL = readFileSync(
   "utf8",
 );
 
-/** جملة الزرع في الهجرة: تُنفَّذ وحدها داخل التراجع لاختبار النسخ. */
+/** جملة الزرع في الهجرة مُكيّفة مع قيد الفرادة المركّب `(company_id, code)`. */
 const SEED_INSERT_SQL = MIGRATION_241_SQL.slice(
   MIGRATION_241_SQL.indexOf("insert into public.report_schedules"),
-);
+)
+  .replace(
+    "where code = '7-DAYS-REPORT'",
+    "where company_id = public.current_company_id() and code = '7-DAYS-REPORT'",
+  )
+  .replace("on conflict (code)", "on conflict (company_id, code)");
 
-/** ينشئ مستخدماً بدور معين حتى تُحسم `has_permission` لصالحه. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار معزولة ويضبط سياق الشركة للاتصال الحالي. */
+async function seedIsolatedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة تقارير ${tag}`, `Report Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
+}
+
+/** ينشئ مستخدماً بدور معين ضمن الشركة المحددة حتى تُحسم `has_permission` لصالحه. */
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "od");
 }
 
 interface InvoiceHome {
@@ -98,6 +110,7 @@ async function insertFixtureInvoice(
  */
 async function seedExtraContract(
   client: PoolClient,
+  companyId: string,
   tenantId: string,
   propertyId: string,
   archived: boolean,
@@ -105,19 +118,19 @@ async function seedExtraContract(
   const tag = randomUUID().slice(0, 8);
   const code = `C-od-${tag}`;
   const { rows: units } = await client.query<{ id: string }>(
-    `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-    [`U-od-${tag}`, propertyId, `Unit od ${tag}`],
+    `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+    [companyId, `U-od-${tag}`, propertyId, `Unit od ${tag}`],
   );
   const { rows: contracts } = await client.query<{ id: string }>(
-    `insert into public.contracts (code, tenant_id, start_date, end_date, state)
-     values ($1, $2, '2026-01-01', '2026-12-31', 'active')
+    `insert into public.contracts (company_id, code, tenant_id, start_date, end_date, state)
+     values ($1, $2, $3, '2026-01-01', '2026-12-31', 'active')
      returning id`,
-    [code, tenantId],
+    [companyId, code, tenantId],
   );
   await client.query(
-    `insert into public.contract_units (contract_id, unit_id, monthly_amount, line_order)
-     values ($1, $2, 500, 1)`,
-    [contracts[0].id, units[0].id],
+    `insert into public.contract_units (company_id, contract_id, unit_id, monthly_amount, line_order)
+     values ($1, $2, $3, 500, 1)`,
+    [companyId, contracts[0].id, units[0].id],
   );
   if (archived) {
     await client.query(`update public.contracts set archived_at = now() where id = $1`, [
@@ -130,19 +143,20 @@ async function seedExtraContract(
 /**
  * تُنشئ جدول تقرير متأخرات خاصاً بالاختبار حتى لا يعتمد على الصف المزروع.
  */
-async function seedOverdueSchedule(client: PoolClient): Promise<string> {
+async function seedOverdueSchedule(client: PoolClient, companyId: string): Promise<string> {
   const tag = randomUUID().slice(0, 8);
   const { rows } = await client.query<{ id: string }>(
     `insert into public.report_schedules
-       (code, name_ar, name_en, frequency, recipients, locale, is_active, report_kind)
-     values ($1, $2, $3, 'weekly', '[]'::jsonb, 'ar'::public.locale_code, true, 'overdue_contracts')
+       (company_id, code, name_ar, name_en, frequency, recipients, locale, is_active, report_kind)
+     values ($1, $2, $3, $4, 'weekly', '[]'::jsonb, 'ar'::public.locale_code, true, 'overdue_contracts')
      returning id`,
-    [`TEST-OVERDUE-${tag}`, `تقرير اختبار ${tag}`, `Test report ${tag}`],
+    [companyId, `TEST-OVERDUE-${tag}`, `تقرير اختبار ${tag}`, `Test report ${tag}`],
   );
   return rows[0].id;
 }
 
 interface OverdueSetup {
+  companyId: string;
   scheduleId: string;
   contractACode: string;
   contractBCode: string;
@@ -163,8 +177,8 @@ async function seedOverdueSetup(client: PoolClient): Promise<OverdueSetup> {
     `update public.tenants set commercial_name_ar = 'شركة الاختبار' where id = $1`,
     [fx.tenantId],
   );
-  const extraB = await seedExtraContract(client, fx.tenantId, fx.propertyId, false);
-  const archived = await seedExtraContract(client, fx.tenantId, fx.propertyId, true);
+  const extraB = await seedExtraContract(client, fx.companyId, fx.tenantId, fx.propertyId, false);
+  const archived = await seedExtraContract(client, fx.companyId, fx.tenantId, fx.propertyId, true);
   const homeA: InvoiceHome = {
     contractId: fx.contractId,
     tenantId: fx.tenantId,
@@ -212,7 +226,8 @@ async function seedOverdueSetup(client: PoolClient): Promise<OverdueSetup> {
     [fx.contractId],
   );
   return {
-    scheduleId: await seedOverdueSchedule(client),
+    companyId: fx.companyId,
+    scheduleId: await seedOverdueSchedule(client, fx.companyId),
     contractACode: contracts[0].code,
     contractBCode: extraB.code,
     archivedCode: archived.code,
@@ -387,7 +402,7 @@ describe("overdue report permissions", () => {
     await withRollback(async (client) => {
       const setup = await seedOverdueSetup(client);
       // Collector holds contracts.read and invoices.read but not reports.read.
-      const collector = await seedUserWithRole(client, "collector");
+      const collector = await seedUserWithRole(client, setup.companyId, "collector");
       await actAs(client, "authenticated", collector);
 
       const error = (await captureRaiseError(client, () =>
@@ -406,7 +421,7 @@ describe("overdue report permissions", () => {
     // same call succeeds for an admin holding reports.read.
     await withRollback(async (client) => {
       const setup = await seedOverdueSetup(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, setup.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const { rows } = await client.query<{ html: string }>(
@@ -442,23 +457,23 @@ describe("weekly overdue seed row", () => {
 
   test("the seed copies recipients, locale and next run from 7-DAYS-REPORT only", async () => {
     await withRollback(async (client) => {
-      await client.query(
-        `delete from public.report_schedules where code = 'WEEKLY-OVERDUE-REPORT'`,
-      );
+      const companyId = await seedIsolatedCompany(client);
       await client.query(
         `insert into public.report_schedules
-           (code, name_ar, name_en, frequency, recipients, locale, is_active, next_run_at, report_kind)
-         values ('7-DAYS-REPORT', 'تقرير أسبوعي', 'Weekly', 'weekly',
+           (company_id, code, name_ar, name_en, frequency, recipients, locale, is_active, next_run_at, report_kind)
+         values ($1, '7-DAYS-REPORT', 'تقرير أسبوعي', 'Weekly', 'weekly',
                  '["owner@example.test"]'::jsonb, 'en'::public.locale_code, true,
                  '2026-10-01T00:00:00Z', 'summary')`,
+        [companyId],
       );
       // A competing weekly schedule must not leak its values into the copy.
       await client.query(
         `insert into public.report_schedules
-           (code, name_ar, name_en, frequency, recipients, locale, is_active, next_run_at, report_kind)
-         values ('COMPETING-WEEKLY', 'منافس', 'Competing', 'weekly',
+           (company_id, code, name_ar, name_en, frequency, recipients, locale, is_active, next_run_at, report_kind)
+         values ($1, 'COMPETING-WEEKLY', 'منافس', 'Competing', 'weekly',
                  '["other@example.test"]'::jsonb, 'ar'::public.locale_code, true,
                  '2026-11-01T00:00:00Z', 'summary')`,
+        [companyId],
       );
 
       await client.query(SEED_INSERT_SQL);
@@ -474,7 +489,8 @@ describe("weekly overdue seed row", () => {
         `select recipients, locale::text as locale, next_run_at::text,
                 is_active, frequency, report_kind
            from public.report_schedules
-          where code = 'WEEKLY-OVERDUE-REPORT'`,
+          where company_id = $1 and code = 'WEEKLY-OVERDUE-REPORT'`,
+        [companyId],
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].recipients).toEqual(["owner@example.test"]);
@@ -490,11 +506,10 @@ describe("weekly overdue seed row", () => {
 
   test("the seed without a source row falls back to empty recipients", async () => {
     await withRollback(async (client) => {
-      await client.query(
-        `delete from public.report_schedules where code = 'WEEKLY-OVERDUE-REPORT'`,
-      );
+      const companyId = await seedIsolatedCompany(client);
       const { rows: sources } = await client.query<{ n: string }>(
-        `select count(*)::text as n from public.report_schedules where code = '7-DAYS-REPORT'`,
+        `select count(*)::text as n from public.report_schedules where company_id = $1 and code = '7-DAYS-REPORT'`,
+        [companyId],
       );
       expect(sources[0].n).toBe("0");
 
@@ -508,7 +523,8 @@ describe("weekly overdue seed row", () => {
       }>(
         `select recipients, locale::text as locale, next_run_at::text, is_active
            from public.report_schedules
-          where code = 'WEEKLY-OVERDUE-REPORT'`,
+          where company_id = $1 and code = 'WEEKLY-OVERDUE-REPORT'`,
+        [companyId],
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].recipients).toEqual([]);

@@ -1,6 +1,9 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { settleGatewayPayment, type EventDetails } from "@/fns/gatewaySettlement";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { GatewayPaymentMethod, Json } from "@/integrations/supabase/database.types";
+import type { Database, GatewayPaymentMethod, Json } from "@/integrations/supabase/database.types";
 import { isRecord, verifySignature, type SignatureCheck } from "@/lib/myfatoorahSignature";
 
 // Re-exported so the three callers and their tests keep one import path while
@@ -170,16 +173,25 @@ function isSuccessfulEvent(details: EventDetails) {
   );
 }
 
+type WebhookDb = SupabaseClient<Database>;
+
 async function markEvent(
+  db: WebhookDb,
   eventId: string,
   updates: { error?: string | null; processed?: boolean; result: string },
 ) {
-  const { error } = await supabaseAdmin.from("webhook_events").update(updates).eq("id", eventId);
+  const { error } = await db.from("webhook_events").update(updates).eq("id", eventId);
   if (error) throw new Error(error.message);
 }
 
-async function invalidSignatureResponse(payload: Json, details: EventDetails) {
-  const insertQuery = await supabaseAdmin.from("webhook_events").insert({
+async function invalidSignatureResponse(
+  db: WebhookDb,
+  companyId: string,
+  payload: Json,
+  details: EventDetails,
+) {
+  const insertQuery = await db.from("webhook_events").insert({
+    company_id: companyId,
     gateway: "myfatoorah",
     event_type: details.eventType,
     provider_event_id: details.providerEventId,
@@ -195,10 +207,16 @@ async function invalidSignatureResponse(payload: Json, details: EventDetails) {
   return Response.json({ error: "Invalid webhook signature." }, { status: 401 });
 }
 
-async function claimWebhookEvent(payload: Json, details: EventDetails) {
-  const insertQuery = await supabaseAdmin
+async function claimWebhookEvent(
+  db: WebhookDb,
+  companyId: string,
+  payload: Json,
+  details: EventDetails,
+) {
+  const insertQuery = await db
     .from("webhook_events")
     .insert({
+      company_id: companyId,
       gateway: "myfatoorah",
       event_type: details.eventType,
       provider_event_id: details.providerEventId,
@@ -211,7 +229,7 @@ async function claimWebhookEvent(payload: Json, details: EventDetails) {
     .single();
   if (!insertQuery.error) return { event: insertQuery.data, replay: false };
   if (insertQuery.error.code !== "23505") throw new Error(insertQuery.error.message);
-  const existingQuery = await supabaseAdmin
+  const existingQuery = await db
     .from("webhook_events")
     .select("*")
     .eq("gateway", "myfatoorah")
@@ -221,7 +239,7 @@ async function claimWebhookEvent(payload: Json, details: EventDetails) {
   if (existingQuery.data.processed || existingQuery.data.result === "processing") {
     return { event: existingQuery.data, replay: true };
   }
-  const claimQuery = await supabaseAdmin
+  const claimQuery = await db
     .from("webhook_events")
     .update({ result: "processing", error: null })
     .eq("id", existingQuery.data.id)
@@ -271,10 +289,13 @@ export async function respondToMyFatoorahWebhook(request: Request): Promise<Resp
     // webhook_events harder to read. Settlement is unreachable from here.
     return Response.json({ ok: true, ignored: true, reason: "event_not_consumed" });
   }
+  const company = requireRequestCompany();
+  // Settlement path may finish pending webhooks even if the company is suspended.
+  const db = companyClient(company.id, { allowSuspended: true });
   const check = await verifySignature(payload, suppliedSignature, webhookSecret);
   if (!check.valid) {
     logSignatureRejection({ check, details, suppliedSignature });
-    return invalidSignatureResponse(payload, details);
+    return invalidSignatureResponse(db, company.id, payload, details);
   }
   if (check.matchedKeyEncoding === "base64-decoded") {
     // Recorded once per delivery so the two-candidate fallback in
@@ -282,15 +303,15 @@ export async function respondToMyFatoorahWebhook(request: Request): Promise<Resp
     // than kept forever.
     console.info("[myfatoorahWebhook] signature matched using the base64-decoded secret");
   }
-  const claim = await claimWebhookEvent(payload, details);
+  const claim = await claimWebhookEvent(db, company.id, payload, details);
   if (claim.replay) return Response.json({ ok: true, replay: true });
   if (!isSuccessfulEvent(details)) {
-    await markEvent(claim.event.id, { processed: true, result: "ignored" });
+    await markEvent(db, claim.event.id, { processed: true, result: "ignored" });
     return Response.json({ ok: true, ignored: true });
   }
   try {
     const alreadyCompleted = await settleGatewayPayment(details, payload);
-    await markEvent(claim.event.id, {
+    await markEvent(db, claim.event.id, {
       processed: true,
       result: alreadyCompleted ? "already_completed" : "completed",
     });
@@ -298,7 +319,7 @@ export async function respondToMyFatoorahWebhook(request: Request): Promise<Resp
   } catch (settlementError) {
     const message =
       settlementError instanceof Error ? settlementError.message : "Webhook processing failed.";
-    await markEvent(claim.event.id, { processed: false, result: "failed", error: message });
+    await markEvent(db, claim.event.id, { processed: false, result: "failed", error: message });
     return Response.json({ error: message }, { status: 500 });
   }
 }

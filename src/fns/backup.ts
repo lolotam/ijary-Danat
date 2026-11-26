@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   createBackupArchive,
   deleteBackupRecord,
@@ -79,7 +80,9 @@ export const downloadBackupUrl = createServerFn({ method: "POST" })
       refusal: "Forbidden: you do not have permission to download backups.",
     });
 
-    const { data: backup, error: fetchError } = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+
+    const { data: backup, error: fetchError } = await db
       .from("backups")
       .select("storage_path")
       .eq("id", data.id)
@@ -89,7 +92,7 @@ export const downloadBackupUrl = createServerFn({ method: "POST" })
       throw new Error("Backup not found");
     }
 
-    const { data: urlData, error: urlError } = await supabaseAdmin.storage
+    const { data: urlData, error: urlError } = await db.storage
       .from(BACKUP_BUCKET)
       .createSignedUrl(backup.storage_path, 60);
 
@@ -97,7 +100,7 @@ export const downloadBackupUrl = createServerFn({ method: "POST" })
       throw new Error(`Could not create signed url: ${urlError.message}`);
     }
 
-    const { error: auditError } = await supabaseAdmin.rpc("write_audit", {
+    const { error: auditError } = await db.rpc("write_audit", {
       p_action: "backup.download",
       p_entity_type: "backup",
       p_entity_id: data.id,

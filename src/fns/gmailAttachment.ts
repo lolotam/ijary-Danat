@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import { companyStoragePath } from "@/company/storagePath";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   describeGmailApiError,
   getGmailAccessToken,
@@ -42,10 +44,15 @@ const schema = z.object({
  * hash stands in for them; the row id scopes it, the filename keeps the
  * object recognisable in the bucket.
  */
-function cachePath(messageRowId: string, attachmentId: string, filename: string): string {
+function cachePath(
+  companyId: string,
+  messageRowId: string,
+  attachmentId: string,
+  filename: string,
+): string {
   const hash = createHash("sha256").update(attachmentId).digest("hex").slice(0, 16);
   const safeName = filename.replace(/[/\\]/g, "_").trim() || "attachment.bin";
-  return `message/${messageRowId}/${hash}/${safeName}`;
+  return companyStoragePath(companyId, `message/${messageRowId}/${hash}/${safeName}`);
 }
 
 /** Gmail speaks base64url; Buffer speaks base64. Convert without padding fuss. */
@@ -66,7 +73,10 @@ export const gmailAttachment = createServerFn({ method: "POST" })
       refusal: "You do not have permission to read mailbox attachments.",
     });
 
-    const { data: message } = await supabaseAdmin
+    const companyId = requireRequestCompany().id;
+    const db = companyClient(companyId);
+
+    const { data: message } = await db
       .from("gmail_messages")
       .select("raw_payload")
       .eq("id", data.messageId)
@@ -90,8 +100,8 @@ export const gmailAttachment = createServerFn({ method: "POST" })
 
     // Cache first: a hit costs no Gmail call and works even after the message
     // is trashed in Gmail or the mailbox is disconnected.
-    const path = cachePath(data.messageId, data.attachmentId, declared.filename);
-    const cached = await supabaseAdmin.storage.from(BUCKET).download(path);
+    const path = cachePath(companyId, data.messageId, data.attachmentId, declared.filename);
+    const cached = await db.storage.from(BUCKET).download(path);
     if (!cached.error && cached.data) {
       const buffer = Buffer.from(await cached.data.arrayBuffer());
       return {
@@ -126,12 +136,10 @@ export const gmailAttachment = createServerFn({ method: "POST" })
     const json = (await response.json()) as { data?: string };
     if (!json.data) throw new Error("Gmail returned no content for that attachment.");
 
-    const upload = await supabaseAdmin.storage
-      .from(BUCKET)
-      .upload(path, base64UrlToBuffer(json.data), {
-        contentType: declared.mimeType || "application/octet-stream",
-        upsert: true,
-      });
+    const upload = await db.storage.from(BUCKET).upload(path, base64UrlToBuffer(json.data), {
+      contentType: declared.mimeType || "application/octet-stream",
+      upsert: true,
+    });
     if (upload.error) {
       // The admin's download still succeeds; only the cache write failed.
       console.error("[gmail-attachment] cache write failed", path, upload.error.message);

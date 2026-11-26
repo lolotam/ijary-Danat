@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
+import { companyStoragePath } from "@/company/storagePath";
 import {
   BACKUP_FORMAT_VERSION,
   buildArchive,
@@ -44,6 +45,7 @@ export type BackupRecord = {
  * Pruning drops older backups by deleting the row first, then the storage object.
  */
 export async function createBackupArchive(options: {
+  companyId?: string;
   kind: BackupKind;
   createdBy: string | null;
   note?: string | null;
@@ -52,6 +54,7 @@ export async function createBackupArchive(options: {
   now?: Date;
 }): Promise<BackupRecord> {
   const {
+    companyId: explicitCompanyId,
     kind,
     createdBy,
     note = null,
@@ -59,9 +62,10 @@ export async function createBackupArchive(options: {
     prune = true,
     now = new Date(),
   } = options;
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
 
   // 1. One dump call
-  const { data: dump, error: dumpError } = await supabaseAdmin.rpc("backup_dump_all");
+  const { data: dump, error: dumpError } = await client.rpc("backup_dump_all");
   if (dumpError) throw new Error(`Backup dump failed: ${dumpError.message}`);
 
   // 2. Build archive
@@ -97,20 +101,21 @@ export async function createBackupArchive(options: {
   // A uuid rather than the friendly timestamp, because two runs starting in the
   // same minute would collide on a minute-resolution name. The readable name
   // lives in `file_name`, which is what the archive downloads as.
-  const storagePath = `backups/${id}.zip`;
+  const storagePath = companyStoragePath(companyId, `backups/${id}.zip`);
 
   // 3. Upload to storage
-  const { error: uploadError } = await supabaseAdmin.storage
+  const { error: uploadError } = await client.storage
     .from(BACKUP_BUCKET)
     .upload(storagePath, bytes, { contentType: "application/zip", upsert: false });
 
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
 
   // 4. Insert row
-  const { data: row, error: insertError } = await supabaseAdmin
+  const { data: row, error: insertError } = await client
     .from("backups")
     .insert({
       id,
+      company_id: companyId,
       file_name: fileName,
       storage_path: storagePath,
       sha256,
@@ -127,7 +132,7 @@ export async function createBackupArchive(options: {
     .single();
 
   if (insertError) {
-    const { data: existingRow, error: fetchError } = await supabaseAdmin
+    const { data: existingRow, error: fetchError } = await client
       .from("backups")
       .select("id")
       .eq("id", id)
@@ -140,9 +145,7 @@ export async function createBackupArchive(options: {
       );
     }
 
-    const { error: cleanupError } = await supabaseAdmin.storage
-      .from(BACKUP_BUCKET)
-      .remove([storagePath]);
+    const { error: cleanupError } = await client.storage.from(BACKUP_BUCKET).remove([storagePath]);
 
     if (cleanupError) {
       throw new BackupInsertError(
@@ -155,12 +158,12 @@ export async function createBackupArchive(options: {
   }
 
   // 5. Audit log
-  const { error: auditError } = await supabaseAdmin.rpc("write_audit", {
+  const { error: auditError } = await client.rpc("write_audit", {
     p_action: "backup.create",
     p_entity_type: "backup",
     p_entity_id: id,
     p_before: null,
-    p_after: { file_name: fileName, kind, size_bytes: bytes.byteLength },
+    p_after: { company_id: companyId, file_name: fileName, kind, size_bytes: bytes.byteLength },
     p_result: "success",
     p_error_code: null,
   });
@@ -173,7 +176,7 @@ export async function createBackupArchive(options: {
   // 6. Prune if needed
   if (prune) {
     try {
-      const { data: allBackups } = await supabaseAdmin.from("backups").select("*");
+      const { data: allBackups } = await client.from("backups").select("*");
 
       if (allBackups) {
         const toPrune = pruneTargets(allBackups, {
@@ -182,7 +185,7 @@ export async function createBackupArchive(options: {
         });
 
         for (const backup of toPrune) {
-          await deleteBackupRecord(backup.id);
+          await deleteBackupRecord(backup.id, companyId);
         }
       }
     } catch (err) {
@@ -200,8 +203,9 @@ export async function createBackupArchive(options: {
  * Deletes the row first, then the object, so a failure leaves an orphaned
  * file rather than a row pointing to a missing file.
  */
-export async function deleteBackupRecord(id: string): Promise<void> {
-  const { data: backup, error: fetchError } = await supabaseAdmin
+export async function deleteBackupRecord(id: string, explicitCompanyId?: string): Promise<void> {
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
+  const { data: backup, error: fetchError } = await client
     .from("backups")
     .select("storage_path, file_name")
     .eq("id", id)
@@ -209,11 +213,11 @@ export async function deleteBackupRecord(id: string): Promise<void> {
 
   if (fetchError) throw new Error(`Fetch failed: ${fetchError.message}`);
 
-  const { error: deleteError } = await supabaseAdmin.from("backups").delete().eq("id", id);
+  const { error: deleteError } = await client.from("backups").delete().eq("id", id);
 
   if (deleteError) throw new Error(`Row deletion failed: ${deleteError.message}`);
 
-  const { error: removeError } = await supabaseAdmin.storage
+  const { error: removeError } = await client.storage
     .from(BACKUP_BUCKET)
     .remove([backup.storage_path]);
 
@@ -221,12 +225,14 @@ export async function deleteBackupRecord(id: string): Promise<void> {
     console.error(`Failed to remove storage object ${backup.storage_path}: ${removeError.message}`);
   }
 
-  const { error: auditError } = await supabaseAdmin.rpc("write_audit", {
+  const { error: auditError } = await client.rpc("write_audit", {
     p_action: "backup.delete",
     p_entity_type: "backup",
     p_entity_id: id,
     p_before: { file_name: backup.file_name },
-    p_after: removeError ? { error: removeError.message } : null,
+    p_after: removeError
+      ? { company_id: companyId, error: removeError.message }
+      : { company_id: companyId },
     p_result: removeError ? "partial_failure" : "success",
     p_error_code: removeError ? "STORAGE_DELETE_FAILED" : null,
   });
@@ -238,12 +244,13 @@ export async function deleteBackupRecord(id: string): Promise<void> {
 }
 
 /**
- * يسرد جميع النسخ الاحتياطية الموجودة.
+ * يسرد جميع النسخ الاحتياطية الموجودة للشركة الحالية.
  *
  * Retrieves all backups for the UI, ordered by creation date descending.
  */
-export async function listBackupRecords(): Promise<BackupRecord[]> {
-  const { data, error } = await supabaseAdmin
+export async function listBackupRecords(explicitCompanyId?: string): Promise<BackupRecord[]> {
+  const { client } = serverCompanyClient(explicitCompanyId);
+  const { data, error } = await client
     .from("backups")
     .select("*")
     .order("created_at", { ascending: false });

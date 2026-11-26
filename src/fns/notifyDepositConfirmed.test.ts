@@ -9,8 +9,20 @@ const enqueue = vi.fn();
 
 const DEPOSIT_ID = "11111111-1111-4111-8111-111111111111";
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (table: string) => {
       if (table === "notification_templates") {
         return {
@@ -44,9 +56,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       if (table === "companies") {
         return {
           select: () => ({
-            order: () => ({
-              limit: () => ({ maybeSingle }),
-            }),
+            eq: () => ({ maybeSingle }),
           }),
         };
       }
@@ -64,7 +74,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       };
     },
     rpc: (...args: unknown[]) => rpc(...args),
-  },
+  }),
 }));
 
 const resolveRecipients = vi.fn(async (targets: string[]) =>

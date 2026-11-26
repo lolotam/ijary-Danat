@@ -7,10 +7,7 @@ do $$
 declare
   v_default_company_id uuid;
 begin
-  select id into v_default_company_id
-    from public.companies
-   order by created_at asc, id asc
-   limit 1;
+  v_default_company_id := public._legacy_single_company_id();
 
   ------------------------------------------------------------
   -- 1. properties

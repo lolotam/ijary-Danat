@@ -15,12 +15,21 @@ import { createFakeDb, type FakeDb } from "@/fns/gatewaySettlementFakeDb.test-su
 
 const fake = vi.hoisted(() => ({ db: null as FakeDb | null }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (table: string) => (fake.db as FakeDb).client.from(table),
     rpc: (name: string, args: Record<string, unknown>) =>
       (fake.db as FakeDb).client.rpc(name, args),
-  },
+  }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 const { linkIsFresh, reservePaymentRequest } = await import("./paymentRequestReservation");

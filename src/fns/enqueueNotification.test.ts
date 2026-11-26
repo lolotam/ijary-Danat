@@ -5,10 +5,22 @@ const adminRolesResult = vi.fn();
 const profilesResult = vi.fn();
 const from = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (...args: unknown[]) => from(...args),
-  },
+  }),
 }));
 
 vi.mock("@/fns/dispatchNotification", () => ({
@@ -46,9 +58,7 @@ beforeEach(() => {
     if (table === "companies") {
       return {
         select: () => ({
-          order: () => ({
-            limit: () => ({ maybeSingle: companyMaybeSingle }),
-          }),
+          eq: () => ({ maybeSingle: companyMaybeSingle }),
         }),
       };
     }
@@ -348,7 +358,7 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("queued");
     expect(inserted.failure_reason).toBeNull();
-    expect(dispatchMock).toHaveBeenCalledWith("n-1");
+    expect(dispatchMock).toHaveBeenCalledWith("n-1", { companyId: TEST_COMPANY.id });
   });
 
   test("a tenant-audience row for an unpaused tenant behaves as before", async () => {
@@ -364,7 +374,7 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("queued");
     expect(inserted.failure_reason).toBeNull();
-    expect(dispatchMock).toHaveBeenCalledWith("n-1");
+    expect(dispatchMock).toHaveBeenCalledWith("n-1", { companyId: TEST_COMPANY.id });
   });
 
   test("a tenant row that cannot be read is not treated as unpaused", async () => {

@@ -10,6 +10,7 @@ import {
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
@@ -30,24 +31,19 @@ const migration87 = readFileSync(
 );
 const migration87Code = migration87.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 
-async function seedAdmin(client: PoolClient): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار جديدة ويعيد معرّفها. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, 'admin'::public.app_role)`,
-    [userId],
-  );
-  await client.query(
-    `insert into public.profiles (id, email, display_name, is_active)
-     values ($1, $2, 'Closeout Admin', true)
-     on conflict (id) do nothing`,
-    [userId, `${userId}@example.test`],
-  );
-  return userId;
+  return rows[0].id;
+}
+
+/** ينشئ مستخدماً إدارياً ضمن الشركة المحددة. */
+async function seedAdmin(client: PoolClient, companyId: string): Promise<string> {
+  return seedCompanyUser(client, companyId, "admin", "closeout-admin");
 }
 
 async function seedInsurance(
@@ -157,11 +153,17 @@ async function preview(
   return rows[0].result;
 }
 
-async function asAdmin<T>(client: PoolClient, fn: (adminId: string) => Promise<T>): Promise<T> {
-  const adminId = await seedAdmin(client);
+/** ينفّذ الدالة بصلاحية مدير ضمن شركة محددة ثم يعيد صلاحية المشرف. */
+async function asAdmin<T>(
+  client: PoolClient,
+  fn: (adminId: string, companyId: string) => Promise<T>,
+  existingCompanyId?: string,
+): Promise<T> {
+  const companyId = existingCompanyId ?? (await seedCompany(client));
+  const adminId = await seedAdmin(client, companyId);
   await actAs(client, "authenticated", adminId);
   try {
-    return await fn(adminId);
+    return await fn(adminId, companyId);
   } finally {
     await actAsSuperuser(client);
   }
@@ -170,8 +172,9 @@ async function asAdmin<T>(client: PoolClient, fn: (adminId: string) => Promise<T
 describe("close_out_contract happy paths", () => {
   test("1. deposit 250, deduction 25.5, write-off → terminated, archived, REF- refund, totals", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
           deposit: 250,
@@ -239,8 +242,9 @@ describe("close_out_contract happy paths", () => {
 
   test("2. keep_terminated leaves archived_at NULL; state terminated; visible", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -272,8 +276,9 @@ describe("close_out_contract happy paths", () => {
 
   test("3. freeze sets state=frozen, archived_at NULL, generates no invoices", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -304,9 +309,10 @@ describe("close_out_contract happy paths", () => {
 
   test("4. only outcome=archive stamps archived_at", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         for (const outcome of ["keep_terminated", "freeze", "archive"] as const) {
           const fx = await seedContract(client, {
+            companyId,
             startDate: "2026-01-01",
             endDate: "2026-12-31",
           });
@@ -338,8 +344,9 @@ describe("close_out_contract happy paths", () => {
 
   test("5. p_archive_tenant=true with keep_terminated raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -362,8 +369,9 @@ describe("close_out_contract unit + portal side effects", () => {
     expect(migration87Code).not.toMatch(/update\s+public\.units/i);
 
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -396,10 +404,11 @@ describe("close_out_contract unit + portal side effects", () => {
 
   test("7. under_maintenance stays under_maintenance after close-out", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         // Occupancy is state='active' only; under_maintenance is preserved by
         // compute_unit_status when no active contract remains.
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
           state: "draft",
@@ -493,24 +502,28 @@ describe("close_out_contract unit + portal side effects", () => {
         amount: 30,
       });
 
-      await asAdmin(client, async () => {
-        await closeOut(client, { contractId: fx.contractId, outcome: "archive" });
+      await asAdmin(
+        client,
+        async () => {
+          await closeOut(client, { contractId: fx.contractId, outcome: "archive" });
 
-        const portal = await client.query<{ tenant_portal_enabled: boolean }>(
-          `select tenant_portal_enabled from public.tenants where id = $1`,
-          [fx.tenantId],
-        );
-        expect(portal.rows[0].tenant_portal_enabled).toBe(false);
+          const portal = await client.query<{ tenant_portal_enabled: boolean }>(
+            `select tenant_portal_enabled from public.tenants where id = $1`,
+            [fx.tenantId],
+          );
+          expect(portal.rows[0].tenant_portal_enabled).toBe(false);
 
-        // The account itself stays usable. This is the half worth pinning:
-        // migration 142 exists so a finished contract cannot lock a person out
-        // of their own login.
-        const profile = await client.query<{ is_active: boolean }>(
-          `select is_active from public.profiles where id = $1`,
-          [portalUser],
-        );
-        expect(profile.rows[0].is_active).toBe(true);
-      });
+          // The account itself stays usable. This is the half worth pinning:
+          // migration 142 exists so a finished contract cannot lock a person out
+          // of their own login.
+          const profile = await client.query<{ is_active: boolean }>(
+            `select is_active from public.profiles where id = $1`,
+            [portalUser],
+          );
+          expect(profile.rows[0].is_active).toBe(true);
+        },
+        fx.companyId,
+      );
     });
   });
 });
@@ -518,8 +531,9 @@ describe("close_out_contract unit + portal side effects", () => {
 describe("close_out_contract idempotency and concurrency", () => {
   test("9. same key twice → one close-out, one refund, byte-identical jsonb", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -557,8 +571,9 @@ describe("close_out_contract idempotency and concurrency", () => {
 
   test("10. reusing a CANCELLED close-out key raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -635,8 +650,9 @@ describe("close_out_contract idempotency and concurrency", () => {
 
   test("12. staleness: bumped contracts.updated_at → errcode 40001", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -672,8 +688,9 @@ describe("close_out_contract idempotency and concurrency", () => {
 describe("close_out_contract guards", () => {
   test("13. already-archived contract raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -689,8 +706,9 @@ describe("close_out_contract guards", () => {
 
   test("14. terminated contract raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -706,8 +724,9 @@ describe("close_out_contract guards", () => {
 
   test("15. deductions exceeding deposit_held raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -732,8 +751,9 @@ describe("close_out_contract guards", () => {
 
   test("16. refund_amount exceeding available raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -759,8 +779,9 @@ describe("close_out_contract guards", () => {
 
   test("20. omitting an invoice with balance > 0 raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -794,8 +815,9 @@ describe("close_out_contract guards", () => {
 describe("close_out_contract invoice actions", () => {
   test("17. settle_from_deposit creates payments + allocations; paid backed by allocations", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -857,8 +879,9 @@ describe("close_out_contract invoice actions", () => {
 
   test("18. write_off sets waived, leaves paid untouched; balance shows written-off amount", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -896,8 +919,9 @@ describe("close_out_contract invoice actions", () => {
 
   test("19. mark_disputed leaves state/balance; invoice still accepts allocation", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -960,8 +984,9 @@ describe("close_out_contract invoice actions", () => {
 describe("close_out_contract history, audit, atomicity", () => {
   test("21. financial history survives: pre-existing invoices/payments/allocations/receipts remain", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -1035,8 +1060,9 @@ describe("close_out_contract history, audit, atomicity", () => {
 
   test("22. audit rows written in same transaction (rollback → zero rows)", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -1075,9 +1101,11 @@ describe("close_out_contract history, audit, atomicity", () => {
     const client = await (await import("@/db/testDb")).getPool().connect();
     try {
       await client.query("begin");
-      const adminId = await seedAdmin(client);
+      const companyId = await seedCompany(client);
+      const adminId = await seedAdmin(client, companyId);
       await actAs(client, "authenticated", adminId);
       const fx = await seedContract(client, {
+        companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -1112,8 +1140,9 @@ describe("close_out_contract history, audit, atomicity", () => {
 
   test("23. contract_operational_events gets closeout_completed", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -1137,8 +1166,9 @@ describe("close_out_contract history, audit, atomicity", () => {
 
   test("24. rollback atomicity: failure at refund undoes contract/invoice/unit changes", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -1218,8 +1248,9 @@ describe("close_out_contract history, audit, atomicity", () => {
 
   test("25. preview totals match commit; preview writes nothing", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });

@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildConsentUrl,
   GOOGLE_REVOKE_ENDPOINT,
@@ -47,7 +48,8 @@ export const beginGmailOAuth = createServerFn({ method: "POST" })
       );
     }
 
-    const state = createOAuthState(context.userId, config.stateSecret);
+    const company = requireRequestCompany();
+    const state = createOAuthState(context.userId, config.stateSecret, undefined, company.id);
     return { url: buildConsentUrl(config, state) };
   });
 
@@ -56,9 +58,11 @@ export const disconnectGmail = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     await assertCanManageIntegrations(context as never);
 
+    const db = companyClient(requireRequestCompany().id);
+
     // Read the token with the service-role client — `authenticated` has no
     // column grant on refresh_token, deliberately.
-    const { data: connection } = await supabaseAdmin
+    const { data: connection } = await db
       .from("gmail_connections")
       .select("id, refresh_token")
       .limit(1)
@@ -80,10 +84,7 @@ export const disconnectGmail = createServerFn({ method: "POST" })
       console.warn("[gmail-oauth] token revoke failed; deleting the connection anyway", error);
     }
 
-    const { error } = await supabaseAdmin
-      .from("gmail_connections")
-      .delete()
-      .eq("id", connection.id);
+    const { error } = await db.from("gmail_connections").delete().eq("id", connection.id);
     if (error) throw new Error(`Failed to disconnect Gmail: ${error.message}`);
 
     return { disconnected: true };

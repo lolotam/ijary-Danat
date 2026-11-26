@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { resolveBrowserCompanyId } from "@/company/browserCompany";
+import { companyStoragePath } from "@/company/storagePath";
 import { normalizePostgrestSearch } from "@/hooks/querySearch";
 import { pageRange } from "@/hooks/pagination";
 import { supabase } from "@/integrations/supabase/client";
@@ -147,14 +149,18 @@ export function useSendTenantMessage() {
         if (input.attachment.size > STORAGE_UPLOAD_MAX_BYTES) {
           throw new Error(`Attachment must be smaller than ${STORAGE_UPLOAD_MAX_MB} MB.`);
         }
+        const companyId = await resolveBrowserCompanyId();
         const extension =
           input.attachment.name
             .split(".")
             .pop()
             ?.toLowerCase()
             .replace(/[^a-z0-9]/g, "") || "bin";
-        // The tenant id must be the first path segment — storage RLS keys on it.
-        attachmentPath = `${input.tenantId}/${crypto.randomUUID()}.${extension}`;
+        // مسار مرفقات رسائل المستأجرين يبدأ بمعرّف الشركة ثم المستأجر وفق سياسة التخزين.
+        attachmentPath = companyStoragePath(
+          companyId,
+          `${input.tenantId}/${crypto.randomUUID()}.${extension}`,
+        );
         const upload = await supabase.storage
           .from("tenant-messages")
           .upload(attachmentPath, input.attachment, { upsert: false });

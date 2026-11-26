@@ -3,8 +3,9 @@ import { z } from "zod";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/database.types";
 import { isBuiltInWorkflow } from "@/lib/workflowCatalog";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
@@ -78,11 +79,10 @@ export const createWorkflowFn = createServerFn({ method: "POST" })
       );
     }
 
-    const existing = await supabaseAdmin
-      .from("cron_jobs")
-      .select("id")
-      .eq("key", data.key)
-      .maybeSingle();
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const existing = await db.from("cron_jobs").select("id").eq("key", data.key).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     if (existing.data) {
       throw new Error(`A workflow with key "${data.key}" already exists.`);
@@ -90,9 +90,10 @@ export const createWorkflowFn = createServerFn({ method: "POST" })
 
     const targets: WorkflowRecipientTarget[] = data.recipient_targets ?? ["admin", "company"];
 
-    const inserted = await supabaseAdmin
+    const inserted = await db
       .from("cron_jobs")
       .insert({
+        company_id: company.id,
         key: data.key,
         kind: data.kind,
         name_ar: data.name_ar,
@@ -106,7 +107,7 @@ export const createWorkflowFn = createServerFn({ method: "POST" })
       .single();
     if (inserted.error) throw new Error(inserted.error.message);
 
-    await supabaseAdmin.rpc("write_audit", {
+    await db.rpc("write_audit", {
       p_action: "cron.create",
       p_entity_type: "cron_job",
       p_entity_id: inserted.data.id,
@@ -133,20 +134,19 @@ export const deleteWorkflowFn = createServerFn({ method: "POST" })
       throw new Error(`Key "${data.key}" is a built-in workflow and cannot be deleted.`);
     }
 
-    const existing = await supabaseAdmin
-      .from("cron_jobs")
-      .select("*")
-      .eq("key", data.key)
-      .maybeSingle();
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const existing = await db.from("cron_jobs").select("*").eq("key", data.key).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
     if (!existing.data) {
       throw new Error(`No workflow found with key "${data.key}".`);
     }
 
-    const deleted = await supabaseAdmin.from("cron_jobs").delete().eq("key", data.key);
+    const deleted = await db.from("cron_jobs").delete().eq("key", data.key);
     if (deleted.error) throw new Error(deleted.error.message);
 
-    await supabaseAdmin.rpc("write_audit", {
+    await db.rpc("write_audit", {
       p_action: "cron.delete",
       p_entity_type: "cron_job",
       p_entity_id: existing.data.id,

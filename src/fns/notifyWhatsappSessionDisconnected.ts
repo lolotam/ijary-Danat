@@ -1,3 +1,7 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   renderAdminEmailCopy,
@@ -5,11 +9,12 @@ import {
 } from "@/fns/adminEmailNotification";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/database.types";
 import type { EmailLocale } from "@/lib/emailTemplates";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
 
 export type DisconnectAlertSource = "webhook" | "send";
+type AlertDb = SupabaseClient<Database>;
 
 interface ClaimedSessionRow {
   instance_name: string;
@@ -34,16 +39,10 @@ function formatKuwaitDisconnectTime(iso: string | null, locale: EmailLocale): st
 
 /**
  * يعيد تسليح حلقة التنبيه عند تعذّر إدراج البريد ما دامت الجلسة مقترنة وغير مفتوحة وغير جارية الفصل.
- *
- * Restores the atomic claim when building or inserting the notification fails
- * so a transient error never drops the single alert for an outage episode.
- * Guarded against `open` (concurrent re-pair), `disconnecting` (in-flight admin
- * logout), and unpaired rows (`connected_number` and `connected_at` cleared by
- * a completed intentional `disconnectEvolutionSession`).
  */
-async function rearmDisconnectAlert(): Promise<void> {
+async function rearmDisconnectAlert(db: AlertDb): Promise<void> {
   try {
-    const rearmResult = await supabaseAdmin
+    const rearmResult = await db
       .from("evolution_connections")
       .update({ disconnect_alert_armed: true })
       .eq("id", 1)
@@ -63,9 +62,9 @@ async function rearmDisconnectAlert(): Promise<void> {
 /**
  * يعدّ إشعارات واتساب المتوقفة بسبب انقطاع الجلسة أو غياب النسخة لعرضها في البريد.
  */
-async function countParkedWhatsappMessages(): Promise<number> {
+async function countParkedWhatsappMessages(db: AlertDb): Promise<number> {
   try {
-    const parkedCountResult = await supabaseAdmin
+    const parkedCountResult = await db
       .from("notifications")
       .select("id", { count: "exact", head: true })
       .in("error_code", ["session_disconnected", "instance_missing"])
@@ -89,21 +88,19 @@ async function countParkedWhatsappMessages(): Promise<number> {
 
 /**
  * يطالب بالحلقة ذرّياً، يبني رسالة البريد الإدارية، ويدرجها — ويعيد التسليح عند أي فشل.
- *
- * Uses a single conditional UPDATE instead of `alreadyNotified` + cooldown so
- * concurrent webhook/send callers race cleanly inside Postgres and every fresh
- * outage after a re-pair alerts immediately.
  */
 async function claimAndEnqueueAlert(
+  db: AlertDb,
+  companyId: string,
   source: DisconnectAlertSource,
   targets: WorkflowRecipientTarget[],
 ): Promise<AdminNotificationResult> {
-  const adminEmails = await resolveNotificationRecipients(targets);
+  const adminEmails = await resolveNotificationRecipients(targets, companyId);
   if (!adminEmails.length) {
     return { skipped: true, reason: "No admin email recipients configured." };
   }
 
-  const claim = await supabaseAdmin
+  const claim = await db
     .from("evolution_connections")
     .update({ disconnect_alert_armed: false })
     .eq("id", 1)
@@ -120,8 +117,8 @@ async function claimAndEnqueueAlert(
   }
 
   try {
-    const { locale } = await loadCompanyDefaults();
-    const parkedCount = await countParkedWhatsappMessages();
+    const { locale } = await loadCompanyDefaults(companyId);
+    const parkedCount = await countParkedWhatsappMessages(db);
     const baseUrl = (process.env.APP_BASE_URL || "https://danat-future.com").replace(/\/+$/, "");
     const settingsUrl = `${baseUrl}/admin/settings/integrations`;
     const observedState = claimed.last_connection_state ?? "unknown";
@@ -153,6 +150,7 @@ async function claimAndEnqueueAlert(
       type: "whatsapp_session_alert",
       channel: "email",
       audience: "admin",
+      companyId,
       locale: copy.locale,
       subject: copy.subject,
       body: copy.body,
@@ -167,13 +165,13 @@ async function claimAndEnqueueAlert(
     });
 
     if (!notification) {
-      await rearmDisconnectAlert();
+      await rearmDisconnectAlert(db);
       return { skipped: true, reason: `Template ${copy.code} excludes the email channel.` };
     }
 
     return { skipped: false, notification };
   } catch (error) {
-    await rearmDisconnectAlert();
+    await rearmDisconnectAlert(db);
     return {
       skipped: true,
       reason: error instanceof Error ? error.message : "Failed to enqueue session alert.",
@@ -183,15 +181,16 @@ async function claimAndEnqueueAlert(
 
 /**
  * يرسل تنبيهاً بريدياً فورياً للإدارة عند انقطاع جلسة واتساب QR، لمرة واحدة لكل حلقة انقطاع.
- *
- * Cheap pre-read avoids touching `cron_jobs` during drain retries on an already
- * alerted outage; never throws so webhook and delivery callers stay safe.
  */
 export async function notifyWhatsappSessionDisconnected(input: {
   source: DisconnectAlertSource;
+  companyId?: string;
 }): Promise<AdminNotificationResult> {
   try {
-    const preRead = await supabaseAdmin
+    const companyId = input.companyId ?? requireRequestCompany().id;
+    const db = companyClient(companyId);
+
+    const preRead = await db
       .from("evolution_connections")
       .select("disconnect_alert_armed, last_connection_state")
       .eq("id", 1)
@@ -211,7 +210,7 @@ export async function notifyWhatsappSessionDisconnected(input: {
       return { skipped: true, reason: "Session alert not armed.", benign: true };
     }
 
-    const provider = await supabaseAdmin
+    const provider = await db
       .from("provider_configs")
       .select("is_enabled")
       .eq("provider", "evolution_api")
@@ -230,7 +229,7 @@ export async function notifyWhatsappSessionDisconnected(input: {
     return await runEventWorkflow<AdminNotificationResult>({
       key: "whatsapp-session-disconnected",
       whenPaused: () => ({ skipped: true, reason: "Workflow is paused.", benign: true }),
-      run: (targets) => claimAndEnqueueAlert(input.source, targets),
+      run: (targets) => claimAndEnqueueAlert(db, companyId, input.source, targets),
       outcomeOf: (result) =>
         result.skipped
           ? { status: "skipped", error: result.reason }

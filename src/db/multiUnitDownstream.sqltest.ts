@@ -135,6 +135,7 @@ describe("restore_contract's pre-flight fans out over every unit on the contract
       // the first would go undetected (or worse, raise a raw 23505 from
       // one_active_contract_per_unit instead of this readable message).
       const second = await seedContract(client, {
+        companyId: first.companyId,
         startDate: "2027-01-01",
         endDate: "2027-12-31",
         state: "active",

@@ -30,7 +30,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuth: vi.fn(),
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => {
+vi.mock("@/company/companyClient.server", () => {
   const chainable = {
     from: vi.fn().mockReturnThis(),
     select: vi.fn().mockReturnThis(),
@@ -42,8 +42,17 @@ vi.mock("@/integrations/supabase/client.server", () => {
     maybeSingle: adminMaybeSingle,
     rpc: vi.fn().mockReturnThis(),
   };
-  return { supabaseAdmin: chainable };
+  return { companyClient: () => chainable };
 });
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+}));
 
 vi.mock("./myfatoorahGateway", () => ({
   gatewayConfigFromEnv: () => ({ apiKey: "test-key", baseUrl: "https://example.test" }),

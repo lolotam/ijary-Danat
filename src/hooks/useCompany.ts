@@ -12,12 +12,7 @@ export function useCompany(enabled = true) {
     queryKey: ["company"],
     enabled,
     queryFn: async (): Promise<Company | null> => {
-      const { data, error } = await supabase
-        .from("companies")
-        .select("*")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await supabase.from("companies").select("*").maybeSingle();
 
       if (error) throw error;
       return data;

@@ -1,5 +1,10 @@
+import { companyClient } from "@/company/companyClient.server";
+import {
+  getRequestCompany,
+  requireRequestCompany,
+  runWithRequestCompany,
+} from "@/company/requestCompany.server";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
 
 /**
@@ -116,129 +121,136 @@ export function estimatedDrainCapacityWithinStaleWindow(
  *
  * `asOf` is accepted to match the cron registry signature; draining is always "now".
  */
-export async function runNotificationDrainJob(_asOf: string | null = null) {
-  const now = Date.now();
-  const staleBefore = new Date(now - STALE_AFTER_HOURS * 60 * 60 * 1000);
+export async function runNotificationDrainJob(_asOf: string | null = null, companyId?: string) {
+  const activeCompany = getRequestCompany();
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  const db = companyClient(resolvedCompanyId);
 
-  const pending = await supabaseAdmin
-    .from("notifications")
-    .select("id, state, channel, retry_count, scheduled_at, created_at, error_code, failure_reason")
-    .in("state", ["queued", "failed"])
-    .order("created_at", { ascending: true })
-    .limit(DRAIN_BATCH_LIMIT);
-  if (pending.error) throw new Error(pending.error.message);
+  const execute = async () => {
+    const now = Date.now();
+    const staleBefore = new Date(now - STALE_AFTER_HOURS * 60 * 60 * 1000);
 
-  const dispatched: string[] = [];
-  const retried: string[] = [];
-  const cancelled: string[] = [];
-  let notYetDue = 0;
-  let heldForReview = 0;
+    const pending = await db
+      .from("notifications")
+      .select(
+        "id, state, channel, retry_count, scheduled_at, created_at, error_code, failure_reason",
+      )
+      .in("state", ["queued", "failed"])
+      .order("created_at", { ascending: true })
+      .limit(DRAIN_BATCH_LIMIT);
+    if (pending.error) throw new Error(pending.error.message);
 
-  for (const row of pending.data ?? []) {
-    // Rows predating the scheduled_at column carry null; fall back to creation.
-    const dueAt = new Date(row.scheduled_at ?? row.created_at);
+    const dispatched: string[] = [];
+    const retried: string[] = [];
+    const cancelled: string[] = [];
+    let notYetDue = 0;
+    let heldForReview = 0;
 
-    if (dueAt.getTime() > now) {
-      notYetDue += 1;
-      continue;
-    }
+    for (const row of pending.data ?? []) {
+      const dueAt = new Date(row.scheduled_at ?? row.created_at);
 
-    // Checked BEFORE the stale-cancel branch, deliberately. Age is a reason to
-    // stop trying; it is not a reason to conclude the message never arrived.
-    // Cancelling a possibly-delivered (or permanently blocked) row would file
-    // it as "we gave up" and discard the one fact that matters — that a human
-    // must act. Needs-review codes outrank staleness, so they are resolved first.
-    // `Object.hasOwn`, not a bare index: error_code arrives from provider JSON,
-    // so a code of "constructor" or "toString" would otherwise resolve to an
-    // inherited function, read as truthy, and park the row with a failure_reason
-    // that JSON.stringify silently drops.
-    const reviewReason =
-      row.state === "failed" && row.error_code && Object.hasOwn(NEEDS_REVIEW_CODES, row.error_code)
-        ? NEEDS_REVIEW_CODES[row.error_code]
-        : undefined;
-    if (reviewReason) {
-      const reviewResult = await supabaseAdmin
-        .from("notifications")
-        .update({
-          state: "needs_review",
-          failure_reason: reviewReason,
-        })
-        .eq("id", row.id)
-        .eq("state", row.state);
-      if (!reviewResult.error) heldForReview += 1;
-      continue;
-    }
-
-    if (dueAt < staleBefore) {
-      const cancelResult = await supabaseAdmin
-        .from("notifications")
-        .update({
-          state: "cancelled",
-          failure_reason: `Cancelled by notification-drain: more than ${STALE_AFTER_HOURS}h past due.`,
-        })
-        .eq("id", row.id)
-        .eq("state", row.state);
-      if (!cancelResult.error) cancelled.push(row.id);
-      continue;
-    }
-
-    if (row.state === "failed") {
-      if (row.channel === "both") {
-        heldForReview += 1;
+      if (dueAt.getTime() > now) {
+        notYetDue += 1;
         continue;
       }
-      if (row.retry_count >= MAX_RETRIES) {
-        // Exhaustion is itself the signal. Left as `failed`, the row is
-        // indistinguishable from one the next tick will retry — nine overdue
-        // reminders sat that way for a day on 2026-09-02 with "transiently
-        // (500)" as their reason and nothing telling an admin the gateway had
-        // lost its session. Conditional on the state read, like every other
-        // transition here.
-        const exhausted = await supabaseAdmin
+
+      const reviewReason =
+        row.state === "failed" &&
+        row.error_code &&
+        Object.hasOwn(NEEDS_REVIEW_CODES, row.error_code)
+          ? NEEDS_REVIEW_CODES[row.error_code]
+          : undefined;
+      if (reviewReason) {
+        const reviewResult = await db
           .from("notifications")
           .update({
             state: "needs_review",
-            failure_reason:
-              `Gave up after ${MAX_RETRIES} attempts. Last error: ${row.failure_reason ?? "unknown."} ` +
-              "Check the provider's status in Settings → Integrations, fix the cause, then re-queue if still needed.",
+            failure_reason: reviewReason,
           })
           .eq("id", row.id)
-          .eq("state", "failed");
-        if (!exhausted.error) heldForReview += 1;
+          .eq("state", row.state);
+        if (!reviewResult.error) heldForReview += 1;
         continue;
       }
-      const result = await dispatchNotificationRecord(row.id);
-      if (result.state === "sent") retried.push(row.id);
-      continue;
+
+      if (dueAt < staleBefore) {
+        const cancelResult = await db
+          .from("notifications")
+          .update({
+            state: "cancelled",
+            failure_reason: `Cancelled by notification-drain: more than ${STALE_AFTER_HOURS}h past due.`,
+          })
+          .eq("id", row.id)
+          .eq("state", row.state);
+        if (!cancelResult.error) cancelled.push(row.id);
+        continue;
+      }
+
+      if (row.state === "failed") {
+        if (row.channel === "both") {
+          heldForReview += 1;
+          continue;
+        }
+        if (row.retry_count >= MAX_RETRIES) {
+          const exhausted = await db
+            .from("notifications")
+            .update({
+              state: "needs_review",
+              failure_reason:
+                `Gave up after ${MAX_RETRIES} attempts. Last error: ${row.failure_reason ?? "unknown."} ` +
+                "Check the provider's status in Settings → Integrations, fix the cause, then re-queue if still needed.",
+            })
+            .eq("id", row.id)
+            .eq("state", "failed");
+          if (!exhausted.error) heldForReview += 1;
+          continue;
+        }
+        const result = await dispatchNotificationRecord(row.id, { companyId: resolvedCompanyId });
+        if (result.state === "sent") retried.push(row.id);
+        continue;
+      }
+
+      const result = await dispatchNotificationRecord(row.id, { companyId: resolvedCompanyId });
+      if (result.state === "sent") dispatched.push(row.id);
     }
 
-    const result = await dispatchNotificationRecord(row.id);
-    if (result.state === "sent") dispatched.push(row.id);
-  }
+    await db.rpc("write_audit", {
+      p_action: "job.notification_drain",
+      p_entity_type: "notification",
+      p_entity_id: null,
+      p_before: null,
+      p_after: {
+        scanned: pending.data?.length ?? 0,
+        dispatched: dispatched.length,
+        retried: retried.length,
+        cancelled: cancelled.length,
+        not_yet_due: notYetDue,
+        held_for_review: heldForReview,
+      },
+      p_result: "success",
+      p_error_code: null,
+    });
 
-  await supabaseAdmin.rpc("write_audit", {
-    p_action: "job.notification_drain",
-    p_entity_type: "notification",
-    p_entity_id: null,
-    p_before: null,
-    p_after: {
-      scanned: pending.data?.length ?? 0,
-      dispatched: dispatched.length,
-      retried: retried.length,
-      cancelled: cancelled.length,
-      not_yet_due: notYetDue,
-      held_for_review: heldForReview,
-    },
-    p_result: "success",
-    p_error_code: null,
-  });
-
-  return {
-    count: dispatched.length + retried.length,
-    dispatched,
-    retried,
-    cancelled,
-    notYetDue,
-    heldForReview,
+    return {
+      count: dispatched.length + retried.length,
+      dispatched,
+      retried,
+      cancelled,
+      notYetDue,
+      heldForReview,
+    };
   };
+
+  if (activeCompany?.id === resolvedCompanyId) {
+    return execute();
+  }
+  return runWithRequestCompany(
+    {
+      id: resolvedCompanyId,
+      slug: activeCompany?.slug ?? "",
+      status: "active",
+      host: activeCompany?.host ?? "",
+    },
+    execute,
+  );
 }

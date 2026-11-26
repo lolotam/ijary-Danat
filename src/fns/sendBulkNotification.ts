@@ -1,12 +1,14 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { estimatedDrainCapacityWithinStaleWindow } from "@/fns/notificationDrainJob";
 import { buildFinalMessage } from "@/fns/resolveTemplateVariables";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json, LocaleCode, Tables } from "@/integrations/supabase/database.types";
+import type { Database, Json, LocaleCode, Tables } from "@/integrations/supabase/database.types";
 import { isTemplateOfferable } from "@/lib/templateEligibility";
 import { requirePermission } from "@/fns/requirePermission";
 
@@ -47,26 +49,27 @@ export interface SendBulkNotificationResult {
 }
 
 /**
- * يحمّل قائمة المستأجرين حسب جمهور الإرسال الجماعي.
+ * يحمّل قائمة المستأجرين حسب جمهور الإرسال الجماعي عبر عميل الشركة.
  */
 async function loadAudienceTenants(
+  db: SupabaseClient<Database>,
   audience: SendBulkNotificationInput["audience"],
   tenantIds: string[] | undefined,
 ): Promise<Tables<"tenants">[]> {
   if (audience === "selected") {
     const ids = tenantIds ?? [];
     if (!ids.length) return [];
-    const result = await supabaseAdmin.from("tenants").select("*").in("id", ids);
+    const result = await db.from("tenants").select("*").in("id", ids);
     if (result.error) throw new Error(result.error.message);
     return result.data ?? [];
   }
 
-  const result = await supabaseAdmin.from("tenants").select("*");
+  const result = await db.from("tenants").select("*");
   if (result.error) throw new Error(result.error.message);
   const all = result.data ?? [];
   if (audience === "all") return all;
 
-  const contracts = await supabaseAdmin
+  const contracts = await db
     .from("contracts")
     .select("tenant_id")
     .eq("state", "active")
@@ -134,8 +137,11 @@ export const sendBulkNotification = createServerFn({ method: "POST" })
       refusal: "You do not have permission to send notifications.",
     });
 
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
     if (data.templateCode) {
-      const templateResult = await supabaseAdmin
+      const templateResult = await db
         .from("notification_templates")
         .select("*")
         .eq("code", data.templateCode)
@@ -146,7 +152,7 @@ export const sendBulkNotification = createServerFn({ method: "POST" })
       if (template.channel !== "both" && template.channel !== data.channel) {
         throw new Error("Template channel does not match the selected channel.");
       }
-      const jobs = await supabaseAdmin.from("cron_jobs").select("key, recipient_targets");
+      const jobs = await db.from("cron_jobs").select("key, recipient_targets");
       if (jobs.error) throw new Error(jobs.error.message);
       if (!isTemplateOfferable(template.type, jobs.data ?? [])) {
         throw new Error("Template is not available for manual sending.");
@@ -154,7 +160,7 @@ export const sendBulkNotification = createServerFn({ method: "POST" })
     }
 
     const batchId = crypto.randomUUID();
-    const tenants = await loadAudienceTenants(data.audience, data.tenantIds);
+    const tenants = await loadAudienceTenants(db, data.audience, data.tenantIds);
     const skipped: BulkSkip[] = [];
     let queued = 0;
     const drainCapacity = estimatedDrainCapacityWithinStaleWindow();

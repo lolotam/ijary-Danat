@@ -4,8 +4,13 @@ const upload = vi.fn();
 const list = vi.fn();
 const renderHtmlToPdf = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { storage: { from: () => ({ list, upload }) } },
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+
+vi.mock("@/company/companyClient.server", () => ({
+  serverCompanyClient: (explicitCompanyId?: string) => ({
+    companyId: explicitCompanyId ?? COMPANY_ID,
+    client: { storage: { from: () => ({ list, upload }) } },
+  }),
 }));
 vi.mock("@/lib/serverPdf", async () => {
   // wrapHtmlForPdf is pure and already covered by serverPdf.test.ts; using the
@@ -52,7 +57,7 @@ describe("renderAndStorePdf", () => {
     expect(stored).toEqual({
       bucket: REPORT_DOCUMENTS_BUCKET,
       path: expect.stringMatching(
-        /^scheduled-reports\/Monthly-summary-2026-07-01_2026-07-31-[0-9a-f]{12}\.pdf$/,
+        /^companies\/11111111-1111-4111-8111-111111111111\/scheduled-reports\/Monthly-summary-2026-07-01_2026-07-31-[0-9a-f]{12}\.pdf$/,
       ),
     });
     expect(upload).toHaveBeenCalledWith(
@@ -91,7 +96,9 @@ describe("renderAndStorePdf", () => {
   it("builds an ascii-safe key from an arabic report name", async () => {
     const stored = await renderAndStorePdf({ ...input, name: "تقرير شهري" });
 
-    expect(stored?.path).toMatch(/^scheduled-reports\/[\w.-]+\.pdf$/);
+    expect(stored?.path).toMatch(
+      /^companies\/11111111-1111-4111-8111-111111111111\/scheduled-reports\/[\w.-]+\.pdf$/,
+    );
   });
 });
 

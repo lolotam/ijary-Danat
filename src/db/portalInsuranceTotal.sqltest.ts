@@ -46,29 +46,30 @@ describe("a tenant reads their insurance total, and nothing else (migration 216)
     // A second unit and contract for the same tenant — the roof — carrying its
     // own insurance, then hidden.
     const roofUnit = await client.query<{ id: string }>(
-      `insert into public.units (code, property_id, name) values ($1, $2, 'Roof') returning id`,
-      [`U-ins-${shop.contractId.slice(0, 8)}`, shop.propertyId],
+      `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, 'Roof') returning id`,
+      [shop.companyId, `U-ins-${shop.contractId.slice(0, 8)}`, shop.propertyId],
     );
     const roof = await client.query<{ id: string }>(
       `insert into public.contracts
-         (code, tenant_id, start_date, end_date, due_day, grace_days, deposit, state, hide_from_portal)
-       values ($1, $2, '2026-01-01'::date, '2026-12-31'::date, 1, 0, 0, 'active'::public.contract_states, true)
+         (company_id, code, tenant_id, start_date, end_date, due_day, grace_days, deposit, state, hide_from_portal)
+       values ($1, $2, $3, '2026-01-01'::date, '2026-12-31'::date, 1, 0, 0, 'active'::public.contract_states, true)
        returning id`,
-      [`C-ins-${shop.contractId.slice(0, 8)}`, shop.tenantId],
+      [shop.companyId, `C-ins-${shop.contractId.slice(0, 8)}`, shop.tenantId],
     );
     await client.query(
-      `insert into public.contract_units (contract_id, unit_id, monthly_amount, line_order)
-       values ($1, $2, 200, 1)`,
-      [roof.rows[0].id, roofUnit.rows[0].id],
+      `insert into public.contract_units (company_id, contract_id, unit_id, monthly_amount, line_order)
+       values ($1, $2, $3, 200, 1)`,
+      [shop.companyId, roof.rows[0].id, roofUnit.rows[0].id],
     );
     await collectInsurance(client, {
+      companyId: shop.companyId,
       contractId: roof.rows[0].id,
       tenantId: shop.tenantId,
       unitId: roofUnit.rows[0].id,
       amount: 900,
     });
 
-    const tenantUser = await seedUserWithRole(client, "tenant");
+    const tenantUser = await seedUserWithRole(client, "tenant", shop.companyId);
     await client.query(`update public.profiles set tenant_id = $1 where id = $2`, [
       shop.tenantId,
       tenantUser,
@@ -133,6 +134,7 @@ describe("a tenant reads their insurance total, and nothing else (migration 216)
     await withRollback(async (client) => {
       const fixture = await arrange(client);
       const stranger = await seedContract(client, {
+        companyId: fixture.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -166,7 +168,7 @@ describe("a tenant reads their insurance total, and nothing else (migration 216)
   test("the staff preview sees the same total the tenant sees", async () => {
     await withRollback(async (client) => {
       const fixture = await arrange(client);
-      const staffUser = await seedUserWithRole(client, "admin");
+      const staffUser = await seedUserWithRole(client, "admin", fixture.companyId);
 
       await actAs(client, "authenticated", staffUser);
       const total = await insuranceTotal(client, fixture.tenantId);
@@ -188,6 +190,7 @@ describe("a tenant reads their insurance total, and nothing else (migration 216)
     await withRollback(async (client) => {
       const fixture = await arrange(client);
       const newOwner = await seedContract(client, {
+        companyId: fixture.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -228,6 +231,7 @@ describe("a tenant reads their insurance total, and nothing else (migration 216)
     await withRollback(async (client) => {
       const fixture = await arrange(client);
       const stranger = await seedContract(client, {
+        companyId: fixture.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });

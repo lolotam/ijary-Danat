@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z as zod } from "zod";
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { clientAddress } from "@/lib/clientAddress";
 import { rateLimitPublicForm } from "@/lib/publicFormGuard";
 
@@ -25,6 +26,7 @@ export const leasingSchema = zod.object({
 
 export type SubmitLeasingInquiryInput = zod.infer<typeof leasingSchema>;
 
+/** يسجّل طلب تأجير جديد لشركة الطلب الحالية عبر عميل الشركة المعزول. */
 export const submitLeasingInquiry = createServerFn({ method: "POST" })
   .validator(leasingSchema)
   .handler(async ({ data }) => {
@@ -37,20 +39,10 @@ export const submitLeasingInquiry = createServerFn({ method: "POST" })
       throw new Error("Too many inquiries. Please try again later.");
     }
 
-    // Fetch company_id
-    const { data: company, error: companyError } = await supabaseAdmin
-      .from("companies")
-      .select("id")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .single();
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
 
-    if (companyError || !company) {
-      console.error("Error fetching company for leasing inquiry:", companyError);
-      throw new Error("Company settings not configured.");
-    }
-
-    const { error } = await supabaseAdmin.from("leasing_inquiries" as any).insert({
+    const { error } = await db.from("leasing_inquiries" as any).insert({
       company_id: company.id,
       name: data.name,
       company_name: data.company_name ?? null,

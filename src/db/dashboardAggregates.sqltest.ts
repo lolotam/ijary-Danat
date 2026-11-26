@@ -8,11 +8,22 @@ import {
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
 
 afterAll(closePool);
+
+/** ينشئ شركة اختبار جديدة ويعيد معرّفها. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
+  );
+  return rows[0].id;
+}
 
 /**
  * القيم الرقمية من Postgres تصل نصّاً (numeric وbigint)؛ يوحّدها Number
@@ -69,19 +80,20 @@ async function insertInvoice(
  */
 async function payConfirmed(
   client: PoolClient,
+  companyId: string,
   tenantId: string,
   invoiceId: string,
   amount: number,
 ): Promise<string> {
   const payment = await client.query<{ id: string }>(
-    `insert into public.payments (tenant_id, amount, method, status, payment_date)
-     values ($1, $2, 'cash', 'confirmed', current_date) returning id`,
-    [tenantId, amount],
+    `insert into public.payments (company_id, tenant_id, amount, method, status, payment_date)
+     values ($1, $2, $3, 'cash', 'confirmed', current_date) returning id`,
+    [companyId, tenantId, amount],
   );
   await client.query(
-    `insert into public.payment_allocations (payment_id, invoice_id, amount)
-     values ($1, $2, $3)`,
-    [payment.rows[0].id, invoiceId, amount],
+    `insert into public.payment_allocations (company_id, payment_id, invoice_id, amount)
+     values ($1, $2, $3, $4)`,
+    [companyId, payment.rows[0].id, invoiceId, amount],
   );
   await client.query(`select public.recompute_invoice_from_confirmed($1)`, [invoiceId]);
   return payment.rows[0].id;
@@ -95,38 +107,34 @@ async function payConfirmed(
  */
 async function insertPayment(
   client: PoolClient,
+  companyId: string,
   tenantId: string,
   options: { amount: number; status: string; dateSql: string },
 ): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.payments (tenant_id, amount, method, status, payment_date)
-     values ($1, $2, 'cash', $3, ${options.dateSql}) returning id`,
-    [tenantId, options.amount, options.status],
+    `insert into public.payments (company_id, tenant_id, amount, method, status, payment_date)
+     values ($1, $2, $3, 'cash', $4, ${options.dateSql}) returning id`,
+    [companyId, tenantId, options.amount, options.status],
   );
   return rows[0].id;
 }
 
 /**
- * ينشئ مستخدمًا بدور محدد في auth.users و user_roles.
+ * ينشئ مستخدمًا بدور محدد ضمن الشركة في auth.users و user_roles.
  *
  * Mirrors hideFromPortalRls: the `on_auth_user_created` trigger creates the
  * profile row, so linking it to a tenant is a plain update.
  */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "dash");
 }
 
 interface DashboardFixture {
+  companyId: string;
   linkedTenantId: string;
   /** الفواتير الست المزروعة — تُقيَّد بها فحوص الاستبعاد فلا تتأثر ببيانات Demo. */
   invoiceIds: string[];
@@ -143,7 +151,7 @@ interface DashboardFixture {
 
 /**
  * يزرع كل حالات الفواتير والدفعات والمستأجرين والوحدات والموظفين والرواتب
- * التي تحتاجها اختبارات المجاميع.
+ * التي تحتاجها اختبارات المجاميع ضمن شركة واحدة.
  *
  * Invoices: due, partially_paid (linked tenant), overdue with a partial
  * payment, paid, cancelled, waived. Payments: confirmed this/previous UTC
@@ -151,20 +159,39 @@ interface DashboardFixture {
  * an undelivered and a previous-month row. Employees, tenants and units cover
  * both sides of every count.
  */
-async function arrange(client: PoolClient): Promise<DashboardFixture> {
-  const due = await seedContract(client, { startDate: "2025-01-01", endDate: "2026-12-31" });
-  const part = await seedContract(client, { startDate: "2025-01-01", endDate: "2026-12-31" });
+async function arrange(client: PoolClient, existingCompanyId?: string): Promise<DashboardFixture> {
+  const companyId = existingCompanyId ?? (await seedCompany(client));
+  const due = await seedContract(client, {
+    companyId,
+    startDate: "2025-01-01",
+    endDate: "2026-12-31",
+  });
+  const part = await seedContract(client, {
+    companyId,
+    startDate: "2025-01-01",
+    endDate: "2026-12-31",
+  });
   const over = await seedContract(client, {
+    companyId,
     startDate: "2025-01-01",
     endDate: "2026-12-31",
     graceDays: 7,
   });
-  const paid = await seedContract(client, { startDate: "2025-01-01", endDate: "2026-12-31" });
-  const cancelled = await seedContract(client, {
+  const paid = await seedContract(client, {
+    companyId,
     startDate: "2025-01-01",
     endDate: "2026-12-31",
   });
-  const waived = await seedContract(client, { startDate: "2025-01-01", endDate: "2026-12-31" });
+  const cancelled = await seedContract(client, {
+    companyId,
+    startDate: "2025-01-01",
+    endDate: "2026-12-31",
+  });
+  const waived = await seedContract(client, {
+    companyId,
+    startDate: "2025-01-01",
+    endDate: "2026-12-31",
+  });
 
   const invoiceIds = [
     await insertInvoice(client, due, {
@@ -181,7 +208,7 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
     tag: "part",
   });
   invoiceIds.push(partInvoice);
-  await payConfirmed(client, part.tenantId, partInvoice, 200);
+  await payConfirmed(client, companyId, part.tenantId, partInvoice, 200);
   const overInvoice = await insertInvoice(client, over, {
     dueDateSql: "current_date - 10",
     total: 500,
@@ -189,7 +216,7 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
     tag: "over",
   });
   invoiceIds.push(overInvoice);
-  await payConfirmed(client, over.tenantId, overInvoice, 200);
+  await payConfirmed(client, companyId, over.tenantId, overInvoice, 200);
   const paidInvoice = await insertInvoice(client, paid, {
     dueDateSql: "current_date - 40",
     total: 400,
@@ -197,7 +224,7 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
     tag: "paid",
   });
   invoiceIds.push(paidInvoice);
-  await payConfirmed(client, paid.tenantId, paidInvoice, 400);
+  await payConfirmed(client, companyId, paid.tenantId, paidInvoice, 400);
   invoiceIds.push(
     await insertInvoice(client, cancelled, {
       dueDateSql: "current_date + 60",
@@ -215,22 +242,22 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
 
   // UTC month boundaries, exactly as the RPC computes them.
   const monthStart = `(date_trunc('month', now() at time zone 'utc'))::date`;
-  const thisMonthPaymentId = await insertPayment(client, due.tenantId, {
+  const thisMonthPaymentId = await insertPayment(client, companyId, due.tenantId, {
     amount: 150,
     status: "confirmed",
     dateSql: monthStart,
   });
-  const lastMonthPaymentId = await insertPayment(client, due.tenantId, {
+  const lastMonthPaymentId = await insertPayment(client, companyId, due.tenantId, {
     amount: 175,
     status: "confirmed",
     dateSql: `${monthStart} - 1`,
   });
-  const pendingPaymentId = await insertPayment(client, due.tenantId, {
+  const pendingPaymentId = await insertPayment(client, companyId, due.tenantId, {
     amount: 125,
     status: "pending",
     dateSql: "current_date",
   });
-  const reversedPaymentId = await insertPayment(client, due.tenantId, {
+  const reversedPaymentId = await insertPayment(client, companyId, due.tenantId, {
     amount: 135,
     status: "reversed",
     dateSql: "current_date",
@@ -244,14 +271,15 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
   // A contracted unit's status is trigger-maintained, so the vacant one is a
   // separate contract-less unit on the same property.
   await client.query(
-    `insert into public.units (code, property_id, name, status)
-     select $1, property_id, $2, 'vacant' from public.units where id = $3`,
-    [`U-VAC-${randomUUID().slice(0, 8)}`, "وحدة شاغرة", over.unitId],
+    `insert into public.units (company_id, code, property_id, name, status)
+     select $1, $2, property_id, $3, 'vacant' from public.units where id = $4`,
+    [companyId, `U-VAC-${randomUUID().slice(0, 8)}`, "وحدة شاغرة", over.unitId],
   );
 
   // A contract-less tenant: the insert trigger computes lifecycle inactive.
   const tag = randomUUID().slice(0, 8);
-  await client.query(`insert into public.tenants (code, name) values ($1, $2)`, [
+  await client.query(`insert into public.tenants (company_id, code, name) values ($1, $2, $3)`, [
+    companyId,
     `T-DASH-${tag}`,
     `مستأجر غير نشط ${tag}`,
   ]);
@@ -263,9 +291,9 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
     ["C", `موظف متوقف ${tag}`, 3000, false],
   ] as const) {
     const { rows } = await client.query<{ id: string }>(
-      `insert into public.employees (code, name, salary, is_active)
-       values ($1, $2, $3, $4) returning id`,
-      [`EMP-DASH-${tag}-${suffix}`, name, salary, active],
+      `insert into public.employees (company_id, code, name, salary, is_active)
+       values ($1, $2, $3, $4, $5) returning id`,
+      [companyId, `EMP-DASH-${tag}-${suffix}`, name, salary, active],
     );
     employeeIds.push(rows[0].id);
   }
@@ -278,9 +306,9 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
     delivered: boolean,
   ) => {
     const { rows } = await client.query<{ id: string }>(
-      `insert into public.salaries (employee_id, year, month, amount, delivered)
-       values ($1, (${yearSql})::integer, (${monthSql})::integer, $2, $3) returning id`,
-      [employeeId, amount, delivered],
+      `insert into public.salaries (company_id, employee_id, year, month, amount, delivered)
+       values ($1, $2, (${yearSql})::integer, (${monthSql})::integer, $3, $4) returning id`,
+      [companyId, employeeId, amount, delivered],
     );
     return rows[0].id;
   };
@@ -300,6 +328,7 @@ async function arrange(client: PoolClient): Promise<DashboardFixture> {
   ];
 
   return {
+    companyId,
     linkedTenantId: part.tenantId,
     invoiceIds,
     overduePartial: 200,
@@ -405,7 +434,7 @@ describe("get_dashboard_aggregates (migrations 219, 228)", () => {
   test("matches the direct SQL for every key, with overdue money excluded from paid", async () => {
     await withRollback(async (client) => {
       const fx = await arrange(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const rpc = await rpcAggregates(client);
@@ -441,12 +470,15 @@ describe("get_dashboard_aggregates (migrations 219, 228)", () => {
     // change the fixtures cause, so the RPC itself — not a mirror query — is
     // what is pinned, whatever else the demo seed holds.
     await withRollback(async (client) => {
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      const admin = await seedUserWithRole(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
       const before = await rpcAggregates(client);
       await actAsSuperuser(client);
+      // actAsSuperuser sets role='postgres', which masks company_service claims in current_company_id().
+      await client.query("select set_config('role', 'none', true)");
 
-      await arrange(client);
+      await arrange(client, companyId);
       await actAs(client, "authenticated", admin);
       const after = await rpcAggregates(client);
 
@@ -464,7 +496,7 @@ describe("get_dashboard_aggregates (migrations 219, 228)", () => {
   test("payments_this_month keeps the UTC boundary and the confirmed-only rule", async () => {
     await withRollback(async (client) => {
       const fx = await arrange(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       // Only the confirmed row dated inside the current UTC month counts:
@@ -496,7 +528,7 @@ describe("get_dashboard_aggregates (migrations 219, 228)", () => {
   test("salaries count only delivered rows of the current month, employees only active ones", async () => {
     await withRollback(async (client) => {
       const fx = await arrange(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       // The undelivered current-month row and the delivered previous-month
@@ -533,9 +565,9 @@ describe("get_dashboard_aggregates (migrations 219, 228)", () => {
   // exactly what the nine direct reads it replaced would have shown it.
   test("a collector gets the same figures the direct reads give it", async () => {
     await withRollback(async (client) => {
-      await arrange(client);
-      const admin = await seedUserWithRole(client, "admin");
-      const collector = await seedUserWithRole(client, "collector");
+      const fx = await arrange(client);
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
+      const collector = await seedUserWithRole(client, fx.companyId, "collector");
       await actAs(client, "authenticated", admin);
       const adminRpc = await rpcAggregates(client);
 
@@ -554,8 +586,8 @@ describe("get_dashboard_aggregates (migrations 219, 228)", () => {
   test("a tenant-scoped user gets RLS-scoped figures, not the portfolio's", async () => {
     await withRollback(async (client) => {
       const fx = await arrange(client);
-      const admin = await seedUserWithRole(client, "admin");
-      const tenantUser = await seedUserWithRole(client, "tenant");
+      const admin = await seedUserWithRole(client, fx.companyId, "admin");
+      const tenantUser = await seedUserWithRole(client, fx.companyId, "tenant");
       await client.query(`update public.profiles set tenant_id = $1 where id = $2`, [
         fx.linkedTenantId,
         tenantUser,

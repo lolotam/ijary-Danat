@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 /** حقول التواصل المطلوب نسخها من حساب البوابة إلى سجل المستأجر. */
@@ -41,9 +42,11 @@ export interface TenantContactSyncResult {
 export async function syncTenantContact(
   tenantId: string,
   contact: TenantContactPatch,
+  companyId?: string,
 ): Promise<TenantContactSyncResult> {
   try {
-    const { data: tenant, error: readError } = await supabaseAdmin
+    const db = companyClient(companyId ?? requireRequestCompany().id);
+    const { data: tenant, error: readError } = await db
       .from("tenants")
       .select("id, email, whatsapp")
       .eq("id", tenantId)
@@ -67,7 +70,7 @@ export async function syncTenantContact(
     // matched no row reports success with no error, and the service role makes
     // RLS an unlikely explanation — a missing row here means the tenant
     // vanished mid-save, which the admin must hear about (debate finding 6).
-    const { data: updated, error: updateError } = await supabaseAdmin
+    const { data: updated, error: updateError } = await db
       .from("tenants")
       .update(updates)
       .eq("id", tenantId)

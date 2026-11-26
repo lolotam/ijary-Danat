@@ -96,19 +96,40 @@ Each group task writes two migrations — columns (add or tighten `company_id`, 
 - [x] T037 [US1] Function audit, notification, reminder, report, summary and KPI functions, removing every "oldest company" lookup, in `db/migrations/283_functions_notifications_reports.sql`
 - [x] T038 [US1] Replace the global code sequences with `company_counters` behind the existing `next_*_code()` names in `db/migrations/284_company_counters.sql` (data-model.md: `company_counters.kind`; research.md R13)
 - [x] T039 [US1] Storage bucket policies for the `companies/<company_id>/` prefix in `db/migrations/285_storage_company_paths.sql` (research.md R12)
-- [ ] T040 [US1] Add `src/company/storagePath.ts` and use it at every upload and download site: `src/hooks/useTenants.ts`, `usePayments.ts`, `useExpenses.ts`, `useDeposits.ts`, `useTenantMessages.ts`, `src/components/admin/settings/CompanySettingsForm.tsx`, `ImageSourceInput.tsx`, `src/fns/uploadShopMedia.ts`, `sendCompanyInfo.ts`, `backupCore.ts`, `evolutionDelivery.ts`, `src/lib/reportPdfAttachment.ts`, `gmailAttachment.ts`
-- [ ] T041 [P] [US1] Move the 11 `src/lib/*` service-role importers (`audit`, `env.server`, `gmailClient.server`, `invoiceDocumentPdf`, `invoiceRelations`, `paymentReceiptPdf`, `phoneConflicts.server`, `recordSentResendMessage`, `reportPdfAttachment`, `suppressedPayments`, `userConflicts.server`) to `companyClient`
-- [ ] T042 [P] [US1] Move the notification family in `src/fns/` (`notify*.ts`, `enqueueNotification.ts`, `sendNotification.ts`, `sendBulkNotification.ts`, `dispatch*.ts`, `loadTemplateCopy.ts`, `notificationDrainJob.ts`, `workflowRegistry.ts`) to `companyClient`
-- [ ] T043 [P] [US1] Move the payment family in `src/fns/` (`createPayment.ts`, `confirmGatewayPayment.ts`, `gatewaySettlement*.ts`, `myfatoorahWebhook.ts`, `paymentReconcileJob.ts`) to `companyClient`
-- [ ] T044 [P] [US1] Move the messaging family in `src/fns/` (`evolution*.ts`, `gmail*.ts`, `resend*.ts`) and `src/routes/api/oauth/google/callback.ts` to `companyClient`
-- [ ] T045 [P] [US1] Move the user family in `src/fns/` (`createAppUser.ts`, `updateAppUser.ts`, `deleteAppUser.ts`, `signInWithIdentifier.ts`, `sendTenantCredentials.ts`) to `companyClient`, leaving GoTrue admin calls for T083
-- [ ] T046 [P] [US1] Move the jobs and reports family in `src/fns/` (`cronJobs.ts`, `contractExpiryJob.ts`, `scheduledReportsJob.ts`, `runReportSchedule.ts`, `backup*.ts`, `restoreBackup.ts`, `bulkImport.ts`, `generate*.ts`) to `companyClient`
-- [ ] T047 [P] [US1] Move the public family in `src/fns/` (`publicBranding.ts`, `submit*Inquiry.ts`) to the request's company
-- [ ] T048 [US1] Remove the remaining "oldest company" lookups in code (`src/hooks/useCompany.ts`, `src/hooks/useLandingSettings.ts`, and any site T014 still reports)
-- [ ] T049 [US1] Make `src/fns/cronJobs.ts` run each job once per active company with `companyClient`, isolating failures per company (interim until T076)
-- [ ] T050 [US1] Remove "erase all data" from company panels: `src/fns/eraseAllData.ts`, its settings control, and its permission seed
-- [ ] T051 [US1] Shrink `eslint.platform-allowlist.js` to the paths in `contracts/company-context.md` section 3 and fix every remaining violation
-- [ ] T052 [US1] Gate: `bun run test:db`, full `bun run test:sql`, lint, typecheck, unit tests, guard skills; record the SC-001 result in `specs/001-multi-company-saas/quickstart.md`
+- [x] T040 [US1] Add `src/company/storagePath.ts` and use it at every upload and download site: `src/hooks/useTenants.ts`, `usePayments.ts`, `useExpenses.ts`, `useDeposits.ts`, `useTenantMessages.ts`, `src/components/admin/settings/CompanySettingsForm.tsx`, `ImageSourceInput.tsx`, `src/fns/uploadShopMedia.ts`, `sendCompanyInfo.ts`, `backupCore.ts`, `evolutionDelivery.ts`, `src/lib/reportPdfAttachment.ts`, `gmailAttachment.ts`
+- [x] T041 [P] [US1] Move the 11 `src/lib/*` service-role importers (`audit`, `env.server`, `gmailClient.server`, `invoiceDocumentPdf`, `invoiceRelations`, `paymentReceiptPdf`, `phoneConflicts.server`, `recordSentResendMessage`, `reportPdfAttachment`, `suppressedPayments`, `userConflicts.server`) to `companyClient`
+- [x] T042 [P] [US1] Move the notification family in `src/fns/` (`notify*.ts`, `enqueueNotification.ts`, `sendNotification.ts`, `sendBulkNotification.ts`, `dispatch*.ts`, `loadTemplateCopy.ts`, `notificationDrainJob.ts`, `workflowRegistry.ts`) to `companyClient`
+- [x] T043 [P] [US1] Move the payment family in `src/fns/` (`createPayment.ts`, `confirmGatewayPayment.ts`, `gatewaySettlement*.ts`, `myfatoorahWebhook.ts`, `paymentReconcileJob.ts`) to `companyClient`
+- [x] T044 [P] [US1] Move the messaging family in `src/fns/` (`evolution*.ts`, `gmail*.ts`, `resend*.ts`) and `src/routes/api/oauth/google/callback.ts` to `companyClient`
+- [x] T045 [P] [US1] Move the user family in `src/fns/` (`createAppUser.ts`, `updateAppUser.ts`, `deleteAppUser.ts`, `signInWithIdentifier.ts`, `sendTenantCredentials.ts`) to `companyClient`, leaving GoTrue admin calls for T083
+- [x] T046 [P] [US1] Move the jobs and reports family in `src/fns/` (`cronJobs.ts`, `contractExpiryJob.ts`, `scheduledReportsJob.ts`, `runReportSchedule.ts`, `backup*.ts`, `restoreBackup.ts`, `bulkImport.ts`, `generate*.ts`) to `companyClient`
+- [x] T047 [P] [US1] Move the public family in `src/fns/` (`publicBranding.ts`, `submit*Inquiry.ts`) to the request's company
+- [x] T048 [US1] Remove the remaining "oldest company" lookups in code (`src/hooks/useCompany.ts`, `src/hooks/useLandingSettings.ts`, and any site T014 still reports)
+- [x] T049 [US1] Make `src/fns/cronJobs.ts` run each job once per active company with `companyClient`, isolating failures per company (interim until T076)
+- [x] T050 [US1] Remove "erase all data" from company panels: `src/fns/eraseAllData.ts`, its settings control, and its permission seed
+- [x] T051 [US1] Shrink `eslint.platform-allowlist.js` to the paths in `contracts/company-context.md` section 3 and fix every remaining violation
+- [x] T052 [US1] Gate: `bun run test:db`, full `bun run test:sql`, lint, typecheck, unit tests, guard skills; record the SC-001 result in `specs/001-multi-company-saas/quickstart.md`
+
+### Review fixes for User Story 1 (found after T052, 2026-11-26)
+
+An independent review of T012–T052 found isolation holes the suite did not cover. Fixed before closing the phase:
+
+- [x] T052a [US1] Drop `erase_all_data()` (still granted to `authenticated` after T050 removed the UI) in `db/migrations/283_functions_notifications_reports.sql`
+- [x] T052b [US1] Make `reassign_contract_tenant_records` trigger-only: company passed from the contract row, no fallback lookup, no API role can execute it, in `db/migrations/280_functions_billing.sql`
+- [x] T052c [US1] Replace every "oldest company" backfill in migrations 255–277 with `_legacy_single_company_id()` (fails when more than one company exists) in `db/migrations/254_company_context.sql`; extend `src/db/isolation/noOldestCompany.structure.test.ts` to scan whole migrations
+- [x] T052d [US1] Move the login-audit service_role client to `src/platform/loginAuditClient.server.ts`; lint rule against reading the service_role key outside the allow-list in `eslint.config.js`
+- [x] T052e [US1] Block staff and `company_service` from changing `companies.id`, `slug`, `status` and `suspended_*` (trigger `companies_guard_platform_columns`) in `db/migrations/256_company_identity_policies.sql`; tests in `src/db/isolation/platformGuards.sqltest.ts`
+
+Still open from the same review (lower severity):
+
+- [ ] T052f [US1] `extractRequestHost` trusts `x-forwarded-host` from any client; accept it only from the known proxy in `src/company/hostCompany.server.ts`
+- [ ] T052g [US1] Nothing creates `company_domains` rows of kind `subdomain`, so `<slug>.ijary.app` resolves nowhere in production; create the row with the company (or fall back to slug under the root host) in `src/company/hostCompany.server.ts` and a migration
+- [ ] T052h [US1] `src/fns/uploadShopMedia.ts` falls back to the profile's company when there is no host context; require the request company and treat a mismatch as signed out
+- [ ] T052i [US1] `src/company/companyClient.server.ts` falls back to `http://localhost:54321` when the URL or key is missing; throw instead
+- [ ] T052j [US1] Security definer functions in migrations 279–280 filter with `(v_company_id is null or company_id = v_company_id)`; add one helper that raises `COMPANY_REQUIRED` except for service_role and use it everywhere
+- [ ] T052k [US1] `getAuthAdmin()` in `src/platform/authAdmin.server.ts` hands the full GoTrue admin API to any importer; expose narrow helpers only (folds into T083)
+- [ ] T052l [US1] Split migrations 279–283 (1289–2468 lines) by responsibility to respect the 600-line ceiling
+- [ ] T052m [US1] Decide whether `property-images` should stay publicly readable without a company check (`db/migrations/285_storage_company_paths.sql`); lowercase the UUID in `src/company/storagePath.ts`
 
 **Checkpoint**: Isolation suite 100% green. Until then no second company exists in any shared environment.
 

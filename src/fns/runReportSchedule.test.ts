@@ -16,42 +16,53 @@ const mocks = vi.hoisted(() => ({
   attachmentPayload: vi.fn(),
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "report_schedules") {
-        return {
-          select: () => ({ eq: () => ({ single: mocks.scheduleSingle }) }),
-          update: (values: unknown) => {
-            mocks.scheduleUpdateValues(values);
-            return { eq: mocks.scheduleUpdateEq };
-          },
-        };
-      }
-      if (table === "generated_reports") {
-        return {
-          insert: (values: unknown) => {
-            mocks.generatedInsertValues(values);
-            return { select: () => ({ single: mocks.generatedInsertSingle }) };
-          },
-          update: (values: unknown) => {
-            mocks.generatedUpdateValues(values);
-            return { eq: mocks.generatedUpdateEq };
-          },
-        };
-      }
-      if (table === "notifications") {
-        return {
-          insert: (values: unknown) => {
-            mocks.notificationInsertValues(values);
-            return { select: () => ({ single: mocks.notificationInsertSingle }) };
-          },
-        };
-      }
-      throw new Error(`unexpected table ${table}`);
-    },
-    rpc: (...args: unknown[]) => mocks.rpc(...args),
+const dbClient = {
+  from: (table: string) => {
+    if (table === "report_schedules") {
+      return {
+        select: () => ({ eq: () => ({ single: mocks.scheduleSingle }) }),
+        update: (values: unknown) => {
+          mocks.scheduleUpdateValues(values);
+          return { eq: mocks.scheduleUpdateEq };
+        },
+      };
+    }
+    if (table === "generated_reports") {
+      return {
+        insert: (values: unknown) => {
+          mocks.generatedInsertValues(values);
+          return { select: () => ({ single: mocks.generatedInsertSingle }) };
+        },
+        update: (values: unknown) => {
+          mocks.generatedUpdateValues(values);
+          return { eq: mocks.generatedUpdateEq };
+        },
+      };
+    }
+    if (table === "notifications") {
+      return {
+        insert: (values: unknown) => {
+          mocks.notificationInsertValues(values);
+          return { select: () => ({ single: mocks.notificationInsertSingle }) };
+        },
+      };
+    }
+    throw new Error(`unexpected table ${table}`);
   },
+  rpc: (...args: unknown[]) => mocks.rpc(...args),
+};
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => dbClient,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 vi.mock("@/fns/dispatchNotification", () => ({

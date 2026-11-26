@@ -1,6 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import type { Database } from "@/integrations/supabase/database.types";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import {
   contractExpiryDeliveryKey,
@@ -11,7 +16,6 @@ import { templateAllowsChannel } from "@/fns/templateChannelPolicy";
 import { readWorkflowGate } from "@/fns/workflowRegistry";
 import { translatorFor } from "@/i18n/dictionary";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { joinLocalizedList } from "@/lib/contractUnits";
 import {
   contractExpiryTemplate,
@@ -38,8 +42,13 @@ export type ContractExpirySkip = {
   reason: string;
 };
 
-async function completedContractExpiryDeliveries(contractId: string, milestone: string) {
-  const notifications = await supabaseAdmin
+/** يقرأ إشعارات انتهاء العقد المكتملة أو المجدولة لمنع التكرار لنفس المرحلة. */
+async function completedContractExpiryDeliveries(
+  db: SupabaseClient<Database>,
+  contractId: string,
+  milestone: string,
+) {
+  const notifications = await db
     .from("notifications")
     .select("audience,channel,recipient_address,payload")
     .eq("contract_id", contractId)
@@ -86,11 +95,13 @@ const schema = z.object({ asOf: z.string().date().nullable().optional() });
  * change. Writes an audit row even when nothing was queued — "the job ran and
  * found no expiring contracts" and "the job never ran" must stay tellable apart.
  */
-export async function runContractExpiryJob(asOf: string | null = null) {
+export async function runContractExpiryJob(asOf: string | null = null, companyId?: string) {
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  const db = companyClient(resolvedCompanyId);
   // Scheduled jobs read the gate themselves — cronJobs.ts only checks pause
   // before dispatch; targets filter what this job enqueues.
   const { targets } = await readWorkflowGate("contract-expiry");
-  const candidates = await supabaseAdmin.rpc("identify_contract_expiry_reminders", {
+  const candidates = await db.rpc("identify_contract_expiry_reminders", {
     p_as_of: asOf,
   });
   if (candidates.error) throw new Error(candidates.error.message);
@@ -99,23 +110,16 @@ export async function runContractExpiryJob(asOf: string | null = null) {
   // Address-level: admin/company filter only. No targets.includes("admin") guard.
   const adminEmails = await resolveNotificationRecipients(targets);
 
-  // The company row is the same on every iteration — it is the oldest row in a
-  // table the platform keeps at one row — so fetching it inside the loop was one
-  // round-trip per candidate for an answer that never changed.
-  //
-  // Skipped entirely when nothing is expiring. Hoisting it unguarded moved the
-  // query in front of a `for` loop that used to guard it, so an empty run could
-  // be aborted by a transient `companies` error before reaching `write_audit`
-  // below — a run with no notifications to send must still record that it ran.
+  // Scoped to the active company rather than reading the oldest company row.
   const companyResult = candidates.data.length
-    ? await supabaseAdmin.from("companies").select("*").order("created_at").limit(1).maybeSingle()
+    ? await db.from("companies").select("*").eq("id", resolvedCompanyId).maybeSingle()
     : null;
   if (companyResult?.error) throw new Error(companyResult.error.message);
 
   for (const candidate of candidates.data) {
     const [tenantResult, contractResult] = await Promise.all([
-      supabaseAdmin.from("tenants").select("*").eq("id", candidate.tenant_id).single(),
-      supabaseAdmin.from("contracts").select("*").eq("id", candidate.contract_id).single(),
+      db.from("tenants").select("*").eq("id", candidate.tenant_id).single(),
+      db.from("contracts").select("*").eq("id", candidate.contract_id).single(),
     ]);
     if (tenantResult.error) throw new Error(tenantResult.error.message);
     if (contractResult.error) throw new Error(contractResult.error.message);
@@ -125,7 +129,7 @@ export async function runContractExpiryJob(asOf: string | null = null) {
     // Every unit the contract holds (migration 110), not contracts.unit_id
     // (deprecated, no longer read) — a contract may cover several units and
     // the reminder has to name all of them, not just the first.
-    const contractUnitResult = await supabaseAdmin
+    const contractUnitResult = await db
       .from("contract_units")
       .select("unit_id")
       .eq("contract_id", contract.id)
@@ -133,7 +137,7 @@ export async function runContractExpiryJob(asOf: string | null = null) {
     if (contractUnitResult.error) throw new Error(contractUnitResult.error.message);
     const unitIds = [...new Set(contractUnitResult.data.map((row) => row.unit_id))];
     const unitResult = unitIds.length
-      ? await supabaseAdmin.from("units").select("code,name").in("id", unitIds)
+      ? await db.from("units").select("code,name").in("id", unitIds)
       : { data: [] as Array<{ code: string; name: string }>, error: null };
     if (unitResult.error) throw new Error(unitResult.error.message);
 
@@ -198,7 +202,7 @@ export async function runContractExpiryJob(asOf: string | null = null) {
       unit: unitLabel,
       end_date: contract.end_date,
     };
-    const completedDeliveries = await completedContractExpiryDeliveries(contract.id, milestone);
+    const completedDeliveries = await completedContractExpiryDeliveries(db, contract.id, milestone);
     const skip = (leg: ContractExpirySkip["leg"], reason: string) =>
       skipped.push({ contract_id: contract.id, tenant_id: tenant.id, leg, reason });
 
@@ -329,7 +333,7 @@ export async function runContractExpiryJob(asOf: string | null = null) {
     }
   }
 
-  const auditResult = await supabaseAdmin.rpc("write_audit", {
+  const auditResult = await db.rpc("write_audit", {
     p_action: "job.contract_expiry",
     p_entity_type: "notification",
     p_entity_id: null,

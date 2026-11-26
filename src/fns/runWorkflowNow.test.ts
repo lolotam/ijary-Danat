@@ -30,6 +30,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
+vi.mock("@/company/hostCompany.server", () => ({
+  listActiveCompanies: vi.fn().mockResolvedValue([]),
+}));
+
 const overdue = vi.fn();
 vi.mock("@/fns/evaluateOverdue", () => ({
   runEvaluateOverdueJob: (...a: unknown[]) => overdue(...a),

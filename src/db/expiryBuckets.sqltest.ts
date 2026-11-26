@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { closePool, seedContract, withRollback } from "@/db/testDb";
+import { closePool, seedContract, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -16,14 +16,20 @@ afterAll(closePool);
 
 const AS_OF = "2026-07-01";
 
-/** A contract ending `days` after AS_OF. */
-async function seedEndingIn(client: PoolClient, days: number, state = "active") {
+/** عقد ينتهي بعد عدد محدد من الأيام من تاريخ المرجع ضمن شركة اختيارية. */
+async function seedEndingIn(
+  client: PoolClient,
+  days: number,
+  state = "active",
+  companyId?: string,
+) {
   const end = new Date(Date.UTC(2026, 6, 1) + days * 86_400_000).toISOString().slice(0, 10);
   return seedContract(client, {
     // Start well before, so only the end date is under test.
     startDate: "2025-01-01",
     endDate: end,
     state,
+    companyId,
   });
 }
 
@@ -55,8 +61,10 @@ describe("bucket exclusivity", () => {
         0, 1, 2, 5, 7, 8, 15, 30, 31, 45, 60, 61, 75, 90, 91, 110, 120, 121, 140, 150, 151, 170,
         180, 181, 240,
       ];
+      let companyId: string | undefined;
       for (const days of dayOffsets) {
-        await seedEndingIn(client, days);
+        const fx = await seedEndingIn(client, days, "active", companyId);
+        companyId ??= fx.companyId;
       }
 
       const { rows } = await client.query<{ contract_id: string; count: string }>(
@@ -94,7 +102,7 @@ describe("bucket exclusivity", () => {
     await withRollback(async (client) => {
       // 7 days is the last day of `7d`, 8 the first of `30d`.
       const seven = await seedEndingIn(client, 7);
-      const eight = await seedEndingIn(client, 8);
+      const eight = await seedEndingIn(client, 8, "active", seven.companyId);
       expect((await bucketsFor(client, seven.contractId))[0].milestone).toBe("7d");
       expect((await bucketsFor(client, eight.contractId))[0].milestone).toBe("30d");
     });
@@ -203,13 +211,22 @@ describe("cron registry", () => {
 
   test("record_cron_run stamps the outcome", async () => {
     await withRollback(async (client) => {
+      const { rows: jobRows } = await client.query<{ company_id: string }>(
+        `select company_id from public.cron_jobs where key = 'overdue' limit 1`,
+      );
+      const companyId = jobRows[0].company_id;
+      await setCompanyClaimContext(client, companyId);
+
       await client.query(`select public.record_cron_run('overdue', 'success', 1234, null)`);
       const { rows } = await client.query<{
         last_status: string;
         last_duration_ms: number;
         last_run_at: string | null;
       }>(
-        `select last_status, last_duration_ms, last_run_at from public.cron_jobs where key = 'overdue'`,
+        `select last_status, last_duration_ms, last_run_at
+           from public.cron_jobs
+          where company_id = $1 and key = 'overdue'`,
+        [companyId],
       );
       expect(rows[0].last_status).toBe("success");
       expect(rows[0].last_duration_ms).toBe(1234);

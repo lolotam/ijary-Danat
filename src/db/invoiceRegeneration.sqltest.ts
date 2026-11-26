@@ -728,7 +728,7 @@ describe("reapply aligns with regenerate on future months (migration 97)", () =>
         monthlyAmount: 420,
       } as const;
       const a = await seedContract(client, common);
-      const b = await seedContract(client, common);
+      const b = await seedContract(client, { ...common, companyId: a.companyId });
       await client.query(`select * from public.backfill_contract_invoices($1)`, [a.contractId]);
       await client.query(`select * from public.backfill_contract_invoices($1)`, [b.contractId]);
 

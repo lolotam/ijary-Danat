@@ -1,9 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Json } from "@/integrations/supabase/database.types";
 import {
   importEntitySchema,
   validateImportRows,
@@ -65,31 +67,27 @@ function optionalCode(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-async function loadImportReferences(): Promise<ImportReferences> {
-  const [companyResult, propertyResult, buildingResult, unitResult, categoryResult, tenantResult] =
+/** يحمّل مراجع الأكواد المعرّفة داخل الشركة الحالية لحل علاقات الاستيراد الجماعي. */
+async function loadImportReferences(
+  db: SupabaseClient<Database>,
+  companyId: string,
+): Promise<ImportReferences> {
+  const [propertyResult, buildingResult, unitResult, categoryResult, tenantResult] =
     await Promise.all([
-      supabaseAdmin
-        .from("companies")
-        .select("id")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-      supabaseAdmin.from("properties").select("id, code"),
-      supabaseAdmin.from("buildings").select("id, code, property_id"),
-      supabaseAdmin.from("units").select("id, code, property_id, building_id"),
-      supabaseAdmin.from("building_categories").select("id, code"),
-      supabaseAdmin.from("tenants").select("id, code"),
+      db.from("properties").select("id, code"),
+      db.from("buildings").select("id, code, property_id"),
+      db.from("units").select("id, code, property_id, building_id"),
+      db.from("building_categories").select("id, code"),
+      db.from("tenants").select("id, code"),
     ]);
-  if (companyResult.error) throw new Error(companyResult.error.message);
   if (propertyResult.error) throw new Error(propertyResult.error.message);
   if (buildingResult.error) throw new Error(buildingResult.error.message);
   if (unitResult.error) throw new Error(unitResult.error.message);
   if (categoryResult.error) throw new Error(categoryResult.error.message);
   if (tenantResult.error) throw new Error(tenantResult.error.message);
-  if (!companyResult.data) throw new Error("Company configuration is missing.");
 
   return {
-    companyId: companyResult.data.id,
+    companyId,
     propertyByCode: indexByCode(propertyResult.data),
     buildingByCode: indexByCode(buildingResult.data),
     unitByCode: indexByCode(unitResult.data),
@@ -222,14 +220,17 @@ function resolveImportRow(
   return { error: null, row };
 }
 
+/** يربط صفوف الاستيراد بسجلات الشركة الحالية عبر المراجع المحمّلة. */
 async function resolveImportRows(
+  db: SupabaseClient<Database>,
+  companyId: string,
   entity: ImportEntity,
   rows: Array<Record<string, unknown>>,
 ): Promise<{ errors: ImportValidationError[]; rows: Array<Record<string, unknown>> }> {
   if (!ENTITIES_NEEDING_REFERENCES.includes(entity)) {
     return { errors: [], rows };
   }
-  const references = await loadImportReferences();
+  const references = await loadImportReferences(db, companyId);
   const errors: ImportValidationError[] = [];
   const resolvedRows: Array<Record<string, unknown>> = [];
   rows.forEach((row, index) => {
@@ -289,10 +290,13 @@ export const bulkImport = createServerFn({ method: "POST" })
       refusal: `You do not have permission to import ${data.entity}.`,
     });
 
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
     const validated = validateImportRows(data.entity, data.rows);
     if (!validated.validRows.length) return { inserted: 0, errors: validated.errors };
 
-    const resolved = await resolveImportRows(data.entity, validated.validRows);
+    const resolved = await resolveImportRows(db, company.id, data.entity, validated.validRows);
     if (!resolved.rows.length)
       return { inserted: 0, errors: [...validated.errors, ...resolved.errors] };
 
@@ -303,7 +307,7 @@ export const bulkImport = createServerFn({ method: "POST" })
       ? dedupeRowsByCode(resolved.rows)
       : resolved.rows;
 
-    const imported = await supabaseAdmin.rpc("bulk_import_phase6", {
+    const imported = await db.rpc("bulk_import_phase6", {
       p_created_by: context.userId,
       p_entity: data.entity,
       p_rows: rowsForInsert as Json,

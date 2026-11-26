@@ -13,7 +13,7 @@ alter table public.electricity_tariffs
   add column if not exists company_id uuid;
 
 update public.electricity_tariffs et
-   set company_id = (select co.id from public.companies co order by co.created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where et.company_id is null;
 
 alter table public.electricity_tariffs
@@ -50,7 +50,7 @@ update public.electricity_meters em
      em.company_id,
      (select u.company_id from public.units u where u.id = em.unit_id),
      (select t.company_id from public.electricity_tariffs t where t.id = em.tariff_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where em.company_id is null;
 
@@ -114,7 +114,7 @@ update public.meter_readings mr
    set company_id = coalesce(
      mr.company_id,
      (select em.company_id from public.electricity_meters em where em.id = mr.meter_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where mr.company_id is null;
 
@@ -176,7 +176,7 @@ update public.electricity_charges ec
      (select em.company_id from public.electricity_meters em where em.id = ec.meter_id),
      (select u.company_id from public.units u where u.id = ec.unit_id),
      (select t.company_id from public.tenants t where t.id = ec.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where ec.company_id is null;
 

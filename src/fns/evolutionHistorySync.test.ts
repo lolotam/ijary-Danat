@@ -36,7 +36,19 @@ const db = {
   liveMessages: {} as Record<string, string>,
 };
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   function builder(table: string) {
     const chain: any = {
       _inIds: [] as string[],
@@ -72,15 +84,16 @@ vi.mock("@/integrations/supabase/client.server", () => {
     };
     return chain;
   }
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: vi.fn().mockImplementation((_name: string, args: { p_rows: unknown }) => {
+      const rows = args.p_rows as Record<string, unknown>[];
+      db.ingestBatches.push(rows);
+      return Promise.resolve({ data: rows.length, error: null });
+    }),
+  };
   return {
-    supabaseAdmin: {
-      from: (table: string) => builder(table),
-      rpc: vi.fn().mockImplementation((_name: string, args: { p_rows: unknown }) => {
-        const rows = args.p_rows as Record<string, unknown>[];
-        db.ingestBatches.push(rows);
-        return Promise.resolve({ data: rows.length, error: null });
-      }),
-    },
+    companyClient: () => client,
   };
 });
 

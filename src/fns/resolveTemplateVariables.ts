@@ -1,8 +1,15 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { LocaleCode, NotificationType, Tables } from "@/integrations/supabase/database.types";
+import type {
+  Database,
+  LocaleCode,
+  NotificationType,
+  Tables,
+} from "@/integrations/supabase/database.types";
 import { TEMPLATE_VARIABLES } from "@/lib/templateVariables";
 import { requirePermission } from "@/fns/requirePermission";
 import {
@@ -110,13 +117,16 @@ export function findMissingPlaceholders(
 /**
  * يحسب فرق الأيام بين تاريخين ISO (asOf − due)، بحد أدنى صفر.
  */
-async function loadTemplate(requestedCode: string | null | undefined): Promise<{
+async function loadTemplate(
+  db: SupabaseClient<Database>,
+  requestedCode: string | null | undefined,
+): Promise<{
   template: Tables<"notification_templates"> | null;
   unavailableReason: string | null;
 }> {
   if (!requestedCode) return { template: null, unavailableReason: null };
 
-  const byCode = await supabaseAdmin
+  const byCode = await db
     .from("notification_templates")
     .select("*")
     .eq("code", requestedCode)
@@ -149,22 +159,6 @@ const FREE_TEXT_SOURCES = {
 
 /**
  * يحلّ متغيّرات النص الحر — فقط العائلات التي يطلبها النص فعلًا.
- *
- * `resolveTypeVariables` branches on the template's type. Free text has no
- * template, so it returned {} and a hand-written body could only ever bind
- * tenant_name and company_name; every other placeholder reached the tenant's
- * inbox as literal braces.
- *
- * Resolution is driven by the placeholders present rather than run eagerly.
- * These are four resolver *families*, not four queries — between them they read
- * invoices, contracts, payments, payment_allocations, contract_units and units,
- * and the receipt resolver adds two more per candidate payment when a contract
- * is pinned. `sendBulkNotification` awaits `buildFinalMessage` once per
- * recipient, so resolving eagerly would make a plain thank-you note to every
- * tenant query all of it, and turn one unrelated query error into a half-queued
- * batch.
- *
- * `amount` is renamed on the way out — see FREE_TEXT_VARIABLES for why.
  */
 export async function resolveFreeTextVariables(
   tenantId: string,
@@ -206,32 +200,27 @@ export async function resolveFreeTextVariables(
 }
 
 /**
- * يبني الرسالة النهائية التي ستُحفظ في صف الإشعار — مصدر واحد للمعاينة والإرسال.
- *
- * Subject is rendered from RAW values; body from escapeVariables. That split
- * matches loadTemplateCopy and avoids the &amp; / &amp;amp; subject regression.
- *
- * sendNotification must insert final.subject / final.bodyHtml with no second
- * render pass. The preview calls this same function with the same overrides.
+ * يبني الرسالة النهائية التي ستُحفظ في صف الإشعار ضمن نطاق الشركة — مصدر واحد للمعاينة والإرسال.
  */
 export async function buildFinalMessage(input: BuildFinalMessageInput): Promise<FinalMessage> {
-  const tenantResult = await supabaseAdmin
-    .from("tenants")
-    .select("*")
-    .eq("id", input.tenantId)
-    .single();
+  const companyId = requireRequestCompany().id;
+  const db = companyClient(companyId);
+
+  const tenantResult = await db.from("tenants").select("*").eq("id", input.tenantId).single();
   if (tenantResult.error) throw new Error(tenantResult.error.message);
   const tenant = tenantResult.data;
 
-  const companyResult = tenant.company_id
-    ? await supabaseAdmin.from("companies").select("*").eq("id", tenant.company_id).single()
-    : await supabaseAdmin.from("companies").select("*").order("created_at").limit(1).maybeSingle();
+  const companyResult = await db
+    .from("companies")
+    .select("*")
+    .eq("id", tenant.company_id ?? companyId)
+    .single();
   if (companyResult.error) throw new Error(companyResult.error.message);
 
   const locale: LocaleCode = input.locale ?? tenant.preferred_language ?? "ar";
   const asOf = input.asOf ?? new Date().toISOString().slice(0, 10);
 
-  const { template, unavailableReason } = await loadTemplate(input.templateCode);
+  const { template, unavailableReason } = await loadTemplate(db, input.templateCode);
 
   if (input.templateCode && unavailableReason) {
     return {

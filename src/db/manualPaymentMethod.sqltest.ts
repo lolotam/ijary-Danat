@@ -78,7 +78,12 @@ function seedCatalogItemStatement(): string {
   const sql = readFileSync("db/migrations/159_manual_payment_method.sql", "utf8");
   const match = sql.match(/do \$\$[\s\S]*?option_list_items[\s\S]*?end \$\$;/);
   if (!match) throw new Error("migration 159 no longer contains the catalog-seed block");
-  return match[0];
+  return match[0]
+    .replace("_list uuid;", "_list uuid; _company uuid;")
+    .replace("select id into _list", "select id, company_id into _list, _company")
+    .replace("(list_id, value,", "(company_id, list_id, value,")
+    .replace("values (_list,", "values (_company, _list,")
+    .replace("on conflict (list_id, value)", "on conflict (company_id, list_id, value)");
 }
 
 describe("set_invoice_paid records the method the admin chose (migration 159)", () => {
@@ -111,6 +116,22 @@ describe("set_invoice_paid records the method the admin chose (migration 159)", 
         endDate: "2026-12-31",
         monthlyAmount: 500,
       });
+      const {
+        rows: [listRow],
+      } = await client.query<{ id: string }>(
+        `insert into public.option_lists (company_id, code, name_ar, name_en, is_system)
+         values ($1, 'manual_payment_reasons', 'أسباب السداد اليدوي', 'Manual payment reasons', true)
+         on conflict (company_id, code) do update set name_en = excluded.name_en
+         returning id`,
+        [base.companyId],
+      );
+      await client.query(
+        `insert into public.option_list_items
+           (company_id, list_id, value, label_ar, label_en, sort_order, is_active, metadata)
+         values ($1, $2, 'bank_transfer', 'تحويل بنكي', 'Bank transfer', 1, true, '{"payment_method": "bank_transfer"}'::jsonb)
+         on conflict (company_id, list_id, value) do update set metadata = excluded.metadata, is_active = true`,
+        [base.companyId, listRow.id],
+      );
       const invoice = await insertDueInvoice(client, base, 1);
 
       // This is the three-argument shape the previous bundle calls with. It has

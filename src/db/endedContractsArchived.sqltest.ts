@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { closePool, seedContract, withRollback } from "@/db/testDb";
+import { closePool, seedContract, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -124,9 +124,16 @@ describe("get_contracts_summary counts ended contracts as archived (migration 21
   // counts partition the table, so a contract cannot be missing from both tabs.
   test("current_count and archived_count still partition every contract", async () => {
     await withRollback(async (client) => {
+      const { rows: companyRows } = await client.query<{ company_id: string }>(
+        `select company_id from public.contracts limit 1`,
+      );
+      const companyId = companyRows[0].company_id;
+      await setCompanyClaimContext(client, companyId);
+
       const summary = await summaryForTenant(client, null, "current");
       const { rows } = await client.query<{ n: string }>(
-        `select count(*)::text as n from public.contracts`,
+        `select count(*)::text as n from public.contracts where company_id = $1`,
+        [companyId],
       );
       expect(summary.current_count + summary.archived_count).toBe(Number(rows[0].n));
     });

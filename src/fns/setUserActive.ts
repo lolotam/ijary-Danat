@@ -1,10 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getAuthAdmin } from "@/platform/authAdmin.server";
 import { requirePermission } from "@/fns/requirePermission";
 
 /**
@@ -53,14 +55,13 @@ export const setUserActive = createServerFn({ method: "POST" })
       return { ok: false as const, error: (refusal as Error).message };
     }
 
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
     // Read the row before touching it: the audit `before` must carry the
     // value actually stored, not `!isActive` inferred from the request. The
     // old browser hook guessed, and guessed wrong for every repeat toggle.
-    const prior = await supabaseAdmin
-      .from("profiles")
-      .select("is_active")
-      .eq("id", data.userId)
-      .single();
+    const prior = await db.from("profiles").select("is_active").eq("id", data.userId).single();
     if (prior.error || !prior.data) {
       return { ok: false as const, error: prior.error?.message ?? "Profile not found." };
     }
@@ -69,7 +70,7 @@ export const setUserActive = createServerFn({ method: "POST" })
       // Reactivate: profile first, ban lift second. If the lift fails the
       // account reads "active" but stays locked — retryable, and never the
       // reverse (open while flagged inactive).
-      const profileRes = await supabaseAdmin
+      const profileRes = await db
         .from("profiles")
         .update({ is_active: true } as any)
         .eq("id", data.userId);
@@ -77,7 +78,7 @@ export const setUserActive = createServerFn({ method: "POST" })
         return { ok: false as const, error: profileRes.error.message };
       }
 
-      const unban = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      const unban = await getAuthAdmin().updateUserById(data.userId, {
         ban_duration: "none",
       });
       if (unban.error) {
@@ -91,7 +92,7 @@ export const setUserActive = createServerFn({ method: "POST" })
       // account active and unbanned — a clean retry — instead of the hole
       // this task exists to close: "deactivated" in the table, password
       // grant still live forever, nothing flagging the desync.
-      const ban = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      const ban = await getAuthAdmin().updateUserById(data.userId, {
         ban_duration: "876000h",
       });
       if (ban.error) {
@@ -101,12 +102,12 @@ export const setUserActive = createServerFn({ method: "POST" })
         };
       }
 
-      const profileRes = await supabaseAdmin
+      const profileRes = await db
         .from("profiles")
         .update({ is_active: false } as any)
         .eq("id", data.userId);
       if (profileRes.error) {
-        const rollback = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+        const rollback = await getAuthAdmin().updateUserById(data.userId, {
           ban_duration: "none",
         });
         return {
@@ -121,7 +122,7 @@ export const setUserActive = createServerFn({ method: "POST" })
     // Server-side audit via the RPC, not `logAuditForCurrentSession`: that
     // helper reads the browser session and throws without one
     // (src/lib/audit.ts:18-20). Argument names follow createAppUser exactly.
-    const audit = await supabaseAdmin.rpc("write_audit", {
+    const audit = await db.rpc("write_audit", {
       p_action: "user.status.update",
       p_entity_type: "user",
       p_entity_id: data.userId,

@@ -1,7 +1,15 @@
+import { randomUUID } from "node:crypto";
+
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { actAs, actAsSuperuser, closePool, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  closePool,
+  setCompanyClaimContext,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -12,6 +20,18 @@ afterAll(closePool);
  */
 
 type SummaryJson = Record<string, any>;
+
+/** ينشئ شركة اختبار ويعيد معرّفها مع تهيئة سياق المطالبة للشركة. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
+  );
+  const companyId = rows[0].id;
+  await setCompanyClaimContext(client, companyId);
+  return companyId;
+}
 
 async function summary(
   client: PoolClient,
@@ -29,30 +49,33 @@ function num(value: unknown): number {
   return Number(value ?? 0);
 }
 
+/** يزرع إيداعاً بنكياً ضمن الشركة المحددة. */
 async function seedDeposit(
   client: PoolClient,
-  opts: { bank: string; amount: number; status: string; date: string },
+  opts: { companyId: string; bank: string; amount: number; status: string; date: string },
 ) {
   await client.query(
-    `insert into public.deposits (bank_name, amount, currency, status, deposit_date)
-     values ($1, $2, 'KWD', $3, $4::date)`,
-    [opts.bank, opts.amount, opts.status, opts.date],
+    `insert into public.deposits (company_id, bank_name, amount, currency, status, deposit_date)
+     values ($1, $2, $3, 'KWD', $4, $5::date)`,
+    [opts.companyId, opts.bank, opts.amount, opts.status, opts.date],
   );
 }
 
 describe("get_deposits_summary", () => {
   test("splits confirmed from pending and honours the bank filter", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
-      const bank = `SQLTEST-DEP-${crypto.randomUUID().slice(0, 8)}`;
+      const companyId = await seedCompany(client);
+      const bank = `SQLTEST-DEP-${randomUUID().slice(0, 8)}`;
 
       await seedDeposit(client, {
+        companyId,
         bank,
         amount: 200,
         status: "confirmed",
         date: "2026-02-01",
       });
       await seedDeposit(client, {
+        companyId,
         bank,
         amount: 50,
         status: "pending",
@@ -76,16 +99,18 @@ describe("get_deposits_summary", () => {
 
   test("total amount matches get_deposit_total for the same filters", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
       const bank = `SQLTEST-DEP-TOT-${crypto.randomUUID().slice(0, 8)}`;
 
       await seedDeposit(client, {
+        companyId,
         bank,
         amount: 111.111,
         status: "confirmed",
         date: "2026-03-01",
       });
       await seedDeposit(client, {
+        companyId,
         bank,
         amount: 22.222,
         status: "cancelled",
@@ -122,12 +147,18 @@ describe("grants", () => {
 describe("permission guard", () => {
   test("an authenticated user without deposits.read is refused", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const companyId = await seedCompany(client);
       const { rows } = await client.query<{ id: string }>(
         `insert into auth.users (id, instance_id, aud, role, email)
          values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
                  'authenticated', 'authenticated', 'dep-nobody@example.test')
          returning id`,
+      );
+      await client.query(
+        `insert into public.profiles (id, company_id, display_name, is_active)
+         values ($1, $2, 'No Role', true)
+         on conflict (id) do update set company_id = excluded.company_id, is_active = true`,
+        [rows[0].id, companyId],
       );
       await actAs(client, "authenticated", rows[0].id);
 

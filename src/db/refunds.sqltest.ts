@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, actAsSuperuser, closePool, seedContract, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  closePool,
+  seedCompanyUser,
+  seedContract,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -30,20 +37,6 @@ async function budget(client: PoolClient) {
     [RANGE[0], RANGE[1]],
   );
   return rows[0].summary;
-}
-
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
 }
 
 /** A confirmed cash payment, which is what `collections` counts. */
@@ -358,17 +351,17 @@ describe("RLS", () => {
 
   test("an accountant may record a refund but not delete one", async () => {
     await withRollback(async (client) => {
-      const { tenantId } = await seedContract(client, {
+      const { companyId, tenantId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       const inserted = await client.query<{ id: string }>(
-        `insert into public.refunds (tenant_id, amount, post_action)
-         values ($1, 100, 'store') returning id`,
-        [tenantId],
+        `insert into public.refunds (company_id, tenant_id, amount, post_action)
+         values ($1, $2, 100, 'store') returning id`,
+        [companyId, tenantId],
       );
       expect(inserted.rows).toHaveLength(1);
 
@@ -394,17 +387,17 @@ describe("RLS", () => {
     // the trap — a caller that only checks for a thrown error concludes the
     // archive succeeded. This asserts on rows, not on exceptions.
     await withRollback(async (client) => {
-      const { tenantId } = await seedContract(client, {
+      const { companyId, tenantId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       const refund = await client.query<{ id: string }>(
-        `insert into public.refunds (tenant_id, amount, post_action)
-         values ($1, 100, 'archive') returning id`,
-        [tenantId],
+        `insert into public.refunds (company_id, tenant_id, amount, post_action)
+         values ($1, $2, 100, 'archive') returning id`,
+        [companyId, tenantId],
       );
       expect(refund.rows).toHaveLength(1);
 

@@ -385,3 +385,54 @@ create policy failed_login_attempts_service_role_all on public.failed_login_atte
   for all to service_role
   using (true)
   with check (true);
+
+------------------------------------------------------------
+-- 1b. companies: lifecycle columns are platform-only (trigger)
+------------------------------------------------------------
+
+/**
+ * يمنع موظفي الشركة وعميل الشركة من تغيير المعرّف أو الـ slug أو حالة الإيقاف في صف شركتهم.
+ *
+ * `companies_update_authenticated` lets a `company.update` holder edit the
+ * company profile, but Postgres RLS cannot limit columns, so without this a
+ * suspended company's admin could set `status = 'active'` on their own row,
+ * or take another company's address by changing `slug`. Suspension and slugs
+ * belong to the super admin (service_role). The check reads the request role
+ * (the `role` setting or JWT claim), not `current_user`, so a security definer
+ * function called by staff (for example a backup restore) is held to the same
+ * rule.
+ */
+create or replace function public.tg_companies_guard_platform_columns()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_role text := coalesce(
+    nullif(nullif(current_setting('role', true), 'none'), ''),
+    nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', '')
+  );
+begin
+  -- Allow-list, not deny-list: any API role (anon, authenticated, company_service,
+  -- or one added later) is refused; only the platform and migrations pass.
+  if coalesce(v_role, '') not in ('', 'service_role', 'postgres', 'supabase_admin')
+     and (new.id is distinct from old.id
+          or new.slug is distinct from old.slug
+          or new.status is distinct from old.status
+          or new.suspended_at is distinct from old.suspended_at
+          or new.suspended_reason is distinct from old.suspended_reason
+          or new.suspended_by is distinct from old.suspended_by)
+  then
+    raise exception 'PLATFORM_COLUMNS_READ_ONLY: id, slug and suspension are set by the platform'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.tg_companies_guard_platform_columns() from public, anon;
+
+drop trigger if exists companies_guard_platform_columns on public.companies;
+create trigger companies_guard_platform_columns
+  before update on public.companies
+  for each row execute function public.tg_companies_guard_platform_columns();

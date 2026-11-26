@@ -682,46 +682,10 @@ begin
 end;
 $$;
 
-/** يمسح بيانات الشركة الحالية فقط عبر الحذف المقيد بمعرف الشركة دون المساس بالشركات الأخرى. */
-create or replace function public.erase_all_data()
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_company_id uuid := public.current_company_id();
-  v_tbl text;
-begin
-  if v_company_id is null then
-    raise exception 'COMPANY_REQUIRED' using errcode = '42501';
-  end if;
-  if auth.role() = 'authenticated' then
-    if not public.has_role(auth.uid(), 'admin') then
-      raise exception 'Unauthorized: Only administrators can wipe company data.';
-    end if;
-  elsif auth.role() not in ('company_service', 'service_role') then
-    raise exception 'Unauthorized: Only administrators can wipe company data.';
-  end if;
-
-  perform public.write_audit(
-    'database.erase_all', 'database', null, null,
-    jsonb_build_object('requested_at', now(), 'company_id', v_company_id), 'success', null);
-
-  foreach v_tbl in array array[
-    'contract_closeout_invoice_actions', 'contract_closeout_deductions', 'contract_closeouts',
-    'concession_invoices', 'concessions', 'contract_extra_charges', 'contract_operational_events',
-    'commercial_brand_contracts', 'whatsapp_contact_contracts', 'receipts', 'payment_allocations',
-    'partial_payments', 'insurance_payments', 'refunds', 'payments', 'invoice_items', 'invoices',
-    'payment_requests', 'webhook_events', 'contract_units', 'contracts', 'tenant_documents',
-    'tenant_messages', 'tenants', 'electricity_charges', 'meter_readings', 'electricity_meters',
-    'maintenance_requests', 'units', 'buildings', 'properties', 'expenses', 'deposits',
-    'notifications', 'generated_reports', 'contact_inquiries'
-  ] loop
-    execute format('delete from public.%I where company_id = $1', v_tbl) using v_company_id;
-  end loop;
-end;
-$$;
+-- erase_all_data(): removed (T050). A company-panel "wipe everything" RPC is a
+-- one-call data-loss path for any staff account; the platform owner suspends
+-- companies instead and never deletes them from the UI.
+drop function if exists public.erase_all_data();
 
 /** يبني تقرير العقود المتأخرة بصيغة HTML ضمن نطاق الشركة الحالية فقط. */
 create or replace function public.build_overdue_contracts_report_html(p_schedule_id uuid, p_as_of date default null)
@@ -1661,7 +1625,6 @@ grant execute on function public.backup_restore(jsonb, uuid) to company_service,
 revoke all on function public.set_log_retention(text, integer) from public, anon;
 revoke all on function public.identify_contract_expiry_reminders(date) from public, anon;
 revoke all on function public.whatsapp_session_health() from public, anon;
-revoke all on function public.erase_all_data() from public, anon;
 revoke all on function public.build_overdue_contracts_report_html(uuid, date) from public, anon;
 revoke all on function public.build_scheduled_report_html(uuid, date) from public, anon;
 revoke all on function public.get_budget_summary(date, date, uuid, uuid) from public, anon;
@@ -1678,7 +1641,6 @@ revoke all on function public.get_units_summary(text, uuid, uuid, text, text, te
 grant execute on function public.set_log_retention(text, integer) to authenticated, company_service, service_role;
 grant execute on function public.identify_contract_expiry_reminders(date) to authenticated, company_service, service_role;
 grant execute on function public.whatsapp_session_health() to authenticated, company_service, service_role;
-grant execute on function public.erase_all_data() to authenticated, company_service, service_role;
 grant execute on function public.build_overdue_contracts_report_html(uuid, date) to authenticated, company_service, service_role;
 grant execute on function public.build_scheduled_report_html(uuid, date) to authenticated, company_service, service_role;
 grant execute on function public.get_budget_summary(date, date, uuid, uuid) to authenticated, company_service, service_role;

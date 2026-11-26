@@ -4,14 +4,32 @@ const from = vi.fn();
 const rpc = vi.fn();
 const notifyPaymentSuccess = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (table: string) => from(table),
     rpc: (name: string, args: unknown) => rpc(name, args),
-  },
+  }),
+}));
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  requireRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  runWithRequestCompany: (_company: unknown, fn: () => unknown) => fn(),
 }));
 vi.mock("@/fns/notifyPaymentSuccess", () => ({
   notifyPaymentSuccess: (ids: string[]) => notifyPaymentSuccess(ids),
+}));
+vi.mock("@/lib/suppressedPayments", () => ({
+  getSuppressedPaymentIds: async () => new Set<string>(),
 }));
 
 const { settleGatewayPayment } = await import("./myfatoorahWebhook");

@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { buildIngestRow } from "@/fns/evolutionWebhook";
 import { loadEvolutionProviderConfig } from "@/fns/evolutionSession";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/database.types";
 import { collectMessagePage, maskJid, remoteNumberFor } from "@/lib/evolution/client";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
@@ -61,7 +62,10 @@ function chatJid(record: Rec): string | null {
  * a bulk import must never overwrite it. Names for existing rows still arrive
  * through the message push-name fill-empty path in the ingest RPC.
  */
-async function importContacts(records: unknown[]): Promise<number> {
+async function importContacts(
+  db: ReturnType<typeof companyClient>,
+  records: unknown[],
+): Promise<number> {
   const rows = records
     .map((record) => {
       const contact = asRecord(record);
@@ -82,7 +86,7 @@ async function importContacts(records: unknown[]): Promise<number> {
         row !== null,
     );
   if (!rows.length) return 0;
-  const result = await supabaseAdmin
+  const result = await db
     .from("whatsapp_contacts")
     .upsert(rows, { onConflict: "phone", ignoreDuplicates: true })
     .select("id");
@@ -92,7 +96,7 @@ async function importContacts(records: unknown[]): Promise<number> {
   // an expired CDN URL should still be replaced with the fresh one.
   for (const row of rows) {
     if (!row.avatar_url) continue;
-    const update = await supabaseAdmin
+    const update = await db
       .from("whatsapp_contacts")
       .update({ avatar_url: row.avatar_url })
       .eq("phone", row.phone);
@@ -110,9 +114,12 @@ async function importContacts(records: unknown[]): Promise<number> {
  * chat to the phone number the live event carried. One live message from a
  * contact therefore unlocks their entire history on the next sweep.
  */
-async function lookupChatNumberByMessageIds(ids: string[]): Promise<string | null> {
+async function lookupChatNumberByMessageIds(
+  db: ReturnType<typeof companyClient>,
+  ids: string[],
+): Promise<string | null> {
   if (!ids.length) return null;
-  const result = await supabaseAdmin
+  const result = await db
     .from("whatsapp_messages")
     .select("chat_number")
     .in("message_id", ids)
@@ -141,7 +148,10 @@ export const runEvolutionHistorySync = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<EvolutionHistorySyncResult> => {
     await assertCanManageIntegrations(context as never);
 
-    const connection = await supabaseAdmin
+    const companyId = requireRequestCompany().id;
+    const db = companyClient(companyId);
+
+    const connection = await db
       .from("evolution_connections")
       .select("instance_name, last_connection_state")
       .eq("id", 1)
@@ -153,13 +163,13 @@ export const runEvolutionHistorySync = createServerFn({ method: "POST" })
       );
     }
     const instanceName = connection.data.instance_name;
-    const providerConfig = await loadEvolutionProviderConfig();
+    const providerConfig = await loadEvolutionProviderConfig(companyId);
     const client = evolutionClientFromConfig(providerConfig.config);
     const deadline = Date.now() + BUDGET_MS;
 
     const contactRecords = (await client.findContacts(instanceName)) as unknown[];
     const contactsImported = Array.isArray(contactRecords)
-      ? await importContacts(contactRecords)
+      ? await importContacts(db, contactRecords)
       : 0;
 
     const chatRecords = (await client.findChats(instanceName)) as unknown[];
@@ -199,7 +209,7 @@ export const runEvolutionHistorySync = createServerFn({ method: "POST" })
         const knownIds = firstPage.records
           .map((item) => asRecord(asRecord(item)?.key)?.id)
           .filter((id): id is string => typeof id === "string" && id.length > 0);
-        const phone = await lookupChatNumberByMessageIds(knownIds);
+        const phone = await lookupChatNumberByMessageIds(db, knownIds);
         if (!phone) {
           chatsAwaitingLid += 1;
           console.warn(`[evolution-history] no live anchor yet for ${maskJid(jid)}`);
@@ -225,7 +235,7 @@ export const runEvolutionHistorySync = createServerFn({ method: "POST" })
           })
           .filter((row): row is Rec => row !== null);
         if (rows.length) {
-          const ingest = await supabaseAdmin.rpc("ingest_whatsapp_messages", {
+          const ingest = await db.rpc("ingest_whatsapp_messages", {
             p_rows: rows as unknown as Json,
           });
           if (ingest.error) throw new Error(ingest.error.message);
@@ -243,7 +253,7 @@ export const runEvolutionHistorySync = createServerFn({ method: "POST" })
       const avatar = chat.profilePicUrl;
       if (typeof avatar === "string" && avatar) {
         const phone = resolveLidNumber?.(jid) ?? remoteNumberFor(jid);
-        const update = await supabaseAdmin
+        const update = await db
           .from("whatsapp_chats")
           .update({ avatar_url: avatar })
           .eq("chat_number", phone);

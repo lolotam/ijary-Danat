@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   notifyAdminEvent,
@@ -12,7 +14,6 @@ import {
 import { requirePermission } from "@/fns/requirePermission";
 import { translatorFor } from "@/i18n/dictionary";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 const WORKFLOW_KEY = "maintenance-request-created";
@@ -21,7 +22,11 @@ const schema = z.object({ requestId: z.string().uuid() });
 /** يقرأ اسم الوحدة، أو "-" لطلب غير مرتبط بوحدة. */
 async function loadUnitName(unitId: string | null): Promise<string> {
   if (!unitId) return "-";
-  const unit = await supabaseAdmin.from("units").select("name").eq("id", unitId).maybeSingle();
+  const unit = await companyClient(requireRequestCompany().id)
+    .from("units")
+    .select("name")
+    .eq("id", unitId)
+    .maybeSingle();
   return unit.data?.name ?? "-";
 }
 
@@ -58,7 +63,11 @@ export async function notifyMaintenanceRequestRecord(
     type: "maintenance_request",
     load: async () =>
       rowOrThrow(
-        await supabaseAdmin.from("maintenance_requests").select("*").eq("id", requestId).single(),
+        await companyClient(requireRequestCompany().id)
+          .from("maintenance_requests")
+          .select("*")
+          .eq("id", requestId)
+          .single(),
       ),
     dedupeMatch: { request_id: requestId },
     build: buildMaintenanceMessage,

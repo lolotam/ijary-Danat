@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { ImageIcon, Loader2, Pencil, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { resolveBrowserCompanyId } from "@/company/browserCompany";
+import { companyStoragePath } from "@/company/storagePath";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -106,13 +108,14 @@ export function SignatureManager({
     }
     setUploading(true);
     try {
+      const companyId = await resolveBrowserCompanyId();
       const extension =
         file.name
           .split(".")
           .pop()
           ?.toLowerCase()
           .replace(/[^a-z0-9]/g, "") || "png";
-      const path = `signatures/${crypto.randomUUID()}.${extension}`;
+      const path = companyStoragePath(companyId, `signatures/${crypto.randomUUID()}.${extension}`);
       const upload = await supabase.storage
         .from("branding")
         .upload(path, file, { upsert: true, cacheControl: "3600" });

@@ -161,6 +161,19 @@ describe("no oldest-company lookup remains (T014)", () => {
     expect(offending).toEqual([]);
   });
 
+  test("no multi-company migration (254+) backfills from companies limit 1", () => {
+    // Backfill `do $$` blocks and plain `update … set company_id = (…)` statements
+    // sit outside function definitions, so the live-function scan above misses them.
+    const pattern = /\bfrom\s+(?:public\.)?companies\b[^;]*\blimit\s+1\b/i;
+    const offending = migrationFilesSorted()
+      .filter((file) => Number.parseInt(file, 10) >= 254)
+      .filter((file) =>
+        pattern.test(stripSqlComments(readFileSync(join(MIGRATIONS_DIR, file), "utf8"))),
+      );
+
+    expect(offending).toEqual([]);
+  });
+
   test("no production source file in src/ queries companies with limit 1 without id/slug", () => {
     expect(findOldestCompanyInSrc()).toEqual([]);
   });

@@ -237,3 +237,20 @@ export async function resolveHostCompany(
   }
   return resolution;
 }
+
+/**
+ * يعيد قائمة الشركات النشطة لتشغيل المهام الدورية المعزولة لكل شركة.
+ */
+export async function listActiveCompanies(): Promise<RequestCompany[]> {
+  const { data, error } = await supabaseAdmin
+    .from("companies")
+    .select("id, slug, status")
+    .eq("status", "active")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Could not list active companies: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => toRequestCompany(row, `${row.slug}.localhost`));
+}

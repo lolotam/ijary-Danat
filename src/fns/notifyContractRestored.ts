@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   loadTenantName,
@@ -13,7 +15,6 @@ import {
 import { requirePermission } from "@/fns/requirePermission";
 import { translatorFor } from "@/i18n/dictionary";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 const WORKFLOW_KEY = "contract-restored";
@@ -73,7 +74,13 @@ export async function notifyContractRestoredRecord(
   return notifyAdminEvent(WORKFLOW_KEY, {
     type: "contract_restored",
     load: async () =>
-      rowOrThrow(await supabaseAdmin.from("contracts").select("*").eq("id", contractId).single()),
+      rowOrThrow(
+        await companyClient(requireRequestCompany().id)
+          .from("contracts")
+          .select("*")
+          .eq("id", contractId)
+          .single(),
+      ),
     dedupeMatch: { contract_id: contractId, reason },
     build: (contract) => buildRestoredMessage(contract, { targetState, reason }),
     // Mail failure must never reject a financially committed restore.

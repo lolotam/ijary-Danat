@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { NotificationChannel } from "@/integrations/supabase/database.types";
 import type { EmailLocale } from "@/lib/emailTemplates";
 import { escapeVariables, renderTemplate } from "@/lib/templateRender";
@@ -38,7 +39,7 @@ export async function loadTemplateCopy(
   body: string | null;
   channel: NotificationChannel | null;
 }> {
-  const result = await supabaseAdmin
+  const result = await companyClient(requireRequestCompany().id)
     .from("notification_templates")
     .select("subject_ar, subject_en, body_ar, body_en, channel")
     .eq("code", code)

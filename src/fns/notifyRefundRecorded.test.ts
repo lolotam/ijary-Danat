@@ -9,8 +9,20 @@ const enqueue = vi.fn();
 
 const REFUND_ID = "55555555-5555-4555-8555-555555555555";
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (table: string) => {
       if (table === "cron_jobs") {
         return {
@@ -49,7 +61,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       if (table === "companies") {
         return {
           select: () => ({
-            order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+            eq: () => ({ maybeSingle: async () => ({ data: null }) }),
           }),
         };
       }
@@ -60,7 +72,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       };
     },
     rpc: (...args: unknown[]) => rpc(...args),
-  },
+  }),
 }));
 
 const resolveRecipients = vi.fn(async (targets: string[]) =>

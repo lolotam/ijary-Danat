@@ -2636,11 +2636,6 @@ export interface Database {
         Args: { p_item_id: string; p_new_value: string };
         Returns: Json;
       };
-      /** Migration 45 — admin-only destructive reset; keeps `audit_logs`. */
-      erase_all_data: {
-        Args: Record<PropertyKey, never>;
-        Returns: undefined;
-      };
       has_role: {
         Args: { _role: AppRole; _user_id: string };
         Returns: boolean;

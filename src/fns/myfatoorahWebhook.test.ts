@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Mock supabaseAdmin inline to avoid ReferenceError
-vi.mock("@/integrations/supabase/client.server", () => {
-  const adminMock = {
+const { adminMock } = vi.hoisted(() => ({
+  adminMock: {
     from: vi.fn().mockReturnThis(),
     select: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
@@ -11,13 +10,30 @@ vi.mock("@/integrations/supabase/client.server", () => {
     maybeSingle: vi.fn().mockReturnThis(),
     single: vi.fn().mockReturnThis(),
     rpc: vi.fn(),
-  };
-  return {
-    supabaseAdmin: adminMock,
-  };
-});
+  },
+}));
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => adminMock,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  getRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  runWithRequestCompany: (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+const supabaseAdmin = adminMock;
 import {
   canonicalSignatureString,
   invoicePaymentReference,

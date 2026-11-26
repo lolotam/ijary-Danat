@@ -3,8 +3,9 @@ import { randomBytes } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 import { extractQr, extractState } from "@/lib/evolution/client";
 import type { EvolutionWebhookConfig } from "@/lib/evolution/client";
@@ -50,8 +51,11 @@ async function assertCanManageIntegrations(context: PermissionContext) {
  * flipping the toggle is the natural admin order — so this reads the seeded
  * row regardless of is_enabled.
  */
-export async function loadEvolutionProviderConfig(): Promise<Tables<"provider_configs">> {
-  const result = await supabaseAdmin
+export async function loadEvolutionProviderConfig(
+  explicitCompanyId?: string,
+): Promise<Tables<"provider_configs">> {
+  const companyId = explicitCompanyId ?? requireRequestCompany().id;
+  const result = await companyClient(companyId)
     .from("provider_configs")
     .select("*")
     .eq("provider", "evolution_api")
@@ -64,8 +68,10 @@ export async function loadEvolutionProviderConfig(): Promise<Tables<"provider_co
 }
 
 /** يقرأ صف الجلسة المفرد من قاعدة البيانات أو يعيد null إن لم يُقترن بعد. */
-async function loadConnectionRow(): Promise<Tables<"evolution_connections"> | null> {
-  const result = await supabaseAdmin
+async function loadConnectionRow(
+  companyId: string,
+): Promise<Tables<"evolution_connections"> | null> {
+  const result = await companyClient(companyId)
     .from("evolution_connections")
     .select("*")
     .eq("id", 1)
@@ -111,9 +117,11 @@ export const beginEvolutionSession = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     await assertCanManageIntegrations(context as never);
 
-    const providerConfig = await loadEvolutionProviderConfig();
+    const companyId = requireRequestCompany().id;
+    const db = companyClient(companyId);
+    const providerConfig = await loadEvolutionProviderConfig(companyId);
     const client = evolutionClientFromConfig(providerConfig.config);
-    const existing = await loadConnectionRow();
+    const existing = await loadConnectionRow(companyId);
     const instanceName = existing?.instance_name ?? "danat";
     const secret = randomBytes(32).toString("base64url");
     const webhook: EvolutionWebhookConfig = {
@@ -136,14 +144,15 @@ export const beginEvolutionSession = createServerFn({ method: "POST" })
 
     try {
       // Evolution accepted the new secret — now it is safe to persist it.
-      const upsert = await supabaseAdmin.from("evolution_connections").upsert(
+      const upsert = await db.from("evolution_connections").upsert(
         {
           id: 1,
+          company_id: companyId,
           instance_name: instanceName,
           webhook_secret: secret,
           previous_webhook_secret: existing?.webhook_secret ?? null,
         },
-        { onConflict: "id" },
+        { onConflict: "company_id,id" },
       );
       if (upsert.error) throw new Error(upsert.error.message);
 
@@ -151,7 +160,7 @@ export const beginEvolutionSession = createServerFn({ method: "POST" })
       const qr = extractQr(connection);
       const state =
         extractState(connection) ?? (qr ? "connecting" : (existing?.last_connection_state ?? null));
-      const update = await supabaseAdmin
+      const update = await db
         .from("evolution_connections")
         .update({ last_qr: qr, last_connection_state: state })
         .eq("id", 1);
@@ -179,9 +188,11 @@ export const getEvolutionQrStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertCanManageIntegrations(context as never);
 
-    const row = await loadConnectionRow();
+    const companyId = requireRequestCompany().id;
+    const db = companyClient(companyId);
+    const row = await loadConnectionRow(companyId);
     if (!row) return { qr: null, state: null, connectedNumber: null };
-    const providerConfig = await loadEvolutionProviderConfig();
+    const providerConfig = await loadEvolutionProviderConfig(companyId);
     const client = evolutionClientFromConfig(providerConfig.config);
 
     let qr = row.last_qr;
@@ -198,7 +209,7 @@ export const getEvolutionQrStatus = createServerFn({ method: "POST" })
     if (state === "open") {
       const connectedNumber =
         row.connected_number ?? (await connectedNumberFor(client, row.instance_name));
-      const update = await supabaseAdmin
+      const update = await db
         .from("evolution_connections")
         .update({
           last_connection_state: state,
@@ -211,7 +222,7 @@ export const getEvolutionQrStatus = createServerFn({ method: "POST" })
       return { qr: null, state, connectedNumber };
     }
 
-    const update = await supabaseAdmin
+    const update = await db
       .from("evolution_connections")
       .update({ last_connection_state: state, last_qr: qr })
       .eq("id", 1);
@@ -231,15 +242,17 @@ export const disconnectEvolutionSession = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     await assertCanManageIntegrations(context as never);
 
-    const row = await loadConnectionRow();
+    const companyId = requireRequestCompany().id;
+    const db = companyClient(companyId);
+    const row = await loadConnectionRow(companyId);
     if (!row) return { disconnected: false, state: null };
-    const providerConfig = await loadEvolutionProviderConfig();
+    const providerConfig = await loadEvolutionProviderConfig(companyId);
     const client = evolutionClientFromConfig(providerConfig.config);
 
     // Disarm BEFORE calling `client.logout`, because Evolution can fire its
     // `close` webhook while `logout` is in flight; writing `disconnecting` in
     // the same UPDATE preserves the `open => armed` invariant if logout throws.
-    const disarm = await supabaseAdmin
+    const disarm = await db
       .from("evolution_connections")
       .update({ disconnect_alert_armed: false, last_connection_state: "disconnecting" })
       .eq("id", 1);
@@ -258,7 +271,7 @@ export const disconnectEvolutionSession = createServerFn({ method: "POST" })
     }
 
     const state = remoteOk ? "close" : "disconnect_failed";
-    const update = await supabaseAdmin
+    const update = await db
       .from("evolution_connections")
       .update({
         disconnect_alert_armed: false,

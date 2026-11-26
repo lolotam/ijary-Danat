@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, closePool, withRollback } from "@/db/testDb";
+import { actAs, closePool, seedCompanyUser, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -24,21 +24,6 @@ async function seedCompany(client: PoolClient): Promise<string> {
     [`شركة ${tag}`, `Co ${tag}`],
   );
   return rows[0].id;
-}
-
-/** Creates an auth user holding `role`, so is_staff/has_role resolve for it. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
 }
 
 async function insertMessage(
@@ -113,7 +98,7 @@ describe("gmail_messages RLS", () => {
       const companyId = await seedCompany(client);
       const { rows } = await insertMessage(client, companyId, "<staff@mail.example>");
       const messageId = rows[0].id;
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, companyId, "accountant");
 
       await actAs(client, "authenticated", accountant);
 
@@ -160,7 +145,7 @@ describe("gmail_messages RLS", () => {
       const companyId = await seedCompany(client);
       const { rows } = await insertMessage(client, companyId, "<delete@mail.example>");
       const messageId = rows[0].id;
-      const collector = await seedUserWithRole(client, "collector");
+      const collector = await seedCompanyUser(client, companyId, "collector");
 
       await actAs(client, "authenticated", collector);
       const asCollector = await client.query(
@@ -176,7 +161,7 @@ describe("gmail_messages RLS", () => {
       const companyId = await seedCompany(client);
       const { rows } = await insertMessage(client, companyId, "<admin-delete@mail.example>");
       const messageId = rows[0].id;
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
 
       await actAs(client, "authenticated", admin);
       const deleted = await client.query(
@@ -206,7 +191,7 @@ describe("gmail_connections", () => {
     // read access to a real mailbox — it must never leave the server.
     await withRollback(async (client) => {
       const companyId = await seedCompany(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await seedConnection(client, companyId, admin);
 
       await actAs(client, "authenticated", admin);
@@ -226,7 +211,7 @@ describe("gmail_connections", () => {
   test("select * fails rather than leaking, because the grant omits the token", async () => {
     await withRollback(async (client) => {
       const companyId = await seedCompany(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await seedConnection(client, companyId, admin);
 
       await actAs(client, "authenticated", admin);
@@ -239,9 +224,9 @@ describe("gmail_connections", () => {
   test("a non-admin staff member sees no connection at all", async () => {
     await withRollback(async (client) => {
       const companyId = await seedCompany(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await seedConnection(client, companyId, admin);
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, companyId, "accountant");
 
       await actAs(client, "authenticated", accountant);
       const { rows } = await client.query(`select email_address from public.gmail_connections`);
@@ -254,7 +239,7 @@ describe("gmail_connections", () => {
     // than leaving a second, stale refresh token behind.
     await withRollback(async (client) => {
       const companyId = await seedCompany(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await seedConnection(client, companyId, admin);
       await expect(seedConnection(client, companyId, admin)).rejects.toThrow(
         /duplicate key|unique/i,

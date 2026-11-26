@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   loadTenantName,
@@ -13,7 +15,6 @@ import {
 import { requireAnyPermission } from "@/fns/requirePermission";
 import { translatorFor } from "@/i18n/dictionary";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 const WORKFLOW_KEY = "refund-recorded";
@@ -48,7 +49,13 @@ export async function notifyRefundRecordedRecord(
   return notifyAdminEvent(WORKFLOW_KEY, {
     type: "refund_recorded",
     load: async () =>
-      rowOrThrow(await supabaseAdmin.from("refunds").select("*").eq("id", refundId).single()),
+      rowOrThrow(
+        await companyClient(requireRequestCompany().id)
+          .from("refunds")
+          .select("*")
+          .eq("id", refundId)
+          .single(),
+      ),
     dedupeMatch: { refund_id: refundId },
     build: buildRefundMessage,
   });

@@ -11,32 +11,43 @@ const rpc = vi.fn();
 const enqueue = vi.fn();
 const adminRecipients = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "notifications") {
-        // `.eq("contract_id").eq("type").in("state", […])`.
-        return { select: () => ({ eq: () => ({ eq: () => ({ in: priorNotifications }) }) }) };
-      }
-      if (table === "tenants") return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
-      if (table === "contracts") return { select: () => ({ eq: () => ({ single: contractRow }) }) };
-      // contract_units: `.select("unit_id").eq("contract_id", …).order("line_order")`.
-      if (table === "contract_units") {
-        return { select: () => ({ eq: () => ({ order: () => contractUnitRow() }) }) };
-      }
-      // units are resolved through contract_units now (migration 110); the
-      // reminder names every unit the contract holds, via `.in(...)`.
-      if (table === "units") return { select: () => ({ in: () => unitsRow() }) };
-      if (table === "companies") {
-        return {
-          select: () => ({ order: () => ({ limit: () => ({ maybeSingle: companyRow }) }) }),
-        };
-      }
-      // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
-      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
-    },
-    rpc: (...args: unknown[]) => rpc(...args),
+const dbClient = {
+  from: (table: string) => {
+    if (table === "notifications") {
+      // `.eq("contract_id").eq("type").in("state", […])`.
+      return { select: () => ({ eq: () => ({ eq: () => ({ in: priorNotifications }) }) }) };
+    }
+    if (table === "tenants") return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
+    if (table === "contracts") return { select: () => ({ eq: () => ({ single: contractRow }) }) };
+    // contract_units: `.select("unit_id").eq("contract_id", …).order("line_order")`.
+    if (table === "contract_units") {
+      return { select: () => ({ eq: () => ({ order: () => contractUnitRow() }) }) };
+    }
+    // units are resolved through contract_units now (migration 110); the
+    // reminder names every unit the contract holds, via `.in(...)`.
+    if (table === "units") return { select: () => ({ in: () => unitsRow() }) };
+    if (table === "companies") {
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: companyRow }) }),
+      };
+    }
+    // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
+    return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
   },
+  rpc: (...args: unknown[]) => rpc(...args),
+};
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => dbClient,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 vi.mock("@/fns/enqueueNotification", () => ({

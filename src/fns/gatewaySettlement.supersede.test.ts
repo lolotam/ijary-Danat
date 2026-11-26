@@ -23,15 +23,33 @@ const fake = vi.hoisted(() => ({ db: null as FakeDb | null }));
 const notifyPaymentSuccess = vi.hoisted(() => vi.fn());
 const fetchGatewayPaymentStatus = vi.hoisted(() => vi.fn());
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (table: string) => (fake.db as FakeDb).client.from(table),
     rpc: (name: string, args: Record<string, unknown>) =>
       (fake.db as FakeDb).client.rpc(name, args),
-  },
+  }),
+}));
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  requireRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  runWithRequestCompany: (_company: unknown, fn: () => unknown) => fn(),
 }));
 vi.mock("@/fns/notifyPaymentSuccess", () => ({
   notifyPaymentSuccess: (ids: string[]) => notifyPaymentSuccess(ids),
+}));
+vi.mock("@/lib/suppressedPayments", () => ({
+  getSuppressedPaymentIds: async () => new Set<string>(),
 }));
 vi.mock("@/fns/myfatoorahGateway", () => ({
   gatewayConfigFromEnv: () => ({ apiKey: "k", baseUrl: "https://apitest.myfatoorah.com" }),

@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { companyClient } from "@/company/companyClient.server";
+import { getRequestCompany, requireRequestCompany } from "@/company/requestCompany.server";
 import { loadEvolutionProviderConfig } from "@/fns/evolutionSession";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import type { EvolutionClient } from "@/lib/evolution/client";
 import { maskJid } from "@/lib/evolution/client";
@@ -69,13 +70,14 @@ function pictureUrlOf(payload: unknown): string | null {
  * on a privacy setting has to produce: otherwise the inbox keeps showing a face
  * its owner has taken down, until a CDN expiry that some URLs never carry.
  */
-async function storeAvatar(number: string, url: string | null): Promise<void> {
-  const chat = await supabaseAdmin
+async function storeAvatar(companyId: string, number: string, url: string | null): Promise<void> {
+  const db = companyClient(companyId);
+  const chat = await db
     .from("whatsapp_chats")
     .update({ avatar_url: url })
     .eq("chat_number", number);
   if (chat.error) throw new Error(chat.error.message);
-  const contact = await supabaseAdmin
+  const contact = await db
     .from("whatsapp_contacts")
     .update({ avatar_url: url })
     .eq("phone", number);
@@ -90,20 +92,21 @@ async function storeAvatar(number: string, url: string | null): Promise<void> {
  * only signal we get that a picture was taken down.
  */
 async function syncOne(
+  companyId: string,
   client: EvolutionClient,
   instanceName: string,
   number: string,
 ): Promise<boolean> {
   const url = pictureUrlOf(await client.fetchProfilePictureUrl(instanceName, number));
-  await storeAvatar(number, url);
+  await storeAvatar(companyId, number, url);
   return url !== null;
 }
 
 /**
  * يقرأ اسم النسخة المقترنة، أو null إذا لم تكن هناك جلسة مفتوحة.
  */
-async function openInstanceName(): Promise<string | null> {
-  const connection = await supabaseAdmin
+async function openInstanceName(companyId: string): Promise<string | null> {
+  const connection = await companyClient(companyId)
     .from("evolution_connections")
     .select("instance_name, last_connection_state")
     .eq("id", 1)
@@ -125,13 +128,17 @@ interface StoredAvatar {
  * An expired CDN link is reported as absent: the row "has" a picture that no
  * longer loads, and the next message is the cheapest moment to replace it.
  */
-async function storedAvatars(numbers: string[]): Promise<Map<string, StoredAvatar>> {
-  const chats = await supabaseAdmin
+async function storedAvatars(
+  companyId: string,
+  numbers: string[],
+): Promise<Map<string, StoredAvatar>> {
+  const db = companyClient(companyId);
+  const chats = await db
     .from("whatsapp_chats")
     .select("chat_number, avatar_url")
     .in("chat_number", numbers);
   if (chats.error) throw new Error(chats.error.message);
-  const contacts = await supabaseAdmin
+  const contacts = await db
     .from("whatsapp_contacts")
     .select("phone, avatar_url")
     .in("phone", numbers);
@@ -160,11 +167,15 @@ async function storedAvatars(numbers: string[]): Promise<Map<string, StoredAvata
  * both tables are filtered out first, which makes this two cheap queries and no
  * gateway traffic in the common case — every message after the first in a chat.
  */
-export async function backfillChatAvatars(numbers: string[]): Promise<void> {
+export async function backfillChatAvatars(
+  numbers: string[],
+  explicitCompanyId?: string,
+): Promise<void> {
   const unique = [...new Set(numbers.filter(Boolean))];
   if (!unique.length) return;
   try {
-    const stored = await storedAvatars(unique);
+    const companyId = explicitCompanyId ?? requireRequestCompany().id;
+    const stored = await storedAvatars(companyId, unique);
     // Both tables are consulted, not just the chat. History sync fills them
     // from different Evolution endpoints, so a number can easily have a picture
     // on its chat row and none on its contact row — and the contacts table
@@ -178,23 +189,25 @@ export async function backfillChatAvatars(numbers: string[]): Promise<void> {
     // A gap one side can fill from the other costs no gateway call at all.
     const copyable = gaps.filter((row) => row.chat || row.contact);
     await Promise.allSettled(
-      copyable.map((row) => storeAvatar(row.number, (row.chat ?? row.contact)!)),
+      copyable.map((row) => storeAvatar(companyId, row.number, (row.chat ?? row.contact)!)),
     );
 
     const unknown = gaps.filter((row) => !row.chat && !row.contact).map((row) => row.number);
     if (!unknown.length) return;
 
-    const instanceName = await openInstanceName();
+    const instanceName = await openInstanceName(companyId);
     if (!instanceName) return;
     const client = evolutionClientFromConfig(
-      (await loadEvolutionProviderConfig()).config,
+      (await loadEvolutionProviderConfig(companyId)).config,
       undefined,
       BACKFILL_TIMEOUT_MS,
     );
     // allSettled, not a sequential loop: one unreachable number would otherwise
     // add its whole timeout to every number behind it in the batch.
     const outcomes = await Promise.allSettled(
-      unknown.slice(0, BACKFILL_PER_BATCH).map((number) => syncOne(client, instanceName, number)),
+      unknown
+        .slice(0, BACKFILL_PER_BATCH)
+        .map((number) => syncOne(companyId, client, instanceName, number)),
     );
     for (const outcome of outcomes) {
       if (outcome.status === "rejected") {
@@ -221,8 +234,12 @@ export async function backfillChatAvatars(numbers: string[]): Promise<void> {
  * `backfillChatAvatars` swallows its own failures, so the floating promise
  * cannot become an unhandled rejection.
  */
-export function backfillChatAvatarsInBackground(numbers: string[]): void {
-  void backfillChatAvatars(numbers);
+export function backfillChatAvatarsInBackground(
+  numbers: string[],
+  explicitCompanyId?: string,
+): void {
+  const companyId = explicitCompanyId ?? getRequestCompany()?.id;
+  void backfillChatAvatars(numbers, companyId);
 }
 
 /**
@@ -235,10 +252,11 @@ export function backfillChatAvatarsInBackground(numbers: string[]): void {
  * every time, and consumes the ceiling that the untouched tail needed. A stable
  * order plus the cursor below is what actually walks the whole directory.
  */
-async function numbersToSweep(): Promise<string[]> {
-  const chats = await supabaseAdmin.from("whatsapp_chats").select("chat_number");
+async function numbersToSweep(companyId: string): Promise<string[]> {
+  const db = companyClient(companyId);
+  const chats = await db.from("whatsapp_chats").select("chat_number");
   if (chats.error) throw new Error(chats.error.message);
-  const contacts = await supabaseAdmin.from("whatsapp_contacts").select("phone");
+  const contacts = await db.from("whatsapp_contacts").select("phone");
   if (contacts.error) throw new Error(contacts.error.message);
   return [
     ...new Set([
@@ -289,16 +307,17 @@ export const syncEvolutionAvatars = createServerFn({ method: "POST" })
       refusal: "You do not have permission to sync WhatsApp avatars.",
     });
 
-    const instanceName = await openInstanceName();
+    const companyId = requireRequestCompany().id;
+    const instanceName = await openInstanceName(companyId);
     if (!instanceName) {
       throw new Error(
         "No open WhatsApp session. Scan the QR code in Settings → Integrations first.",
       );
     }
-    const client = evolutionClientFromConfig((await loadEvolutionProviderConfig()).config);
+    const client = evolutionClientFromConfig((await loadEvolutionProviderConfig(companyId)).config);
 
     const after = data.after ?? null;
-    const numbers = (await numbersToSweep()).filter((number) => !after || number > after);
+    const numbers = (await numbersToSweep(companyId)).filter((number) => !after || number > after);
 
     const deadline = Date.now() + BUDGET_MS;
     let checked = 0;
@@ -311,7 +330,7 @@ export const syncEvolutionAvatars = createServerFn({ method: "POST" })
       checked += 1;
       cursor = number;
       try {
-        if (await syncOne(client, instanceName, number)) updated += 1;
+        if (await syncOne(companyId, client, instanceName, number)) updated += 1;
       } catch (error) {
         // One unreachable number must not abandon the rest of the directory.
         console.error(

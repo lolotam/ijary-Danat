@@ -1,3 +1,6 @@
+import { companyClient } from "@/company/companyClient.server";
+import { listActiveCompanies } from "@/company/hostCompany.server";
+import { runWithRequestCompany, type RequestCompany } from "@/company/requestCompany.server";
 import { runContractExpiryJob } from "@/fns/contractExpiryJob";
 import { runEvaluateOverdueJob } from "@/fns/evaluateOverdue";
 import { runGmailSyncJob } from "@/fns/gmailSyncJob";
@@ -9,7 +12,6 @@ import { runScheduledReportsJob } from "@/fns/scheduledReportsJob";
 import { runBackupJob } from "@/fns/backupJob";
 import { runLogRetentionJob } from "@/fns/logRetentionJob";
 import { isWorkflowPaused, recordWorkflowRun } from "@/fns/workflowRegistry";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isValidCronSecret, readCronSecretHeader } from "@/lib/cronAuth";
 
 /**
@@ -58,6 +60,20 @@ export type CronJobName = keyof typeof JOBS;
 
 const CRON_JOB_NAMES = Object.keys(JOBS) as CronJobName[];
 
+/** نتيجة تشغيل المهمة الدورية على مستوى شركة واحدة. */
+export interface CompanyCronResult {
+  companyId: string;
+  ok: boolean;
+  skipped?: boolean;
+  alreadyClaimed?: boolean;
+  durationMs: number;
+  result?: unknown;
+  error?: string;
+}
+
+/**
+ * يتحقق من أن القيمة تطابق أحد مفاتيح المهام المجدولة المسجّلة.
+ */
 function isCronJobName(value: unknown): value is CronJobName {
   return typeof value === "string" && value in JOBS;
 }
@@ -114,7 +130,7 @@ export async function withJobLock<T>(
 }
 
 /**
- * يحجز تشغيل المهمة في قاعدة البيانات، ويرفض طلبًا مكررًا خلال الدقيقة نفسها.
+ * يحجز تشغيل المهمة للشركة المحددة في قاعدة البيانات، ويرفض طلبًا مكررًا خلال الدقيقة نفسها.
  *
  * `withJobLock` only sees a duplicate that overlaps the first run. The unknown
  * second caller arrives ~0.5–0.8 s later, after the fast nightly jobs have
@@ -122,22 +138,63 @@ export async function withJobLock<T>(
  * (migration 229 has the audit-log evidence). The claim lives in the
  * database, so it holds across processes and after the first run ends.
  *
- * Fails OPEN: if the claim itself cannot be checked, the job runs. Every job
- * is idempotent, so a rare extra run is cheap; a nightly job that silently
- * stops because one RPC failed is not.
+ * Fails OPEN: if the claim itself cannot be checked, the job runs so a nightly
+ * job is never silently skipped because of a transient RPC read failure.
  */
-async function claimCronRun(job: CronJobName): Promise<boolean> {
+async function claimCronRun(companyId: string, job: CronJobName): Promise<boolean> {
   try {
-    const { data, error } = await supabaseAdmin.rpc("claim_cron_run", { p_key: job });
+    const db = companyClient(companyId);
+    const { data, error } = await db.rpc("claim_cron_run", { p_key: job });
     if (error) throw new Error(error.message);
     return data === true;
   } catch (error) {
-    // Both an error result and a thrown fetch failure mean "not checked".
-    console.error(`claim_cron_run failed for ${job}; running unclaimed`, error);
+    console.error(`claim_cron_run failed for ${job} (${companyId}); running unclaimed`, error);
     return true;
   }
 }
 
+/**
+ * ينفّذ مهمة مجدولة واحدة لشركة نشطة واحدة مع عزل أخطائها وتسجيل النتيجة في سجل الشركة.
+ */
+async function runJobForCompany(
+  company: RequestCompany,
+  job: CronJobName,
+  asOf: string | null,
+): Promise<CompanyCronResult> {
+  return runWithRequestCompany(company, async () => {
+    if (await isWorkflowPaused(job)) {
+      await recordWorkflowRun(job, "skipped", 0, null);
+      return { companyId: company.id, ok: true, skipped: true, durationMs: 0 };
+    }
+
+    if (!(await claimCronRun(company.id, job))) {
+      return {
+        companyId: company.id,
+        ok: true,
+        skipped: true,
+        alreadyClaimed: true,
+        durationMs: 0,
+      };
+    }
+
+    const startedAt = Date.now();
+    try {
+      const result = await JOBS[job](asOf);
+      const durationMs = Date.now() - startedAt;
+      await recordWorkflowRun(job, "success", durationMs, null);
+      return { companyId: company.id, ok: true, durationMs, result };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Job failed.";
+      const durationMs = Date.now() - startedAt;
+      await recordWorkflowRun(job, "error", durationMs, message);
+      return { companyId: company.id, ok: false, durationMs, error: message };
+    }
+  });
+}
+
+/**
+ * يستقبل طلب نقطة نهاية الكرون ويوزّع المهمة على كل شركة نشطة بشكل معزول.
+ */
 export async function respondToCronRequest(request: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -167,37 +224,49 @@ export async function respondToCronRequest(request: Request): Promise<Response> 
     return Response.json({ error: "asOf must be a YYYY-MM-DD date or null." }, { status: 400 });
   }
 
-  // A paused job is a deliberate state, not a failure — answer 200 with a
-  // `skipped` result so a cron tick does not start alerting on something an
-  // admin switched off on purpose.
-  if (await isWorkflowPaused(job)) {
-    await recordWorkflowRun(job, "skipped", 0, null);
-    return Response.json({ job, durationMs: 0, skipped: true });
-  }
-
-  if (!(await claimCronRun(job))) {
-    // Same 409 as the in-flight lock: the caller is double-firing.
-    return Response.json(
-      { job, error: "Job already ran within the last minute." },
-      { status: 409 },
-    );
-  }
-
   const outcome = await withJobLock(job, async () => {
     const startedAt = Date.now();
-    try {
-      const result = await JOBS[job](asOf);
-      const durationMs = Date.now() - startedAt;
-      await recordWorkflowRun(job, "success", durationMs, null);
-      return Response.json({ job, durationMs, result });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Job failed.";
-      // durationMs was previously only reported on success, which made a slow
-      // failure indistinguishable from a fast one in the logs.
-      const durationMs = Date.now() - startedAt;
-      await recordWorkflowRun(job, "error", durationMs, message);
-      return Response.json({ job, durationMs, error: message }, { status: 500 });
+    const companies = await listActiveCompanies();
+    const companyResults: CompanyCronResult[] = [];
+    for (const company of companies) {
+      companyResults.push(await runJobForCompany(company, job, asOf));
     }
+    const durationMs = Date.now() - startedAt;
+
+    if (companyResults.length > 0 && companyResults.every((item) => item.alreadyClaimed)) {
+      return Response.json(
+        { job, error: "Job already ran within the last minute." },
+        { status: 409 },
+      );
+    }
+
+    const skippedAll =
+      companyResults.length > 0 &&
+      companyResults.every((item) => item.skipped && !item.alreadyClaimed);
+    if (skippedAll) {
+      return Response.json({ job, durationMs: 0, skipped: true, companies: companyResults });
+    }
+
+    const failed = companyResults.filter((item) => !item.ok);
+    const succeeded = companyResults.filter((item) => item.ok && !item.skipped);
+    if (failed.length > 0 && succeeded.length === 0) {
+      return Response.json(
+        {
+          job,
+          durationMs,
+          error: failed[0].error ?? "Job failed.",
+          companies: companyResults,
+        },
+        { status: 500 },
+      );
+    }
+
+    return Response.json({
+      job,
+      durationMs,
+      result: companyResults.length === 1 ? succeeded[0]?.result : undefined,
+      companies: companyResults,
+    });
   });
 
   if (outcome === JOB_ALREADY_RUNNING) {

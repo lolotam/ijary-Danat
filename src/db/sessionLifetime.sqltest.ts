@@ -14,8 +14,18 @@ afterAll(closePool);
  * verified against production's auth.sessions when 231 was applied.
  */
 
-/** ينشئ مستخدماً ويمنحه الأدوار المذكورة. */
-async function seedUser(client: PoolClient, roles: string[]): Promise<string> {
+/** ينشئ شركة اختبار لاستضافة أدوار المستخدمين في اختبار الجلسات. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة جلسات ${tag}`, `Session Co ${tag}`],
+  );
+  return rows[0].id;
+}
+
+/** ينشئ مستخدماً ويمنحه الأدوار المذكورة ضمن الشركة المحددة. */
+async function seedUser(client: PoolClient, roles: string[], companyId: string): Promise<string> {
   const userId = randomUUID();
   await client.query(
     `insert into auth.users (id, instance_id, aud, role, email)
@@ -24,8 +34,8 @@ async function seedUser(client: PoolClient, roles: string[]): Promise<string> {
   );
   for (const role of roles) {
     await client.query(
-      `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-      [userId, role],
+      `insert into public.user_roles (company_id, user_id, role) values ($1, $2, $3::public.app_role)`,
+      [companyId, userId, role],
     );
   }
   return userId;
@@ -42,7 +52,8 @@ describe("session_lifetime_for", () => {
     [[], "06:00:00"],
   ])("roles %j → %s", async (roles, expected) => {
     await withRollback(async (client) => {
-      const userId = await seedUser(client, roles);
+      const companyId = await seedCompany(client);
+      const userId = await seedUser(client, roles, companyId);
       const { rows } = await client.query<{ lifetime: string }>(
         `select public.session_lifetime_for($1)::text as lifetime`,
         [userId],
@@ -77,7 +88,8 @@ describe("granting a role re-boxes the user's open sessions (migration 232)", ()
   ])("tenant granted %s → session ends %s after sign-in", async (grantedRole, expected) => {
     await withRollback(async (client) => {
       await ensureSessionsTable(client);
-      const userId = await seedUser(client, ["tenant"]);
+      const companyId = await seedCompany(client);
+      const userId = await seedUser(client, ["tenant"], companyId);
       await client.query(
         `insert into auth.sessions (id, user_id, created_at, not_after)
          values ($1, $2, now() - interval '1 hour', now() - interval '1 hour' + interval '6 months')`,
@@ -85,9 +97,9 @@ describe("granting a role re-boxes the user's open sessions (migration 232)", ()
       );
 
       await client.query(
-        `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)
+        `insert into public.user_roles (company_id, user_id, role) values ($1, $2, $3::public.app_role)
          on conflict do nothing`,
-        [userId, grantedRole],
+        [companyId, userId, grantedRole],
       );
 
       // Compared as timestamps: a month-based interval subtracts back to a
@@ -109,7 +121,8 @@ describe("role grants during a backup restore (migration 233)", () => {
     // tenant session.
     await withRollback(async (client) => {
       await ensureSessionsTable(client);
-      const userId = await seedUser(client, ["tenant"]);
+      const companyId = await seedCompany(client);
+      const userId = await seedUser(client, ["tenant"], companyId);
       await client.query(
         `insert into auth.sessions (id, user_id, created_at, not_after)
          values ($1, $2, now() - interval '1 hour', now() - interval '1 hour' + interval '6 months')`,
@@ -117,9 +130,10 @@ describe("role grants during a backup restore (migration 233)", () => {
       );
 
       await client.query(`set local session_replication_role = replica`);
-      await client.query(`insert into public.user_roles (user_id, role) values ($1, 'admin')`, [
-        userId,
-      ]);
+      await client.query(
+        `insert into public.user_roles (company_id, user_id, role) values ($1, $2, 'admin')`,
+        [companyId, userId],
+      );
 
       const { rows } = await client.query<{ matches: boolean }>(
         `select not_after = created_at + interval '6 hours' as matches
@@ -137,7 +151,8 @@ describe("revoking a role re-boxes the user's open sessions (migration 234)", ()
     // DELETE must apply that to a session opened while it was still a tenant.
     await withRollback(async (client) => {
       await ensureSessionsTable(client);
-      const userId = await seedUser(client, ["tenant"]);
+      const companyId = await seedCompany(client);
+      const userId = await seedUser(client, ["tenant"], companyId);
       await client.query(
         `insert into auth.sessions (id, user_id, created_at, not_after)
          values ($1, $2, now() - interval '1 hour', now() - interval '1 hour' + interval '6 months')`,
@@ -162,7 +177,8 @@ describe("a backup restore keeps unchanged tenant sessions at 6 months (migratio
     // whose role did not change must not come out with a 6-hour session.
     await withRollback(async (client) => {
       await ensureSessionsTable(client);
-      const userId = await seedUser(client, ["tenant"]);
+      const companyId = await seedCompany(client);
+      const userId = await seedUser(client, ["tenant"], companyId);
       await client.query(
         `insert into auth.sessions (id, user_id, created_at, not_after)
          values ($1, $2, now() - interval '1 hour', now() - interval '1 hour' + interval '6 months')`,
@@ -171,9 +187,10 @@ describe("a backup restore keeps unchanged tenant sessions at 6 months (migratio
 
       await client.query(`set local session_replication_role = replica`);
       await client.query(`delete from public.user_roles where user_id = $1`, [userId]);
-      await client.query(`insert into public.user_roles (user_id, role) values ($1, 'tenant')`, [
-        userId,
-      ]);
+      await client.query(
+        `insert into public.user_roles (company_id, user_id, role) values ($1, $2, 'tenant')`,
+        [companyId, userId],
+      );
 
       const { rows } = await client.query<{ matches: boolean }>(
         `select not_after = created_at + interval '6 months' as matches
@@ -189,7 +206,8 @@ describe("a role change never revives an ended session (migration 236)", () => {
   test("staff whose 6 hours ran out, made tenant-only, stays expired", async () => {
     await withRollback(async (client) => {
       await ensureSessionsTable(client);
-      const userId = await seedUser(client, ["tenant", "accountant"]);
+      const companyId = await seedCompany(client);
+      const userId = await seedUser(client, ["tenant", "accountant"], companyId);
       await client.query(
         `insert into auth.sessions (id, user_id, created_at, not_after)
          values ($1, $2, now() - interval '7 hours', now() - interval '1 hour')`,

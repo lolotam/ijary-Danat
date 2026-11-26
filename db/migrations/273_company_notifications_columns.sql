@@ -15,7 +15,7 @@ alter table public.notification_templates
   add column if not exists company_id uuid references public.companies(id);
 
 update public.notification_templates
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.notification_templates
@@ -55,7 +55,7 @@ alter table public.report_schedules
   add column if not exists company_id uuid references public.companies(id);
 
 update public.report_schedules
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.report_schedules
@@ -101,7 +101,7 @@ update public.generated_reports gr
    and gr.company_id is null;
 
 update public.generated_reports
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.generated_reports
@@ -191,7 +191,7 @@ update public.notifications n
    and n.company_id is null;
 
 update public.notifications
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.notifications
@@ -293,7 +293,7 @@ alter table public.provider_configs
   add column if not exists company_id uuid references public.companies(id);
 
 update public.provider_configs
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.provider_configs
@@ -381,7 +381,7 @@ alter table public.cron_jobs
   add column if not exists company_id uuid references public.companies(id);
 
 update public.cron_jobs
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.cron_jobs
@@ -421,7 +421,7 @@ alter table public.backups
   add column if not exists company_id uuid references public.companies(id);
 
 update public.backups
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.backups

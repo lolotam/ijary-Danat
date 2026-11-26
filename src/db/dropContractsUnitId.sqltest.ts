@@ -54,7 +54,16 @@ describe("contracts.unit_id is gone", () => {
    * tell them apart from a genuine survivor. Adding a name here is a decision
    * about a specific function, not a way to quiet the check.
    */
-  const KNOWN_NON_CONTRACT_UNIT_ID_READERS = ["set_invoice_paid", "reverse_payment"];
+  const KNOWN_NON_CONTRACT_UNIT_ID_READERS = [
+    "set_invoice_paid",
+    "reverse_payment",
+    // Stage 3B-2 added `public.contracts` company_id checks/filters to functions
+    // that touch `invoice_items.unit_id`, `partial_payments.unit_id`, or
+    // `contract_unit_period_amounts(...).unit_id` (none read `contracts.unit_id`).
+    "append_extra_charge_items",
+    "edit_partial_payment",
+    "get_property_monthly_rent_totals",
+  ];
 
   const SWEEP = `select p.proname from pg_proc p
        join pg_namespace n on n.oid = p.pronamespace

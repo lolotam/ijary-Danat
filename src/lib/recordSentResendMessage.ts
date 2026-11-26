@@ -19,28 +19,16 @@ export async function recordSentResendMessage(input: {
   bcc: string[];
   body: string;
   cc: string[];
+  companyId?: string;
   from: string;
   resendId: string;
   source: "resendMailboxSend" | "dispatchNotification";
   subject: string;
   to: string[];
 }): Promise<void> {
-  // Imported here rather than at module scope: `client.server` pulls the
-  // service-role client, and a static import would follow this module into the
-  // browser bundle.
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("id")
-    // Ordered, not just limited: an unordered `limit(1)` picks whichever row the
-    // planner returns first, so a second company would start attributing sent
-    // mail at random. One company exists today; this makes which one it is a
-    // fact rather than a coincidence.
-    .order("created_at")
-    .limit(1)
-    .single();
-  if (companyError) throw new Error(companyError.message);
+  // استيراد ديناميكي حتى لا يتسرب عميل الخادم إلى حزمة المتصفح.
+  const { serverCompanyClient } = await import("@/company/companyClient.server");
+  const { companyId, client } = serverCompanyClient(input.companyId);
 
   const now = new Date().toISOString();
   const rawPayload = {
@@ -53,9 +41,9 @@ export async function recordSentResendMessage(input: {
     source: input.source,
   } as unknown as Json;
 
-  const { error } = await supabaseAdmin.from("gmail_messages").upsert(
+  const { error } = await client.from("gmail_messages").upsert(
     {
-      company_id: company.id,
+      company_id: companyId,
       message_id: `${RESEND_MESSAGE_ID_PREFIX}${input.resendId}`,
       thread_id: null,
       from_address: input.from,

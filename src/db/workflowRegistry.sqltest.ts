@@ -130,10 +130,14 @@ describe("the kind discriminator", () => {
 
   test("a third kind is rejected", async () => {
     await withRollback(async (client) => {
+      const { rows: companies } = await client.query<{ id: string }>(
+        `select id from public.companies order by created_at asc limit 1`,
+      );
       await expect(
         client.query(
-          `insert into public.cron_jobs (key, kind, name_ar, name_en)
-             values ('bogus', 'webhook', 'x', 'x')`,
+          `insert into public.cron_jobs (company_id, key, kind, name_ar, name_en)
+             values ($1, 'bogus', 'webhook', 'x', 'x')`,
+          [companies[0].id],
         ),
       ).rejects.toThrow(/cron_jobs_kind_check/);
     });
@@ -145,23 +149,30 @@ describe("re-running the seed", () => {
     // Migrations get replayed. A replay that silently switched a workflow back
     // on would undo a deliberate admin decision, with no trace.
     await withRollback(async (client) => {
+      const { rows: companies } = await client.query<{ id: string }>(
+        `select id from public.companies order by created_at asc limit 1`,
+      );
+      const companyId = companies[0].id;
       await client.query(
-        `update public.cron_jobs set is_active = false where key = 'deposit-confirmed'`,
+        `update public.cron_jobs set is_active = false where company_id = $1 and key = 'deposit-confirmed'`,
+        [companyId],
       );
 
       await client.query(
-        `insert into public.cron_jobs (key, kind, name_ar, name_en, description_ar, description_en)
-           values ('deposit-confirmed', 'event', 'تأكيد الإيداع', 'Deposit confirmed', 'د', 'd')
-         on conflict (key) do update
+        `insert into public.cron_jobs (company_id, key, kind, name_ar, name_en, description_ar, description_en)
+           values ($1, 'deposit-confirmed', 'event', 'تأكيد الإيداع', 'Deposit confirmed', 'د', 'd')
+         on conflict (company_id, key) do update
            set kind = excluded.kind,
                name_ar = excluded.name_ar,
                name_en = excluded.name_en,
                description_ar = excluded.description_ar,
                description_en = excluded.description_en`,
+        [companyId],
       );
 
       const { rows } = await client.query<{ is_active: boolean }>(
-        `select is_active from public.cron_jobs where key = 'deposit-confirmed'`,
+        `select is_active from public.cron_jobs where company_id = $1 and key = 'deposit-confirmed'`,
+        [companyId],
       );
       expect(rows[0].is_active).toBe(false);
     });

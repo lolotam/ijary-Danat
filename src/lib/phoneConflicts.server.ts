@@ -1,5 +1,5 @@
 import { nationalPhoneDigits } from "@/auth/loginIdentity";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
 import { userConflictMessage } from "@/lib/userConflicts";
 
 /**
@@ -30,10 +30,14 @@ import { userConflictMessage } from "@/lib/userConflicts";
  * deliberately not reformatted: `profiles.phone` is free text that people read,
  * and the matching happens over a digits-only projection anyway.
  */
+/**
+ * يتحقق من صحة رقم الجوال وتعارضه داخل الشركة الحالية قبل الحفظ.
+ */
 export async function normalisePhoneForSave(
   phone: string | null | undefined,
   excludeProfileId: string | null,
   excludeTenantId: string | null,
+  explicitCompanyId?: string,
 ): Promise<string | null> {
   const trimmed = (phone ?? "").trim();
   if (!trimmed) return null;
@@ -48,7 +52,8 @@ export async function normalisePhoneForSave(
     );
   }
 
-  const { data, error } = await supabaseAdmin.rpc("find_phone_conflicts", {
+  const { client } = serverCompanyClient(explicitCompanyId);
+  const { data, error } = await client.rpc("find_phone_conflicts", {
     _digits: digits,
     _exclude_profile: excludeProfileId,
     _exclude_tenant: excludeTenantId,

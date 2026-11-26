@@ -78,17 +78,26 @@ describe("migration 72 - rows", () => {
 
   test("re-running the seed does not re-enable a paused workflow", async () => {
     await withRollback(async (client) => {
+      const { rows: targetRows } = await client.query<{ company_id: string }>(
+        `select company_id from public.cron_jobs where key = 'refund-recorded' limit 1`,
+      );
+      const companyId = targetRows[0].company_id;
       await client.query(
-        `update public.cron_jobs set is_active = false where key = 'refund-recorded'`,
+        `update public.cron_jobs set is_active = false
+          where company_id = $1 and key = 'refund-recorded'`,
+        [companyId],
       );
       await client.query(
-        `insert into public.cron_jobs (key, kind, name_ar, name_en)
-           values ('refund-recorded', 'event', 'ر', 'Refund recorded')
-         on conflict (key) do update
+        `insert into public.cron_jobs (company_id, key, kind, name_ar, name_en)
+           values ($1, 'refund-recorded', 'event', 'ر', 'Refund recorded')
+         on conflict (company_id, key) do update
            set kind = excluded.kind, name_ar = excluded.name_ar, name_en = excluded.name_en`,
+        [companyId],
       );
       const { rows } = await client.query<{ is_active: boolean }>(
-        `select is_active from public.cron_jobs where key = 'refund-recorded'`,
+        `select is_active from public.cron_jobs
+          where company_id = $1 and key = 'refund-recorded'`,
+        [companyId],
       );
       expect(rows[0].is_active).toBe(false);
     });

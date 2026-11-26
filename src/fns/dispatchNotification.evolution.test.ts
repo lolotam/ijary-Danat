@@ -6,8 +6,11 @@ vi.mock("@tanstack/react-start", async () =>
   (await import("./dispatchNotification.testkit")).tanstackStartModule(),
 );
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
-vi.mock("@/integrations/supabase/client.server", async () =>
-  (await import("./dispatchNotification.testkit")).supabaseAdminModule(),
+vi.mock("@/company/requestCompany.server", async () =>
+  (await import("./dispatchNotification.testkit")).requestCompanyModule(),
+);
+vi.mock("@/company/companyClient.server", async () =>
+  (await import("./dispatchNotification.testkit")).companyClientModule(),
 );
 vi.mock("@/fns/evolutionSessionWatch", () => ({
   reportSendSessionDisconnected: () => reportSendSessionDisconnected(),
@@ -24,6 +27,7 @@ import {
   requestedUrls,
   resetDispatchFixtures,
   restoreDispatchFixtures,
+  TEST_COMPANY,
 } from "./dispatchNotification.testkit";
 import { resetEvolutionPacing } from "@/lib/providers/evolution";
 
@@ -120,7 +124,7 @@ describe("dispatchNotificationRecord through Evolution", () => {
 
     await paced(() => dispatchNotificationRecord("n-1"));
 
-    expect(db.uploads).toEqual(["chat/96550123456/evo-m/INV-1.pdf"]);
+    expect(db.uploads).toEqual([`companies/${TEST_COMPANY.id}/chat/96550123456/evo-m/INV-1.pdf`]);
   });
 
   it("fails the WhatsApp leg with a reason when the body is empty", async () => {

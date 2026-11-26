@@ -1,11 +1,16 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { CompanyContextError } from "@/company/errors";
+import { getRequestCompany, runWithRequestCompany } from "@/company/requestCompany.server";
+import { companyStoragePath } from "@/company/storagePath";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/database.types";
 import type { Company } from "@/hooks/useCompany";
 import type { Locale } from "@/i18n/dictionary";
 import {
@@ -109,13 +114,29 @@ export const sendCompanyInfo = createServerFn({ method: "POST" })
       refusal: "You do not have permission to send notifications.",
     });
 
+    let companyId = getRequestCompany()?.id;
+    if (!companyId) {
+      const profile = await context.supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("id", context.userId)
+        .maybeSingle();
+      if (profile.error) throw new Error(profile.error.message);
+      companyId = profile.data?.company_id ?? undefined;
+    }
+    if (!companyId) {
+      throw new CompanyContextError("COMPANY_REQUIRED");
+    }
+
+    const client = companyClient(companyId);
+
     const [tenantRes, companyRes] = await Promise.all([
-      supabaseAdmin
+      client
         .from("tenants")
         .select("id, name, name_en, email, whatsapp, mobile, preferred_language")
         .eq("id", data.tenantId)
         .single(),
-      supabaseAdmin.from("companies").select("*").order("created_at").limit(1).maybeSingle(),
+      client.from("companies").select("*").eq("id", companyId).maybeSingle(),
     ]);
     if (tenantRes.error || !tenantRes.data) {
       throw new Error(tenantRes.error?.message ?? "Tenant not found");
@@ -155,11 +176,11 @@ export const sendCompanyInfo = createServerFn({ method: "POST" })
     // Always Latin-labelled — see PDF_LABELS.
     const pdfBuffer = await renderCompanyInfoPdf(company, PDF_LABELS);
     const ts = Date.now();
-    const objectPath = `company-info/${tenant.id}_${ts}.pdf`;
+    const objectPath = companyStoragePath(companyId, `company-info/${tenant.id}_${ts}.pdf`);
     // Private bucket (migration 49) — NOT `branding`, which migration 21 makes
     // world-readable to serve the logo anonymously. loadAttachments downloads
-    // with the service-role client, so nothing here needs public read.
-    const upload = await supabaseAdmin.storage
+    // with the company-scoped client, so nothing here needs public read.
+    const upload = await client.storage
       .from(COMPANY_DOCUMENTS_BUCKET)
       .upload(objectPath, pdfBuffer, {
         contentType: "application/pdf",
@@ -168,38 +189,51 @@ export const sendCompanyInfo = createServerFn({ method: "POST" })
       });
     if (upload.error) throw new Error(upload.error.message);
 
+    const requestCompany = getRequestCompany() ?? {
+      id: companyId,
+      slug: company.slug,
+      status: company.status,
+      host: "",
+    };
+
     const inserted: string[] = [];
 
-    for (const channel of data.channels) {
-      const recipient = channel === "email" ? tenant.email : (tenant.whatsapp ?? tenant.mobile);
-      if (!recipient) continue;
+    await runWithRequestCompany(requestCompany, async () => {
+      for (const channel of data.channels) {
+        const recipient = channel === "email" ? tenant.email : (tenant.whatsapp ?? tenant.mobile);
+        if (!recipient) continue;
 
-      if (channel === "email") {
-        const row = await dispatchAndAudit(
-          tenant.id,
-          "email",
-          locale,
-          recipient,
-          emailSubject,
-          emailBody,
-          "company-info",
-          objectPath,
-        );
-        inserted.push(row);
-      } else {
-        const row = await dispatchAndAudit(
-          tenant.id,
-          "whatsapp",
-          locale,
-          recipient,
-          null,
-          waBody,
-          "company-info",
-          objectPath,
-        );
-        inserted.push(row);
+        if (channel === "email") {
+          const row = await dispatchAndAudit(
+            client,
+            companyId,
+            tenant.id,
+            "email",
+            locale,
+            recipient,
+            emailSubject,
+            emailBody,
+            "company-info",
+            objectPath,
+          );
+          inserted.push(row);
+        } else {
+          const row = await dispatchAndAudit(
+            client,
+            companyId,
+            tenant.id,
+            "whatsapp",
+            locale,
+            recipient,
+            null,
+            waBody,
+            "company-info",
+            objectPath,
+          );
+          inserted.push(row);
+        }
       }
-    }
+    });
 
     return { queued: inserted };
   });
@@ -212,6 +246,8 @@ export const sendCompanyInfo = createServerFn({ method: "POST" })
  * `dispatchNotification.loadAttachments` downloads the PDF for the provider.
  */
 async function dispatchAndAudit(
+  client: SupabaseClient<Database>,
+  companyId: string,
   tenantId: string,
   channel: "email" | "whatsapp",
   locale: Locale,
@@ -221,9 +257,10 @@ async function dispatchAndAudit(
   templateCode: string,
   attachmentPath: string | null,
 ): Promise<string> {
-  const insertResult = await supabaseAdmin
+  const insertResult = await client
     .from("notifications")
     .insert({
+      company_id: companyId,
       audience: "tenant",
       tenant_id: tenantId,
       type: "company_info",

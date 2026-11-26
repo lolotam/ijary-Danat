@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requirePermission } from "@/fns/requirePermission";
 
 /**
@@ -51,10 +52,12 @@ export const revokeUserRole = createServerFn({ method: "POST" })
       entityId: data.userId,
     });
 
+    const db = companyClient(requireRequestCompany().id);
+
     // Read-only check, first and separate from the delete below: it must
     // reject a call for a role the user doesn't hold BEFORE any tenant link
     // is touched, not after.
-    const existing = await supabaseAdmin
+    const existing = await db
       .from("user_roles")
       .select("id")
       .eq("user_id", data.userId)
@@ -71,7 +74,7 @@ export const revokeUserRole = createServerFn({ method: "POST" })
       // matching by id alone would return this row whether or not tenant_id
       // was already null, which is exactly how the previous version ended up
       // claiming "removed" for an account that had nothing to remove.
-      const unlink = await supabaseAdmin
+      const unlink = await db
         .from("profiles")
         .update({ tenant_id: null } as any)
         .eq("id", data.userId)
@@ -80,7 +83,7 @@ export const revokeUserRole = createServerFn({ method: "POST" })
       if (unlink.error) throw new Error(unlink.error.message);
       clearedTenantLink = ((unlink.data as unknown as unknown[] | null)?.length ?? 0) > 0;
 
-      const assignments = await supabaseAdmin
+      const assignments = await db
         .from("user_tenants" as any)
         .delete()
         .eq("user_id", data.userId)
@@ -92,14 +95,14 @@ export const revokeUserRole = createServerFn({ method: "POST" })
     // Deleted last: if this fails after the links above were cleared, the
     // role stays granted and a retry cleanly finishes the job, rather than
     // leaving a role-less account still linked (the original bug).
-    const revoked = await supabaseAdmin
+    const revoked = await db
       .from("user_roles")
       .delete()
       .eq("user_id", data.userId)
       .eq("role", data.role);
     if (revoked.error) throw new Error(revoked.error.message);
 
-    await supabaseAdmin.rpc("write_audit", {
+    await db.rpc("write_audit", {
       p_action: "user.role.revoke",
       p_entity_type: "user",
       p_entity_id: data.userId,

@@ -17,7 +17,7 @@ update public.contract_closeouts cc
      cc.company_id,
      (select c.company_id from public.contracts c where c.id = cc.contract_id),
      (select t.company_id from public.tenants t where t.id = cc.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where cc.company_id is null;
 
@@ -109,7 +109,7 @@ update public.contract_closeout_deductions d
    set company_id = coalesce(
      d.company_id,
      (select cc.company_id from public.contract_closeouts cc where cc.id = d.closeout_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where d.company_id is null;
 
@@ -171,7 +171,7 @@ update public.contract_closeout_invoice_actions a
      a.company_id,
      (select cc.company_id from public.contract_closeouts cc where cc.id = a.closeout_id),
      (select i.company_id from public.invoices i where i.id = a.invoice_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where a.company_id is null;
 

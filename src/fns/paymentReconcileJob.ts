@@ -1,7 +1,15 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import {
+  getRequestCompany,
+  requireRequestCompany,
+  runWithRequestCompany,
+} from "@/company/requestCompany.server";
 import { fetchGatewayPaymentStatus, paymentOutcome } from "@/fns/confirmGatewayPayment";
 import { gatewayConfigFromEnv } from "@/fns/myfatoorahGateway";
 import { normalizeMethod, settleGatewayPayment } from "@/fns/myfatoorahWebhook";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/database.types";
 
 /**
  * Reconcile payment requests the gateway settled but the app never heard about.
@@ -32,7 +40,10 @@ type PendingRequest = {
  * Returns which counter the caller should bump, so the decision about what a
  * gateway status *means* stays here and the tallying stays in the job.
  */
+type ReconcileDb = SupabaseClient<Database>;
+
 async function reconcileOneRequest(
+  db: ReconcileDb,
   config: ReturnType<typeof gatewayConfigFromEnv>,
   request: PendingRequest,
 ): Promise<"settled" | "failed" | "unchanged"> {
@@ -57,7 +68,7 @@ async function reconcileOneRequest(
   // A superseded link that failed is simply dead; its row stays superseded
   // rather than looking like the selection's current request failed.
   if (outcome === "failed" && request.status === "pending") {
-    const update = await supabaseAdmin
+    const update = await db
       .from("payment_requests")
       .update({ status: "failed" })
       .eq("id", request.id)
@@ -81,16 +92,16 @@ async function reconcileOneRequest(
  * settle. Fine at today's scale (~22 payment_requests in total); revisit if
  * superseded rows reach the hundreds.
  */
-async function requestsToPoll(since: string): Promise<PendingRequest[]> {
+async function requestsToPoll(db: ReconcileDb, since: string): Promise<PendingRequest[]> {
   const [pending, superseded] = await Promise.all([
-    supabaseAdmin
+    db
       .from("payment_requests")
       .select("id, code, provider_invoice_id, status")
       .eq("status", "pending")
       .not("provider_invoice_id", "is", null)
       .gt("created_at", since)
       .order("created_at"),
-    supabaseAdmin
+    db
       .from("payment_requests")
       .select("id, code, provider_invoice_id, status")
       .eq("status", "superseded")
@@ -103,42 +114,64 @@ async function requestsToPoll(since: string): Promise<PendingRequest[]> {
 }
 
 /**
+ * يسوّي طلبات الدفع المعلّقة التي حُصّلت عبر البوابة لشركة محددة أو لشركة الطلب الحالي.
+ *
  * `asOf` is ignored: this job asks the gateway for live transaction status, and
  * there is no such thing as "what did MyFatoorah think last Tuesday". The
  * parameter exists only because the shared JOBS map passes it to every job.
  */
-export async function runPaymentReconcileJob(_asOf: string | null = null) {
-  const config = gatewayConfigFromEnv();
-  const since = new Date(Date.now() - RECONCILE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+export async function runPaymentReconcileJob(_asOf: string | null = null, companyId?: string) {
+  const activeCompany = getRequestCompany();
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  // Payment settlement reconciliation may settle pending links even when suspended.
+  const db = companyClient(resolvedCompanyId, { allowSuspended: true });
 
-  const requests = await requestsToPoll(since);
-  const errors: string[] = [];
-  let settled = 0;
-  let failed = 0;
+  const execute = async () => {
+    const config = gatewayConfigFromEnv();
+    const since = new Date(Date.now() - RECONCILE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  for (const request of requests) {
-    try {
-      const outcome = await reconcileOneRequest(config, request);
-      if (outcome === "settled") settled += 1;
-      if (outcome === "failed") failed += 1;
-    } catch (error) {
-      // One unreachable request must not stop the rest: a gateway blip would
-      // otherwise strand every later request until the next tick.
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${request.code}: ${message}`);
-      console.error("[paymentReconcileJob] request failed", request.code, message);
+    const requests = await requestsToPoll(db, since);
+    const errors: string[] = [];
+    let settled = 0;
+    let failed = 0;
+
+    for (const request of requests) {
+      try {
+        const outcome = await reconcileOneRequest(db, config, request);
+        if (outcome === "settled") settled += 1;
+        if (outcome === "failed") failed += 1;
+      } catch (error) {
+        // One unreachable request must not stop the rest: a gateway blip would
+        // otherwise strand every later request until the next tick.
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${request.code}: ${message}`);
+        console.error("[paymentReconcileJob] request failed", request.code, message);
+      }
     }
+
+    await db.rpc("write_audit", {
+      p_action: "job.payment_reconcile",
+      p_entity_type: "payment_request",
+      p_entity_id: null,
+      p_before: null,
+      p_after: { count: requests.length, settled, failed, errors: errors.length },
+      p_result: errors.length ? "failure" : "success",
+      p_error_code: errors.length ? "RECONCILE_PARTIAL_FAILURE" : null,
+    });
+
+    return { count: requests.length, settled, failed, errors };
+  };
+
+  if (activeCompany?.id === resolvedCompanyId) {
+    return execute();
   }
-
-  await supabaseAdmin.rpc("write_audit", {
-    p_action: "job.payment_reconcile",
-    p_entity_type: "payment_request",
-    p_entity_id: null,
-    p_before: null,
-    p_after: { count: requests.length, settled, failed, errors: errors.length },
-    p_result: errors.length ? "failure" : "success",
-    p_error_code: errors.length ? "RECONCILE_PARTIAL_FAILURE" : null,
-  });
-
-  return { count: requests.length, settled, failed, errors };
+  return runWithRequestCompany(
+    {
+      id: resolvedCompanyId,
+      slug: activeCompany?.slug ?? "",
+      status: "active",
+      host: activeCompany?.host ?? "",
+    },
+    execute,
+  );
 }

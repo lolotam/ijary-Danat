@@ -377,3 +377,38 @@ alter default privileges in schema public
   grant select, insert, update, delete on tables to company_service;
 alter default privileges in schema public
   grant usage, select on sequences to company_service;
+
+------------------------------------------------------------
+-- 7. Legacy single-company backfill source (migrations 255-273)
+------------------------------------------------------------
+
+/**
+ * يرجع معرف الشركة الوحيدة الموجودة لملء `company_id` في الصفوف القديمة، ويرفض لو فيه أكثر من شركة.
+ *
+ * Backfills of pre-conversion rows (one-company Danat data) need a company id.
+ * Picking "the oldest company" silently assigns rows to the wrong company once
+ * a second one exists, so this fails loudly instead: zero companies returns
+ * null (nothing to backfill), more than one raises and the backfill must be
+ * written explicitly. Migration-only: no API role can execute it.
+ */
+create or replace function public._legacy_single_company_id()
+returns uuid
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_count integer;
+  v_id uuid;
+begin
+  select count(*) into v_count from public.companies;
+  if v_count > 1 then
+    raise exception 'LEGACY_BACKFILL_AMBIGUOUS: % companies exist; backfill company_id explicitly', v_count;
+  end if;
+  select c.id into v_id from public.companies c;
+  return v_id;
+end;
+$$;
+
+revoke execute on function public._legacy_single_company_id()
+  from public, anon, authenticated, company_service;

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
@@ -8,6 +6,7 @@ import {
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
   type ContractFixture,
@@ -24,21 +23,6 @@ afterAll(closePool);
  * update was refused for it on every save.
  */
 
-/** ينشئ مستخدمًا في auth.users بدور تطبيق واحد ويعيد معرّفه. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
-}
-
 /** يستدعي الدالة لسجل تأمين ويعيد قيمة الوديعة التي أرجعتها. */
 async function syncDeposit(client: PoolClient, insuranceId: string): Promise<number> {
   const { rows } = await client.query<{ deposit: string }>(
@@ -51,9 +35,9 @@ async function syncDeposit(client: PoolClient, insuranceId: string): Promise<num
 /** يزرع سجل تأمين محفوظًا لعقد بمبلغ معطى ويعيد معرّفه. */
 async function seedInsurance(client: PoolClient, fx: ContractFixture, amount: number) {
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.insurance_payments (tenant_id, contract_id, unit_id, amount)
-     values ($1, $2, $3, $4) returning id`,
-    [fx.tenantId, fx.contractId, fx.unitId, amount],
+    `insert into public.insurance_payments (company_id, tenant_id, contract_id, unit_id, amount)
+     values ($1, $2, $3, $4, $5) returning id`,
+    [fx.companyId, fx.tenantId, fx.contractId, fx.unitId, amount],
   );
   return rows[0]!.id;
 }
@@ -87,7 +71,7 @@ describe("sync_contract_deposit_from_insurance (migration 220)", () => {
     await withRollback(async (client) => {
       const fx = await seedDepositContract(client, 300);
       const insuranceId = await seedInsurance(client, fx, 450);
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, fx.companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       expect(await syncDeposit(client, insuranceId)).toBe(450);
@@ -104,7 +88,7 @@ describe("sync_contract_deposit_from_insurance (migration 220)", () => {
     await withRollback(async (client) => {
       const fx = await seedDepositContract(client, 300);
       const insuranceId = await seedInsurance(client, fx, 300);
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, fx.companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       expect(await syncDeposit(client, insuranceId)).toBe(300);
@@ -119,7 +103,7 @@ describe("sync_contract_deposit_from_insurance (migration 220)", () => {
   test("an id that is not a saved insurance row is refused and no deposit moves", async () => {
     await withRollback(async (client) => {
       const fx = await seedDepositContract(client, 300);
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, fx.companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       const raised = await captureRaise(client, () => syncDeposit(client, fx.contractId));
@@ -134,7 +118,7 @@ describe("sync_contract_deposit_from_insurance (migration 220)", () => {
     await withRollback(async (client) => {
       const fx = await seedDepositContract(client, 300);
       const insuranceId = await seedInsurance(client, fx, 999);
-      const collector = await seedUserWithRole(client, "collector");
+      const collector = await seedCompanyUser(client, fx.companyId, "collector");
       await actAs(client, "authenticated", collector);
 
       const raised = await captureRaise(client, () => syncDeposit(client, insuranceId));

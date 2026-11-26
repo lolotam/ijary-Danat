@@ -65,6 +65,8 @@ Expected, all passing:
 
 Pass condition for SC-001: 100% of these pass. No second company is created in any shared environment before that.
 
+> **SC-001 verification (2026-11-26, branch `001-multi-company-saas`)**: PASS — `bun run test:db` applied all 280 migrations with zero errors; `bun run test:sql` passed 110/110 files (873/873 tests, including the isolation/RLS files and the review-fix guards in `platformGuards.sqltest.ts`); `bun run test` passed 442/442 files (4025 passed, 6 skipped, including `noOldestCompany.structure.test.ts`); `bun run typecheck` passed with 0 errors; `eslint` against `eslint.platform-allowlist.js` (`src/platform/**`, `src/company/hostCompany.server.ts`, `src/worker/relay.ts`, `src/worker/scheduler.ts`) passed with 0 `client.server` violations and 0 lint errors across `src/` and `server/`.
+
 ## Phase 1b — Background worker
 
 **Start the pieces**

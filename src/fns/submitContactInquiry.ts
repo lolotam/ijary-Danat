@@ -2,8 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { notifyContactInquiryRecord } from "@/fns/notifyContactInquiry";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { clientAddress } from "@/lib/clientAddress";
 import { rateLimitPublicForm } from "@/lib/publicFormGuard";
 
@@ -36,9 +37,13 @@ export const submitContactInquiry = createServerFn({ method: "POST" })
       throw new Error("Too many inquiries. Please try again later.");
     }
 
-    const { data: inserted, error } = await supabaseAdmin
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const { data: inserted, error } = await db
       .from("contact_inquiries")
       .insert({
+        company_id: company.id,
         name: data.name,
         email: data.email,
         phone: data.phone ?? null,

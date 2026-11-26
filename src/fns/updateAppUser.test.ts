@@ -31,12 +31,25 @@ vi.mock("@tanstack/react-start", () => ({
   createMiddleware: () => ({ server: (handler: unknown) => handler }),
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    auth: { admin: { updateUserById: mocks.updateUserById } },
-    from: mocks.from,
-    rpc: mocks.rpc,
-  },
+vi.mock("@/platform/authAdmin.server", () => ({
+  getAuthAdmin: () => ({ updateUserById: mocks.updateUserById }),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
+  serverCompanyClient: (companyId?: string | null) => ({
+    companyId: companyId ?? "11111111-1111-4111-8111-111111111111",
+    client: { from: mocks.from, rpc: mocks.rpc },
+  }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 import { updateAppUser } from "./updateAppUser";
@@ -167,7 +180,14 @@ describe("updateAppUser role swap", () => {
     expect(deletedRoleLists).toHaveLength(1);
     expect(deletedRoleLists[0]).toEqual(["accountant"]);
     expect(deletedRoleLists[0]).not.toContain("tenant");
-    expect(inserted).toEqual([{ user_id: USER, role: "admin", granted_by: ADMIN }]);
+    expect(inserted).toEqual([
+      {
+        user_id: USER,
+        role: "admin",
+        granted_by: ADMIN,
+        company_id: "11111111-1111-4111-8111-111111111111",
+      },
+    ]);
   });
 
   it("does not call delete when there is no existing managerial role to drop", async () => {
@@ -180,7 +200,14 @@ describe("updateAppUser role swap", () => {
 
     expect(result).toEqual({ updated: true, userId: USER, tenantContactSynced: true });
     expect(deletedRoleLists).toHaveLength(0);
-    expect(inserted).toEqual([{ user_id: USER, role: "readonly", granted_by: ADMIN }]);
+    expect(inserted).toEqual([
+      {
+        user_id: USER,
+        role: "readonly",
+        granted_by: ADMIN,
+        company_id: "11111111-1111-4111-8111-111111111111",
+      },
+    ]);
   });
 
   it("does not touch user_roles at all when the role already matches", async () => {
@@ -493,17 +520,19 @@ describe("updateAppUser username rename", () => {
    */
   function stubUsernameOwners(owners: Array<{ id: string; display_name: string }>) {
     mocks.from.mockImplementation(() => ({
-      select: () => ({
-        eq: () => ({
+      select: () => {
+        const chain = {
           single: async () => ({ data: { tenant_id: null }, error: null }),
+          eq: () => chain,
           neq: (_column: string, excluded: string) => ({
             limit: async () => ({
               data: owners.filter((owner) => owner.id !== excluded),
               error: null,
             }),
           }),
-        }),
-      }),
+        };
+        return { eq: () => chain };
+      },
       update: () => ({ eq: async () => ({ error: null }) }),
     }));
   }

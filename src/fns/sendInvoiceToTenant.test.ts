@@ -37,28 +37,39 @@ const companyRow = vi.fn();
 const templateRow = vi.fn();
 const enqueue = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "invoices") return { select: () => ({ eq: () => ({ single: invoiceRow }) }) };
-      if (table === "tenants") return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
-      // invoice_items: `.select("unit_id").eq("invoice_id", …).not("unit_id", "is", null)`.
-      if (table === "invoice_items") {
-        return { select: () => ({ eq: () => ({ not: () => itemsRow() }) }) };
-      }
-      // units/properties are resolved through invoice_items now (migration 112
-      // made invoices.unit_id nullable for consolidated invoices), via `.in(...)`.
-      if (table === "units") return { select: () => ({ in: () => unitsRow() }) };
-      if (table === "properties") return { select: () => ({ in: () => propertiesRow() }) };
-      if (table === "companies") {
-        return {
-          select: () => ({ order: () => ({ limit: () => ({ maybeSingle: companyRow }) }) }),
-        };
-      }
-      // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
-      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
-    },
+const dbClient = {
+  from: (table: string) => {
+    if (table === "invoices") return { select: () => ({ eq: () => ({ single: invoiceRow }) }) };
+    if (table === "tenants") return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
+    // invoice_items: `.select("unit_id").eq("invoice_id", …).not("unit_id", "is", null)`.
+    if (table === "invoice_items") {
+      return { select: () => ({ eq: () => ({ not: () => itemsRow() }) }) };
+    }
+    // units/properties are resolved through invoice_items now (migration 112
+    // made invoices.unit_id nullable for consolidated invoices), via `.in(...)`.
+    if (table === "units") return { select: () => ({ in: () => unitsRow() }) };
+    if (table === "properties") return { select: () => ({ in: () => propertiesRow() }) };
+    if (table === "companies") {
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: companyRow }) }),
+      };
+    }
+    // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
+    return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
   },
+};
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => dbClient,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 vi.mock("@/fns/enqueueNotification", () => ({

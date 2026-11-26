@@ -43,11 +43,12 @@ function sectionFor(name: string): string {
 }
 
 describe("module summary RPCs (live migration resolution)", () => {
-  test("get_payments_summary live definition is migration 106, not 79/85", () => {
-    // Proves the resolver itself cannot rot: once 106 re-issues the function,
-    // assertions must not keep reading dead SQL from 79/85.
+  test("get_payments_summary live definition is migration 283, not 79/85/106", () => {
+    // Proves the resolver itself cannot rot: once 283 re-issues the function,
+    // assertions must not keep reading dead SQL from earlier migrations.
     const file = resolveLiveMigrationFile("get_payments_summary");
-    expect(file.startsWith("106_")).toBe(true);
+    expect(file.startsWith("283_")).toBe(true);
+    expect(file.startsWith("106_")).toBe(false);
     expect(file.startsWith("79_")).toBe(false);
     expect(file.startsWith("85_")).toBe(false);
   });
@@ -61,19 +62,22 @@ describe("module summary RPCs (live migration resolution)", () => {
   test.each([...functions])("%s revokes execute from public and anon", (name) => {
     // Named explicitly: `revoke ... from public` does not reach anon, which
     // holds its own grant from Supabase's default privileges.
-    expect(sectionFor(name)).toMatch(
+    expect(liveMigrationSql(name)).toMatch(
       new RegExp(`revoke all on function public\\.${name}\\([^)]*\\)\\s+from public,\\s*anon`, "i"),
     );
   });
 
-  test.each([...functions])("%s grants execute to authenticated and service_role", (name) => {
-    expect(sectionFor(name)).toMatch(
-      new RegExp(
-        `grant execute on function public\\.${name}\\([^)]*\\)\\s+to authenticated,\\s*service_role`,
-        "i",
-      ),
-    );
-  });
+  test.each([...functions])(
+    "%s grants execute to authenticated, company_service, and service_role",
+    (name) => {
+      expect(liveMigrationSql(name)).toMatch(
+        new RegExp(
+          `grant execute on function public\\.${name}\\([^)]*\\)\\s+to authenticated,\\s*(?:company_service,\\s*)?service_role`,
+          "i",
+        ),
+      );
+    },
+  );
 
   test.each([...functions])("%s opens with a has_permission guard", (name) => {
     const body = sectionFor(name);
@@ -146,12 +150,10 @@ describe("module summary RPCs (live migration resolution)", () => {
       /count\(\*\)\s+filter\s*\(\s*where\s+t\.archived_at\s+is\s+not\s+null\s*\)/i,
     );
 
-    // Live definition is migration 91 (same 4-arg signature as 90 — no drop).
+    // Live definition is migration 283 (same 4-arg signature as 90/91/211 — no drop).
     // The 3-arg DROP lives only in 90's history; create-or-replace is correct here.
-    // Migration 211 re-issued get_contracts_summary for the ended-contract
-    // rule; get_tenants_summary is untouched and still resolves to 91.
-    expect(resolveLiveMigrationFile("get_contracts_summary").startsWith("211_")).toBe(true);
-    expect(resolveLiveMigrationFile("get_tenants_summary").startsWith("91_")).toBe(true);
+    expect(resolveLiveMigrationFile("get_contracts_summary").startsWith("283_")).toBe(true);
+    expect(resolveLiveMigrationFile("get_tenants_summary").startsWith("283_")).toBe(true);
     expect(sectionFor("get_contracts_summary")).not.toMatch(/drop function if exists/i);
     expect(sectionFor("get_tenants_summary")).not.toMatch(/drop function if exists/i);
   });

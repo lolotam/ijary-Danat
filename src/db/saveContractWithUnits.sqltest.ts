@@ -9,6 +9,8 @@ import {
   captureRaise,
   captureRaiseError,
   closePool,
+  seedCompanyUser,
+  setCompanyClaimContext,
   withRollback,
 } from "@/db/testDb";
 
@@ -40,6 +42,7 @@ async function seedFixture(client: PoolClient, unitCount = 2): Promise<Fixture> 
     [`شركة اختبار ${tag}`, `Test Co ${tag}`],
   );
   const companyId = company.rows[0].id;
+  await setCompanyClaimContext(client, companyId);
 
   const property = await client.query<{ id: string }>(
     `insert into public.properties (code, company_id, name_ar, name_en)
@@ -51,8 +54,8 @@ async function seedFixture(client: PoolClient, unitCount = 2): Promise<Fixture> 
   const unitIds: string[] = [];
   for (let index = 0; index < unitCount; index += 1) {
     const unit = await client.query<{ id: string }>(
-      `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-      [`U-${tag}-${index}`, propertyId, `Unit ${tag}-${index}`],
+      `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+      [companyId, `U-${tag}-${index}`, propertyId, `Unit ${tag}-${index}`],
     );
     unitIds.push(unit.rows[0].id);
   }
@@ -67,24 +70,9 @@ async function seedFixture(client: PoolClient, unitCount = 2): Promise<Fixture> 
   return { companyId, propertyId, tenantId, unitIds };
 }
 
-async function seedAdmin(client: PoolClient): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, 'admin'::public.app_role)`,
-    [userId],
-  );
-  await client.query(
-    `insert into public.profiles (id, email, display_name, is_active)
-     values ($1, $2, 'Save Contract Admin', true)
-     on conflict (id) do nothing`,
-    [userId, `${userId}@example.test`],
-  );
-  return userId;
+/** ينشئ مستخدم مدير ضمن الشركة المحددة لاختبار حفظ العقود. */
+async function seedAdmin(client: PoolClient, companyId: string): Promise<string> {
+  return seedCompanyUser(client, companyId, "admin", "scu-admin");
 }
 
 /**
@@ -94,7 +82,7 @@ async function seedAdmin(client: PoolClient): Promise<string> {
  * because `has_permission` short-circuits on `has_role(admin)` and no built-in
  * role splits create from update the way this test needs.
  */
-async function seedUpdateOnlyUser(client: PoolClient): Promise<string> {
+async function seedUpdateOnlyUser(client: PoolClient, companyId: string): Promise<string> {
   const userId = randomUUID();
   const tag = randomUUID().slice(0, 8);
   await client.query(
@@ -103,23 +91,23 @@ async function seedUpdateOnlyUser(client: PoolClient): Promise<string> {
     [userId, `${userId}@example.test`],
   );
   await client.query(
-    `insert into public.profiles (id, email, display_name, is_active)
-     values ($1, $2, 'Update Only', true) on conflict (id) do nothing`,
-    [userId, `${userId}@example.test`],
+    `insert into public.profiles (id, company_id, email, display_name, is_active)
+     values ($1, $2, $3, 'Update Only', true) on conflict (id) do nothing`,
+    [userId, companyId, `${userId}@example.test`],
   );
   const role = await client.query<{ id: string }>(
-    `insert into public.custom_roles (code, name_ar, name_en)
-     values ($1, $2, $3) returning id`,
-    [`updater-${tag}`, `محدّث ${tag}`, `Updater ${tag}`],
+    `insert into public.custom_roles (company_id, code, name_ar, name_en)
+     values ($1, $2, $3, $4) returning id`,
+    [companyId, `updater-${tag}`, `محدّث ${tag}`, `Updater ${tag}`],
   );
   await client.query(
-    `insert into public.custom_role_permissions (custom_role_id, permission_code)
-     values ($1, 'contracts.update')`,
-    [role.rows[0].id],
+    `insert into public.custom_role_permissions (company_id, custom_role_id, permission_code)
+     values ($1, $2, 'contracts.update')`,
+    [companyId, role.rows[0].id],
   );
   await client.query(
-    `insert into public.user_custom_roles (user_id, custom_role_id) values ($1, $2)`,
-    [userId, role.rows[0].id],
+    `insert into public.user_custom_roles (company_id, user_id, custom_role_id) values ($1, $2, $3)`,
+    [companyId, userId, role.rows[0].id],
   );
   return userId;
 }
@@ -170,7 +158,7 @@ describe("save_contract_with_units — create", () => {
   test("creates the contract AND its contract_units rows in one call", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 2);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const result = await saveContractWithUnits(client, {
@@ -204,7 +192,7 @@ describe("save_contract_with_units — create", () => {
   test("an omitted grace_days falls back to one day, and an explicit zero is kept (migration 249)", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 2);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const withoutGrace = Object.fromEntries(
@@ -227,7 +215,7 @@ describe("save_contract_with_units — create", () => {
   test("persists end_date_override_reason on create (correction 3 — the brief's column list omitted it)", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 1);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const result = await saveContractWithUnits(client, {
@@ -245,10 +233,13 @@ describe("save_contract_with_units — create", () => {
   test("refuses to create a contract with zero units, leaving no contracts row behind", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 1);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
-      const before = await client.query(`select count(*)::int n from public.contracts`);
+      const before = await client.query(
+        `select count(*)::int n from public.contracts where company_id = $1`,
+        [fixture.companyId],
+      );
 
       const message = await captureRaise(client, () =>
         saveContractWithUnits(client, { contract: contractPayload(fixture.tenantId), units: [] }),
@@ -256,7 +247,10 @@ describe("save_contract_with_units — create", () => {
       expect(message).toMatch(/at least one unit/);
 
       await actAsSuperuser(client);
-      const after = await client.query(`select count(*)::int n from public.contracts`);
+      const after = await client.query(
+        `select count(*)::int n from public.contracts where company_id = $1`,
+        [fixture.companyId],
+      );
       expect(after.rows[0].n).toBe(before.rows[0].n);
     });
   });
@@ -264,16 +258,7 @@ describe("save_contract_with_units — create", () => {
   test("a user without contracts.update is refused (SQLSTATE 42501)", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 1);
-      const readonlyUser = randomUUID();
-      await client.query(
-        `insert into auth.users (id, instance_id, aud, role, email)
-         values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-        [readonlyUser, `${readonlyUser}@example.test`],
-      );
-      await client.query(
-        `insert into public.user_roles (user_id, role) values ($1, 'readonly'::public.app_role)`,
-        [readonlyUser],
-      );
+      const readonlyUser = await seedCompanyUser(client, fixture.companyId, "readonly", "scu-ro");
       await actAs(client, "authenticated", readonlyUser);
 
       const message = await captureRaise(client, () =>
@@ -322,8 +307,8 @@ describe("save_contract_with_units — create", () => {
   test("contracts.update alone cannot create a contract, but can still update one", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 2);
-      const admin = await seedAdmin(client);
-      const updater = await seedUpdateOnlyUser(client);
+      const admin = await seedAdmin(client, fixture.companyId);
+      const updater = await seedUpdateOnlyUser(client, fixture.companyId);
 
       await actAs(client, "authenticated", admin);
       const created = await saveContractWithUnits(client, {
@@ -367,7 +352,7 @@ describe("save_contract_with_units — update", () => {
   test("adds, keeps, and drops units to match the new selection", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 3);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const created = await saveContractWithUnits(client, {
@@ -408,7 +393,7 @@ describe("save_contract_with_units — update", () => {
   test("clears end_date_override_reason on update — a stale value must not survive turning the override off", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 1);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const created = await saveContractWithUnits(client, {
@@ -435,7 +420,7 @@ describe("save_contract_with_units — update", () => {
   test("refuses to update down to zero units", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 1);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const created = await saveContractWithUnits(client, {
@@ -474,7 +459,7 @@ describe("save_contract_with_units — update", () => {
   test("names the real problem when a unit entry has no unit_id", async () => {
     await withRollback(async (client) => {
       const fixture = await seedFixture(client, 2);
-      const admin = await seedAdmin(client);
+      const admin = await seedAdmin(client, fixture.companyId);
       await actAs(client, "authenticated", admin);
 
       const created = await saveContractWithUnits(client, {

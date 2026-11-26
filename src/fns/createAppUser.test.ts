@@ -41,12 +41,25 @@ vi.mock("@tanstack/react-start", () => ({
   createMiddleware: () => ({ server: (handler: unknown) => handler }),
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    auth: { admin: { createUser: mocks.createUser, deleteUser: mocks.deleteUser } },
-    from: mocks.from,
-    rpc: mocks.rpc,
-  },
+vi.mock("@/platform/authAdmin.server", () => ({
+  getAuthAdmin: () => ({ createUser: mocks.createUser, deleteUser: mocks.deleteUser }),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
+  serverCompanyClient: (companyId?: string | null) => ({
+    companyId: companyId ?? "11111111-1111-4111-8111-111111111111",
+    client: { from: mocks.from, rpc: mocks.rpc },
+  }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 vi.mock("./notifyUserCredentials", () => ({
@@ -68,16 +81,20 @@ describe("createAppUser", () => {
           // The tenant-link guard filters on tenant_id, the username guard on
           // username, the email-owner lookup on email; routing by column lets
           // each be driven on its own.
-          select: () => ({
-            eq: (column: string) => ({
+          select: () => {
+            const byColumn = (column: string): Record<string, unknown> => ({
+              eq: (innerColumn: string) => (column === "company_id" ? byColumn(innerColumn) : {}),
               limit:
                 column === "username"
                   ? mocks.usernameOwners
                   : column === "email"
                     ? mocks.emailOwners
                     : mocks.linkedProfiles,
-            }),
-          }),
+            });
+            return {
+              eq: (column: string) => byColumn(column),
+            };
+          },
           upsert: () => ({ select: () => ({ single: mocks.profileUpsert }) }),
         };
       }
@@ -455,9 +472,13 @@ describe("createAppUser tenant portal + contact sync flags", () => {
     mocks.from.mockImplementation((table: string) => {
       if (table === "profiles") {
         return {
-          select: () => ({
-            eq: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
-          }),
+          select: () => {
+            const chain: Record<string, unknown> = {
+              eq: () => chain,
+              limit: () => Promise.resolve({ data: [], error: null }),
+            };
+            return chain;
+          },
           upsert: () => ({ select: () => ({ single: () => Promise.resolve({ error: null }) }) }),
         };
       }

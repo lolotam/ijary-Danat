@@ -31,68 +31,90 @@ export const state = {
   contractData: [] as Array<{ id: string; suppress_tenant_billing_docs: boolean | null }>,
 };
 
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
 /**
- * مصنع وحدة عميل Supabase Admin المزيّف، موجَّه حسب اسم الجدول.
- *
- * Factory for `vi.mock("@/integrations/supabase/client.server", …)`.
+ * مصنع وحدة سياق الشركة المزيّف لاختبارات إشعار نجاح الدفع.
  */
-export function supabaseAdminModule() {
+export function requestCompanyModule() {
   return {
-    supabaseAdmin: {
-      // Routed by table name. The earlier table-agnostic mock could only serve the
-      // registry read and the payments fetch, which is why every test here stopped
-      // before the sender did any work — and why nothing checked the mail itself.
-      from: (table: string) => {
-        if (table === "payments") {
-          // `.select("*").in("id", ids).eq("status", "confirmed")`.
-          return { select: () => ({ in: (...args: unknown[]) => paymentsIn(...args) }) };
-        }
-        if (table === "tenants") {
-          return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
-        }
-        if (table === "payment_allocations") {
-          return {
-            select: () => ({ in: async () => ({ data: state.allocationData, error: null }) }),
-          };
-        }
-        if (table === "invoices") {
-          return {
-            select: () => ({ in: async () => ({ data: state.invoiceData, error: null }) }),
-          };
-        }
-        if (table === "contracts") {
-          return {
-            select: () => ({ in: async () => ({ data: state.contractData, error: null }) }),
-          };
-        }
-        if (table === "notifications") {
-          // The idempotency scan:
-          // `.in("type").neq("state").eq("tenant_id").contains("payload")`.
-          return {
-            select: () => ({
-              in: () => ({
-                neq: () => ({ eq: () => ({ contains: () => notificationsContains() }) }),
-              }),
+    getRequestCompany: () => TEST_COMPANY,
+    requireRequestCompany: () => TEST_COMPANY,
+    runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+  };
+}
+
+/**
+ * مصنع وحدة عميل الشركة المزيّف، موجَّه حسب اسم الجدول.
+ *
+ * Factory for `vi.mock("@/company/companyClient.server", …)`.
+ */
+export function companyClientModule() {
+  const client = {
+    // Routed by table name. The earlier table-agnostic mock could only serve the
+    // registry read and the payments fetch, which is why every test here stopped
+    // before the sender did any work — and why nothing checked the mail itself.
+    from: (table: string) => {
+      if (table === "payments") {
+        // `.select("*").in("id", ids).eq("status", "confirmed")`.
+        return { select: () => ({ in: (...args: unknown[]) => paymentsIn(...args) }) };
+      }
+      if (table === "tenants") {
+        return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
+      }
+      if (table === "payment_allocations") {
+        return {
+          select: () => ({ in: async () => ({ data: state.allocationData, error: null }) }),
+        };
+      }
+      if (table === "invoices") {
+        return {
+          select: () => ({ in: async () => ({ data: state.invoiceData, error: null }) }),
+        };
+      }
+      if (table === "contracts") {
+        return {
+          select: () => ({ in: async () => ({ data: state.contractData, error: null }) }),
+        };
+      }
+      if (table === "notifications") {
+        // The idempotency scan:
+        // `.in("type").neq("state").eq("tenant_id").contains("payload")`.
+        return {
+          select: () => ({
+            in: () => ({
+              neq: () => ({ eq: () => ({ contains: () => notificationsContains() }) }),
             }),
-          };
-        }
-        if (table === "notification_templates") {
-          // The requested code is passed through to the stub, so a test can hand
-          // the receipt and the admin alert different bodies and prove the sender
-          // does not swap them.
-          return {
-            select: () => ({
-              eq: (_column: string, code: string) => ({
-                eq: () => ({ maybeSingle: () => templateRow(code) }),
-              }),
+          }),
+        };
+      }
+      if (table === "notification_templates") {
+        // The requested code is passed through to the stub, so a test can hand
+        // the receipt and the admin alert different bodies and prove the sender
+        // does not swap them.
+        return {
+          select: () => ({
+            eq: (_column: string, code: string) => ({
+              eq: () => ({ maybeSingle: () => templateRow(code) }),
             }),
-          };
-        }
-        // cron_jobs — the registry read: `.select("is_active").eq("key", …)`.
-        return { select: () => ({ eq: () => ({ maybeSingle }) }) };
-      },
-      rpc: (...args: unknown[]) => rpc(...args),
+          }),
+        };
+      }
+      // cron_jobs — the registry read: `.select("is_active").eq("key", …)`.
+      return { select: () => ({ eq: () => ({ maybeSingle }) }) };
     },
+    rpc: (...args: unknown[]) => rpc(...args),
+  };
+  return {
+    companyClient: () => client,
+    serverCompanyClient: (explicitCompanyId?: string) => ({
+      companyId: explicitCompanyId ?? TEST_COMPANY.id,
+      client,
+    }),
   };
 }
 

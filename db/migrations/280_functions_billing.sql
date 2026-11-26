@@ -1667,8 +1667,15 @@ $$;
 
 /**
  * ينقل الفواتير والدفعات والإيصالات عند تغيير المستأجر على العقد ضمن نفس الشركة.
+ *
+ * Trigger-only helper: the company comes from the contract row the trigger
+ * fired on (that row already passed RLS), never from a lookup inside this
+ * security definer function. Callable by no API role, so a staff session with
+ * a null company context cannot reach another company's ledgers through it.
  */
+drop function if exists public.reassign_contract_tenant_records(uuid, uuid, uuid);
 create or replace function public.reassign_contract_tenant_records(
+  _company uuid,
   _contract uuid,
   _old_tenant uuid,
   _new_tenant uuid
@@ -1679,11 +1686,15 @@ security definer
 set search_path = public
 as $$
 declare
-  v_company_id uuid := public.current_company_id();
+  v_company_id uuid := _company;
+  v_context_company uuid := public.current_company_id();
   _settling_payments uuid[];
 begin
-  if v_company_id is null then
-    select c.company_id into v_company_id from public.contracts c where c.id = _contract;
+  -- A request with a company context may only touch its own company; a
+  -- context-free platform update (service_role) relies on the row's company.
+  if v_company_id is null
+     or (v_context_company is not null and v_context_company <> v_company_id) then
+    raise exception 'COMPANY_REQUIRED' using errcode = '42501';
   end if;
 
   select array_agg(distinct pa.payment_id)
@@ -1711,12 +1722,14 @@ security definer
 set search_path = public
 as $$
 declare
-  v_company_id uuid := coalesce(public.current_company_id(), new.company_id);
+  v_company_id uuid := new.company_id;
+  v_context_company uuid := public.current_company_id();
 begin
-  if v_company_id is null then
+  if v_company_id is null
+     or (v_context_company is not null and v_context_company <> v_company_id) then
     raise exception 'COMPANY_REQUIRED' using errcode = '42501';
   end if;
-  perform public.reassign_contract_tenant_records(new.id, old.tenant_id, new.tenant_id);
+  perform public.reassign_contract_tenant_records(v_company_id, new.id, old.tenant_id, new.tenant_id);
   return new;
 end;
 $$;
@@ -1811,6 +1824,8 @@ end;
 $$;
 
 revoke execute on function public.tg_contract_propagate_tenant_change() from public, anon;
+revoke execute on function public.reassign_contract_tenant_records(uuid, uuid, uuid, uuid)
+  from public, anon, authenticated, company_service;
 revoke execute on function public.tg_contract_units_seed_occupies() from public, anon;
 revoke execute on function public.tg_contract_propagate_occupies() from public, anon;
 revoke execute on function public.tg_contract_units_sync_total() from public, anon;

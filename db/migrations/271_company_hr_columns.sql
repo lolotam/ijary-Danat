@@ -9,7 +9,7 @@
 ------------------------------------------------------------
 
 update public.employees
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.employees
@@ -66,7 +66,7 @@ update public.employee_documents d
    and d.company_id is null;
 
 update public.employee_documents
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.employee_documents
@@ -139,7 +139,7 @@ update public.salaries s
    and s.company_id is null;
 
 update public.salaries
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.salaries

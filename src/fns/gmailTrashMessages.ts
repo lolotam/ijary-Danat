@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   describeGmailApiError,
   getGmailAccessToken,
@@ -51,12 +52,14 @@ export const gmailTrashMessages = createServerFn({ method: "POST" })
       refusal: "You do not have permission to delete inbox messages.",
     });
 
+    const db = companyClient(requireRequestCompany().id);
+
     // Rows are read *before* any Gmail precondition, because whether Gmail is
     // needed at all depends on what was selected. Demanding a connection to
     // delete a Resend-only selection would block a delete that never touches
     // Google — the Gmail requirement is a property of the rows, not of the
     // action.
-    const { data: rows, error } = await supabaseAdmin
+    const { data: rows, error } = await db
       .from("gmail_messages")
       .select("id, message_id, raw_payload, provider")
       .in("id", data.ids);
@@ -101,7 +104,7 @@ export const gmailTrashMessages = createServerFn({ method: "POST" })
       // Gmail API is asked to trash a message it has never heard of, and the
       // row survives every delete attempt with an unexplained provider error.
       if (row.provider === "resend") {
-        const removed = await supabaseAdmin.from("gmail_messages").delete().eq("id", row.id);
+        const removed = await db.from("gmail_messages").delete().eq("id", row.id);
         if (removed.error) {
           failed.push({ id: row.id, reason: removed.error.message });
           continue;
@@ -148,7 +151,7 @@ export const gmailTrashMessages = createServerFn({ method: "POST" })
         continue;
       }
 
-      const removed = await supabaseAdmin.from("gmail_messages").delete().eq("id", row.id);
+      const removed = await db.from("gmail_messages").delete().eq("id", row.id);
       if (removed.error) {
         // Gmail has it in Trash; the local row will disappear on the next
         // successful attempt. Reported rather than swallowed.

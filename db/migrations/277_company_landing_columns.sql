@@ -13,7 +13,7 @@ alter table public.landing_media
   add column if not exists company_id uuid references public.companies(id);
 
 update public.landing_media
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.landing_media

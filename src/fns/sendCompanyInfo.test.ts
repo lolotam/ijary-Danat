@@ -25,77 +25,99 @@ vi.mock("@/fns/dispatchNotification", () => ({
   dispatchNotificationRecord: (id: string) => dispatch(id),
 }));
 
+const TEST_COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const TEST_COMPANY = {
+  id: TEST_COMPANY_ID,
+  slug: "danat",
+  status: "active" as const,
+  host: "danat.localhost",
+};
+
 const inserted: Array<Record<string, unknown>> = [];
 const uploads: string[] = [];
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "tenants") {
-        return {
-          select: () => ({
-            eq: () => ({
-              single: async () => ({
-                data: {
-                  id: "tenant-1",
-                  name: "أحمد",
-                  name_en: "Ahmed",
-                  email: "tenant@example.test",
-                  whatsapp: "+96550000000",
-                  mobile: null,
-                  preferred_language: "ar",
-                },
-                error: null,
-              }),
+const clientStub = {
+  from: (table: string) => {
+    if (table === "tenants") {
+      return {
+        select: () => ({
+          eq: () => ({
+            single: async () => ({
+              data: {
+                id: "tenant-1",
+                name: "أحمد",
+                name_en: "Ahmed",
+                email: "tenant@example.test",
+                whatsapp: "+96550000000",
+                mobile: null,
+                preferred_language: "ar",
+              },
+              error: null,
             }),
           }),
-        };
-      }
-      if (table === "companies") {
-        return {
-          select: () => ({
-            order: () => ({
-              limit: () => ({
-                maybeSingle: async () => ({
-                  data: { name_ar: "دانة", name_en: "Danat", logo_url: null, bank_logo_url: null },
-                  error: null,
-                }),
-              }),
+        }),
+      };
+    }
+    if (table === "companies") {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: {
+                id: TEST_COMPANY_ID,
+                slug: "danat",
+                status: "active",
+                name_ar: "دانة",
+                name_en: "Danat",
+                logo_url: null,
+                bank_logo_url: null,
+              },
+              error: null,
             }),
           }),
-        };
-      }
-      if (table === "notification_templates") {
-        // No admin-edited copy: the sender falls back to its built-in wording.
-        return {
-          select: () => ({
-            eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-          }),
-        };
-      }
-      if (table === "notifications") {
-        return {
-          insert: (row: Record<string, unknown>) => {
-            inserted.push(row);
-            return {
-              select: () => ({
-                single: async () => ({ data: { ...row, id: `n-${inserted.length}` }, error: null }),
-              }),
-            };
-          },
-        };
-      }
-      throw new Error(`Unexpected table in test: ${table}`);
-    },
-    storage: {
-      from: () => ({
-        upload: async (path: string) => {
-          uploads.push(path);
-          return { data: { path }, error: null };
+        }),
+      };
+    }
+    if (table === "notification_templates") {
+      // No admin-edited copy: the sender falls back to its built-in wording.
+      return {
+        select: () => ({
+          eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+        }),
+      };
+    }
+    if (table === "notifications") {
+      return {
+        insert: (row: Record<string, unknown>) => {
+          inserted.push(row);
+          return {
+            select: () => ({
+              single: async () => ({ data: { ...row, id: `n-${inserted.length}` }, error: null }),
+            }),
+          };
         },
-      }),
-    },
+      };
+    }
+    throw new Error(`Unexpected table in test: ${table}`);
   },
+  storage: {
+    from: () => ({
+      upload: async (path: string) => {
+        uploads.push(path);
+        return { data: { path }, error: null };
+      },
+    }),
+  },
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => Promise<unknown>) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => clientStub,
 }));
 
 const { sendCompanyInfo } = await import("./sendCompanyInfo");
@@ -116,7 +138,9 @@ describe("sendCompanyInfo", () => {
 
     expect(uploads).toHaveLength(1);
     const [pdfPath] = uploads;
-    expect(pdfPath).toMatch(/^company-info\/tenant-1_\d+\.pdf$/);
+    expect(pdfPath).toMatch(
+      new RegExp(`^companies/${TEST_COMPANY_ID}/company-info/tenant-1_\\d+\\.pdf$`),
+    );
 
     const byChannel = Object.fromEntries(inserted.map((row) => [row.channel, row.payload]));
     expect(byChannel.email).toMatchObject({

@@ -7,7 +7,10 @@ import type { Database } from "./database.types";
 // SELF_* aliases exist because Lovable reserves the `SUPABASE_` prefix on its
 // preview environment; production/Dokploy uses the plain names.
 const url = process.env.SUPABASE_URL || process.env.SELF_SUPABASE_URL;
+// The import of this module is what the platform allow-list guards; reading the
+// key here is the one place outside src/platform/ that must.
 const serviceRoleKey =
+  // eslint-disable-next-line no-restricted-syntax
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SELF_SUPABASE_SERVICE_ROLE_KEY;
 
 if (!url || !serviceRoleKey) {

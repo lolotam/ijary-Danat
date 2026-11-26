@@ -1,7 +1,8 @@
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   tenantCredentialsTemplate,
   welcomeManagerialTemplate,
@@ -230,7 +231,7 @@ async function enqueueUserCredentials(
   let wa: string | null = input.mobile?.trim() || null;
   let tenantLocale = locale;
   if (input.tenantId) {
-    const tenant = await supabaseAdmin
+    const tenant = await companyClient(requireRequestCompany().id)
       .from("tenants")
       .select("name, whatsapp, mobile, preferred_language, email")
       .eq("id", input.tenantId)

@@ -29,8 +29,20 @@ const state = {
 const connectionStateMock = vi.fn();
 const notifyDisconnectedMock = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: (table: string) => {
       if (table === "evolution_connections") {
         const chain: any = {
@@ -85,7 +97,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       }
       throw new Error(`Unexpected table: ${table}`);
     },
-  },
+  }),
 }));
 
 vi.mock("@/lib/providers/evolution", () => ({

@@ -28,14 +28,14 @@ async function seedYearContract(client: PoolClient) {
 }
 
 describe("commercial_brand_contracts", () => {
-  /** ينشئ علامة تجارية على عقار العقد. */
-  async function seedBrand(client: PoolClient, propertyId: string) {
+  /** ينشئ علامة تجارية على عقار العقد ضمن الشركة المحددة. */
+  async function seedBrand(client: PoolClient, companyId: string, propertyId: string) {
     const tag = randomUUID().slice(0, 8);
     const { rows } = await client.query<{ id: string }>(
       `insert into public.commercial_brands
-         (property_id, name_original, name_ar, name_en, slug)
-       values ($1, $2, $3, $4, $5) returning id`,
-      [propertyId, `Shop ${tag}`, `محل ${tag}`, `Shop ${tag}`, `shop-${tag}`],
+         (company_id, property_id, name_original, name_ar, name_en, slug)
+       values ($1, $2, $3, $4, $5, $6) returning id`,
+      [companyId, propertyId, `Shop ${tag}`, `محل ${tag}`, `Shop ${tag}`, `shop-${tag}`],
     );
     return rows[0].id;
   }
@@ -53,10 +53,11 @@ describe("commercial_brand_contracts", () => {
     await withRollback(async (client) => {
       const first = await seedYearContract(client);
       const second = await seedContract(client, {
+        companyId: first.companyId,
         startDate: `${THIS_YEAR}-01-01`,
         endDate: `${THIS_YEAR}-12-31`,
       });
-      const brandId = await seedBrand(client, first.propertyId);
+      const brandId = await seedBrand(client, first.companyId, first.propertyId);
 
       await client.query(`select * from public.save_brand_contracts($1, $2::uuid[])`, [
         brandId,
@@ -73,10 +74,11 @@ describe("commercial_brand_contracts", () => {
     await withRollback(async (client) => {
       const first = await seedYearContract(client);
       const second = await seedContract(client, {
+        companyId: first.companyId,
         startDate: `${THIS_YEAR}-01-01`,
         endDate: `${THIS_YEAR}-12-31`,
       });
-      const brandId = await seedBrand(client, first.propertyId);
+      const brandId = await seedBrand(client, first.companyId, first.propertyId);
       await client.query(`select * from public.save_brand_contracts($1, $2::uuid[])`, [
         brandId,
         [first.contractId, second.contractId],
@@ -93,8 +95,8 @@ describe("commercial_brand_contracts", () => {
 
   test("an empty array unlinks the shop entirely", async () => {
     await withRollback(async (client) => {
-      const { contractId, propertyId } = await seedYearContract(client);
-      const brandId = await seedBrand(client, propertyId);
+      const { companyId, contractId, propertyId } = await seedYearContract(client);
+      const brandId = await seedBrand(client, companyId, propertyId);
       await client.query(`select * from public.save_brand_contracts($1, $2::uuid[])`, [
         brandId,
         [contractId],
@@ -108,8 +110,8 @@ describe("commercial_brand_contracts", () => {
 
   test("saving the same set twice is idempotent, not a duplicate-key failure", async () => {
     await withRollback(async (client) => {
-      const { contractId, propertyId } = await seedYearContract(client);
-      const brandId = await seedBrand(client, propertyId);
+      const { companyId, contractId, propertyId } = await seedYearContract(client);
+      const brandId = await seedBrand(client, companyId, propertyId);
       await client.query(`select * from public.save_brand_contracts($1, $2::uuid[])`, [
         brandId,
         [contractId],
@@ -126,8 +128,8 @@ describe("commercial_brand_contracts", () => {
 
   test("deleting a contract takes its links with it, leaving the shop", async () => {
     await withRollback(async (client) => {
-      const { contractId, propertyId } = await seedYearContract(client);
-      const brandId = await seedBrand(client, propertyId);
+      const { companyId, contractId, propertyId } = await seedYearContract(client);
+      const brandId = await seedBrand(client, companyId, propertyId);
       await client.query(`select * from public.save_brand_contracts($1, $2::uuid[])`, [
         brandId,
         [contractId],

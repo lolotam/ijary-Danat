@@ -1,8 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { backfillChatAvatarsInBackground } from "@/fns/evolutionAvatars";
 import { confirmSessionDisconnect } from "@/fns/evolutionSessionWatch";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/database.types";
 import {
   addressableJid,
@@ -172,12 +173,12 @@ export function buildIngestRow(
 }
 
 /** يبتلع دفعة الرسائل الواردة/الصادرة من حدث MESSAGES_UPSERT عبر دالة القاعدة ويطلق جلب الصور في الخلفية. */
-async function handleMessagesUpsert(body: Rec): Promise<void> {
+async function handleMessagesUpsert(companyId: string, body: Rec): Promise<void> {
   const rows = messageItems(body)
     .map((item) => buildIngestRow(item))
     .filter((row): row is Rec => row !== null);
   if (!rows.length) return;
-  const result = await supabaseAdmin.rpc("ingest_whatsapp_messages", {
+  const result = await companyClient(companyId).rpc("ingest_whatsapp_messages", {
     p_rows: rows as unknown as Json,
   });
   if (result.error) throw new Error(result.error.message);
@@ -186,7 +187,10 @@ async function handleMessagesUpsert(body: Rec): Promise<void> {
   // incoming message appear in the list with the same face the phone shows.
   // Deliberately not awaited: Evolution retries a webhook it considers slow,
   // and a retried batch is more work for the same pictures.
-  backfillChatAvatarsInBackground(rows.map((row) => String(row.chat_number)));
+  backfillChatAvatarsInBackground(
+    rows.map((row) => String(row.chat_number)),
+    companyId,
+  );
 }
 
 /**
@@ -204,7 +208,8 @@ async function handleMessagesUpsert(body: Rec): Promise<void> {
  * a late ack cannot un-cancel a row an admin already handled. The 2026-09-02
  * overdue reminder to one tenant sat `sent` all day this way.
  */
-async function handleMessagesUpdate(body: Rec): Promise<void> {
+async function handleMessagesUpdate(companyId: string, body: Rec): Promise<void> {
+  const db = companyClient(companyId);
   for (const item of messageItems(body)) {
     const key = asRecord(item.key);
     const update = asRecord(item.update);
@@ -215,7 +220,7 @@ async function handleMessagesUpdate(body: Rec): Promise<void> {
 
     const inboxStatus = inboxStatusForAck(status);
     if (!inboxStatus) continue;
-    const inbox = await supabaseAdmin
+    const inbox = await db
       .from("whatsapp_messages")
       .update({ status: inboxStatus })
       .eq("message_id", keyId);
@@ -225,7 +230,7 @@ async function handleMessagesUpdate(body: Rec): Promise<void> {
     // A multi-part send stores its ids comma-joined; match the whole id at
     // any position. keyId is validated alphanumeric above, so it is safe in
     // a pattern.
-    const parked = await supabaseAdmin
+    const parked = await db
       .from("notifications")
       .update({
         state: "needs_review",
@@ -245,7 +250,7 @@ async function handleMessagesUpdate(body: Rec): Promise<void> {
  * the background so the webhook still returns 200 immediately without risking an
  * unhandled rejection.
  */
-async function handleConnectionUpdate(body: Rec): Promise<void> {
+async function handleConnectionUpdate(companyId: string, body: Rec): Promise<void> {
   const data = asRecord(body.data);
   const state = String(data?.state ?? data?.connection ?? data?.status ?? "").toLowerCase();
   if (!state) return;
@@ -253,7 +258,10 @@ async function handleConnectionUpdate(body: Rec): Promise<void> {
     state === "open"
       ? { last_connection_state: state, last_qr: null }
       : { last_connection_state: state };
-  const result = await supabaseAdmin.from("evolution_connections").update(updates).eq("id", 1);
+  const result = await companyClient(companyId)
+    .from("evolution_connections")
+    .update(updates)
+    .eq("id", 1);
   if (result.error) throw new Error(result.error.message);
   if (state !== "open" && state !== "connecting") {
     void confirmSessionDisconnect().catch((error) => {
@@ -268,12 +276,12 @@ async function handleConnectionUpdate(body: Rec): Promise<void> {
 /**
  * يحفظ رمز QR المحدّث في صف الاقتران ويضع الحالة على `connecting`.
  */
-async function handleQrUpdate(body: Rec): Promise<void> {
+async function handleQrUpdate(companyId: string, body: Rec): Promise<void> {
   const data = asRecord(body.data);
   const qrcode = asRecord(data?.qrcode);
   const qr = qrcode?.base64 ?? qrcode?.code ?? data?.base64 ?? data?.code ?? null;
   if (typeof qr !== "string" || !qr) return;
-  const result = await supabaseAdmin
+  const result = await companyClient(companyId)
     .from("evolution_connections")
     .update({ last_qr: qr, last_connection_state: "connecting" })
     .eq("id", 1);
@@ -302,7 +310,8 @@ export async function respondToEvolutionWebhook(request: Request): Promise<Respo
   const secret = request.headers.get(EVOLUTION_WEBHOOK_HEADER);
   if (!secret) return json(401, { error: "Unauthorized" });
 
-  const connection = await supabaseAdmin
+  const companyId = requireRequestCompany().id;
+  const connection = await companyClient(companyId)
     .from("evolution_connections")
     .select("instance_name, webhook_secret, previous_webhook_secret")
     .eq("id", 1)
@@ -326,10 +335,10 @@ export async function respondToEvolutionWebhook(request: Request): Promise<Respo
   if (!HANDLED_EVENTS.has(event)) return json(200, { received: true, ignored: true });
 
   try {
-    if (event === "MESSAGES_UPSERT") await handleMessagesUpsert(body);
-    else if (event === "MESSAGES_UPDATE") await handleMessagesUpdate(body);
-    else if (event === "CONNECTION_UPDATE") await handleConnectionUpdate(body);
-    else await handleQrUpdate(body);
+    if (event === "MESSAGES_UPSERT") await handleMessagesUpsert(companyId, body);
+    else if (event === "MESSAGES_UPDATE") await handleMessagesUpdate(companyId, body);
+    else if (event === "CONNECTION_UPDATE") await handleConnectionUpdate(companyId, body);
+    else await handleQrUpdate(companyId, body);
   } catch (error) {
     // A storage failure must surface as 5xx so Evolution redelivers; the
     // ingestion RPC makes the redelivery idempotent.

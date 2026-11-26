@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, actAsSuperuser, closePool, seedContract, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  closePool,
+  seedCompanyUser,
+  seedContract,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -21,21 +28,6 @@ async function lifecycleOf(client: PoolClient, tenantId: string): Promise<string
     [tenantId],
   );
   return rows[0].lifecycle;
-}
-
-/** Creates an auth user holding `role`, so has_permission resolves for it. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
 }
 
 describe("tenant lifecycle is derived from contracts", () => {
@@ -148,6 +140,7 @@ describe("tenant lifecycle is derived from contracts", () => {
         endDate: "2026-12-31",
       });
       const to = await seedContract(client, {
+        companyId: from.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -243,11 +236,11 @@ describe("the sync survives RLS", () => {
     // contracts.read but not contracts.update (03_phase1:296-311) — so the test
     // constructs it. The transaction is rolled back.
     await withRollback(async (client) => {
-      const { tenantId, contractId } = await seedContract(client, {
+      const { tenantId, contractId, companyId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, companyId, "accountant");
       await client.query(
         `insert into public.role_permissions (role, permission_code)
          values ('accountant', 'contracts.update')
@@ -280,11 +273,11 @@ describe("the sync survives RLS", () => {
 describe("set_tenant_blocked", () => {
   test("an admin can block and unblock, and unblocking recomputes", async () => {
     await withRollback(async (client) => {
-      const { tenantId } = await seedContract(client, {
+      const { tenantId, companyId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       await client.query(`select public.set_tenant_blocked($1, true)`, [tenantId]);
@@ -300,12 +293,12 @@ describe("set_tenant_blocked", () => {
 
   test("unblocking a contractless tenant lands on inactive, not active", async () => {
     await withRollback(async (client) => {
-      const { tenantId, contractId } = await seedContract(client, {
+      const { tenantId, contractId, companyId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
       await client.query(`delete from public.contracts where id = $1`, [contractId]);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       await client.query(`select public.set_tenant_blocked($1, true)`, [tenantId]);
@@ -316,11 +309,11 @@ describe("set_tenant_blocked", () => {
 
   test("a user without tenants.update is refused", async () => {
     await withRollback(async (client) => {
-      const { tenantId } = await seedContract(client, {
+      const { tenantId, companyId } = await seedContract(client, {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const collector = await seedUserWithRole(client, "collector");
+      const collector = await seedCompanyUser(client, companyId, "collector");
       await actAs(client, "authenticated", collector);
 
       await expect(

@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-vi.mock("@/integrations/supabase/client.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).supabaseAdminModule(),
+vi.mock("@/company/requestCompany.server", async () =>
+  (await import("./notifyPaymentSuccess.testkit")).requestCompanyModule(),
+);
+vi.mock("@/company/companyClient.server", async () =>
+  (await import("./notifyPaymentSuccess.testkit")).companyClientModule(),
 );
 vi.mock("@/lib/paymentReceiptPdf", async () =>
   (await import("./notifyPaymentSuccess.testkit")).paymentReceiptPdfModule(),

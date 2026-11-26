@@ -1,3 +1,5 @@
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   notifyAdminEvent,
@@ -7,7 +9,6 @@ import {
   type AdminNotificationResult,
 } from "@/fns/adminEmailNotification";
 import { translatorFor } from "@/i18n/dictionary";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 const WORKFLOW_KEY = "contact-inquiry-received";
@@ -41,7 +42,11 @@ export async function notifyContactInquiryRecord(
     type: "contact_inquiry",
     load: async () =>
       rowOrThrow(
-        await supabaseAdmin.from("contact_inquiries").select("*").eq("id", inquiryId).single(),
+        await companyClient(requireRequestCompany().id)
+          .from("contact_inquiries")
+          .select("*")
+          .eq("id", inquiryId)
+          .single(),
       ),
     dedupeMatch: { inquiry_id: inquiryId },
     build: buildContactMessage,

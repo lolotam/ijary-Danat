@@ -1,9 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import type { Database } from "@/integrations/supabase/database.types";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json, ReportFrequency, ReportKind } from "@/integrations/supabase/database.types";
 import { attachmentPayload, renderAndStorePdf } from "@/lib/reportPdfAttachment";
 import { requirePermission } from "@/fns/requirePermission";
@@ -24,6 +28,7 @@ function recipients(value: Json): string[] {
   return value.filter((item): item is string => typeof item === "string" && item.includes("@"));
 }
 
+/** يحسب تاريخ التشغيل التالي بعد التنفيذ الحالي وفق وتيرة التقرير. */
 function nextRun(frequency: ReportFrequency, from = new Date()): string {
   const next = new Date(from);
   if (frequency === "daily") next.setUTCDate(next.getUTCDate() + 1);
@@ -40,14 +45,15 @@ function nextRun(frequency: ReportFrequency, from = new Date()): string {
  * generated_reports, PDF, notification, next run — stays one code path.
  */
 async function buildReportSnapshot(
+  db: SupabaseClient<Database>,
   schedule: { id: string; report_kind: ReportKind },
   asOf: string | null,
 ) {
   const args = { p_schedule_id: schedule.id, p_as_of: asOf };
   const htmlResult =
     schedule.report_kind === "overdue_contracts"
-      ? await supabaseAdmin.rpc("build_overdue_contracts_report_html", args)
-      : await supabaseAdmin.rpc("build_scheduled_report_html", args);
+      ? await db.rpc("build_overdue_contracts_report_html", args)
+      : await db.rpc("build_scheduled_report_html", args);
   if (htmlResult.error) throw new Error(htmlResult.error.message);
   const snapshot = htmlResult.data[0];
   if (!snapshot) throw new Error("The report generator returned no snapshot.");
@@ -55,10 +61,17 @@ async function buildReportSnapshot(
 }
 
 /**
- * يشغّل جدولاً زمنياً لتقرير: يولّد اللقطة، يرسلها لكل المستلمين، ويحدّث موعد التشغيل التالي.
+ * يشغّل جدولاً زمنياً لتقرير ضمن نطاق الشركة الحالية: يولّد اللقطة، يرسلها، ويحدّث موعد التشغيل التالي.
  */
-export async function runReportScheduleRecord(scheduleId: string, asOf: string | null = null) {
-  const scheduleResult = await supabaseAdmin
+export async function runReportScheduleRecord(
+  scheduleId: string,
+  asOf: string | null = null,
+  companyId?: string,
+) {
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  const db = companyClient(resolvedCompanyId);
+
+  const scheduleResult = await db
     .from("report_schedules")
     .select("*")
     .eq("id", scheduleId)
@@ -67,10 +80,11 @@ export async function runReportScheduleRecord(scheduleId: string, asOf: string |
   const schedule = scheduleResult.data;
   const emails = recipients(schedule.recipients);
   if (!emails.length) throw new Error("The report schedule has no valid internal recipients.");
-  const snapshot = await buildReportSnapshot(schedule, asOf);
-  const generatedResult = await supabaseAdmin
+  const snapshot = await buildReportSnapshot(db, schedule, asOf);
+  const generatedResult = await db
     .from("generated_reports")
     .insert({
+      company_id: resolvedCompanyId,
       schedule_id: schedule.id,
       period_start: snapshot.period_start,
       period_end: snapshot.period_end,
@@ -92,9 +106,10 @@ export async function runReportScheduleRecord(scheduleId: string, asOf: string |
     prefix: "scheduled-reports",
   });
 
-  const notificationResult = await supabaseAdmin
+  const notificationResult = await db
     .from("notifications")
     .insert({
+      company_id: resolvedCompanyId,
       report_schedule_id: schedule.id,
       type: "scheduled_report",
       channel: "email",
@@ -123,15 +138,15 @@ export async function runReportScheduleRecord(scheduleId: string, asOf: string |
   const now = new Date();
   const sent = dispatched.state === "sent";
   const [generatedUpdate, scheduleUpdate, auditWrite] = await Promise.all([
-    supabaseAdmin
+    db
       .from("generated_reports")
       .update({ sent, sent_at: sent ? now.toISOString() : null })
       .eq("id", generatedResult.data.id),
-    supabaseAdmin
+    db
       .from("report_schedules")
       .update({ last_run_at: now.toISOString(), next_run_at: nextRun(schedule.frequency, now) })
       .eq("id", schedule.id),
-    supabaseAdmin.rpc("write_audit", {
+    db.rpc("write_audit", {
       p_action: "report_schedule.run",
       p_entity_type: "report_schedule",
       p_entity_id: schedule.id,

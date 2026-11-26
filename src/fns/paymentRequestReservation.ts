@@ -1,5 +1,8 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json, Tables } from "@/integrations/supabase/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import type { Database, Json, Tables } from "@/integrations/supabase/database.types";
 import { roundToFils } from "@/lib/fils";
 
 import type { HostedPaymentMethod, PortalInvoice } from "./createPayment";
@@ -49,8 +52,9 @@ export interface InvoiceSelection {
   total: number;
 }
 
-/** ما يحتاجه الحجز: اختيار الفواتير ومن يدفع وبأي طريقة. */
+/** ما يحتاجه الحجز: اختيار الفواتير ومن يدفع وبأي طريقة ومعرّف الشركة. */
 interface ReservationInput {
+  companyId?: string;
   selection: InvoiceSelection;
   tenantId: string;
   userId: string;
@@ -99,8 +103,8 @@ function pinnedPaymentMethod(requestPayload: Json | null): string | undefined {
 }
 
 /** يقرأ الصف الذي يحمل مفتاح الاختيار حالياً، إن وُجد. */
-async function requestHoldingKey(requestKey: string) {
-  const query = await supabaseAdmin
+async function requestHoldingKey(db: SupabaseClient<Database>, requestKey: string) {
+  const query = await db
     .from("payment_requests")
     .select("*")
     .eq("idempotency_key", requestKey)
@@ -141,8 +145,12 @@ function reuseOrRefuse(row: Tables<"payment_requests">, input: ReservationInput)
  * it. Filtering on the key and the status read too makes a concurrent retire of the same row a
  * no-op instead of relabelling a row another call already replaced.
  */
-async function retireRequest(row: Tables<"payment_requests">, requestKey: string) {
-  const update = await supabaseAdmin
+async function retireRequest(
+  db: SupabaseClient<Database>,
+  row: Tables<"payment_requests">,
+  requestKey: string,
+) {
+  const update = await db
     .from("payment_requests")
     .update({
       idempotency_key: null,
@@ -157,11 +165,17 @@ async function retireRequest(row: Tables<"payment_requests">, requestKey: string
   if (update.error) throw new Error(update.error.message);
 }
 
-/** يُنشئ صف طلب دفع جديداً يحمل مفتاح الاختيار. */
-function insertRequest(input: ReservationInput, requestKey: string) {
-  return supabaseAdmin
+/** يُنشئ صف طلب دفع جديداً يحمل مفتاح الاختيار ضمن نطاق الشركة. */
+function insertRequest(
+  db: SupabaseClient<Database>,
+  companyId: string,
+  input: ReservationInput,
+  requestKey: string,
+) {
+  return db
     .from("payment_requests")
     .insert({
+      company_id: companyId,
       tenant_id: input.tenantId,
       amount: input.selection.total,
       requested_invoice_ids: input.selection.invoiceIds,
@@ -185,16 +199,18 @@ function insertRequest(input: ReservationInput, requestKey: string) {
  * on "pay" yield one link.
  */
 export async function reservePaymentRequest(input: ReservationInput): Promise<Reservation> {
+  const companyId = input.companyId ?? requireRequestCompany().id;
+  const db = companyClient(companyId);
   const requestKey = await idempotencyKey(input.tenantId, input.selection.invoiceIds);
-  const existing = await requestHoldingKey(requestKey);
+  const existing = await requestHoldingKey(db, requestKey);
   if (existing) {
     const reuse = reuseOrRefuse(existing, input);
     if (reuse) return reuse;
-    await retireRequest(existing, requestKey);
+    await retireRequest(db, existing, requestKey);
   }
-  const insertQuery = await insertRequest(input, requestKey);
+  const insertQuery = await insertRequest(db, companyId, input, requestKey);
   if (insertQuery.error?.code === "23505") {
-    const winner = await requestHoldingKey(requestKey);
+    const winner = await requestHoldingKey(db, requestKey);
     const reuse = winner ? reuseOrRefuse(winner, input) : null;
     if (reuse) return reuse;
     throw new Error("A payment request for these invoices already exists.");

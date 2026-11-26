@@ -1,8 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
 import { getRequest } from "@tanstack/react-start/server";
 
-import type { Database } from "@/integrations/supabase/database.types";
 import { clientAddress } from "@/lib/clientAddress";
+import { loginAuditClient, type LoginAuditHeaders } from "@/platform/loginAuditClient.server";
 
 /**
  * تسجيل محاولات الدخول في سجل التدقيق.
@@ -20,7 +19,7 @@ import { clientAddress } from "@/lib/clientAddress";
  * or a mobile number stored in a different format — but the credential itself
  * is not passed into this module at all, so it cannot leak into `after`.
  *
- * **Why a purpose-built client rather than `supabaseAdmin`.** `write_audit`
+ * **Why a purpose-built client (`src/platform/loginAuditClient.server.ts`) rather than `supabaseAdmin`.** `write_audit`
  * derives `ip`, `user_agent`, `path` and `correlation_id` from PostgREST's
  * `request.headers`, which are the headers *our* Node process sent to
  * PostgREST — not the browser's. `supabaseAdmin` sends none of them, so those
@@ -55,9 +54,6 @@ export interface LoginAuditInput {
   errorCode: LoginAuditErrorCode | null;
 }
 
-/** الترويسات المُعاد إرسالها إلى PostgREST ليقرأها write_audit. */
-type ForwardedHeaders = Record<string, string>;
-
 /**
  * ينسخ ترويسات الزائر التي يقرأها write_audit من الطلب الجاري.
  *
@@ -77,7 +73,7 @@ type ForwardedHeaders = Record<string, string>;
  * Returns an empty set outside a request context (a job, a test) rather than
  * throwing — an audit row with null request metadata beats no audit row.
  */
-function forwardedRequestHeaders(): ForwardedHeaders {
+function forwardedRequestHeaders(): LoginAuditHeaders {
   let request: Request;
   try {
     request = getRequest();
@@ -85,7 +81,7 @@ function forwardedRequestHeaders(): ForwardedHeaders {
     return {};
   }
 
-  const headers: ForwardedHeaders = {};
+  const headers: LoginAuditHeaders = {};
 
   const address = clientAddress(request);
   if (address) headers["x-danat-client-ip"] = address;
@@ -106,32 +102,6 @@ function forwardedRequestHeaders(): ForwardedHeaders {
 }
 
 /**
- * يبني عميلاً موجّهاً لكتابة صف التدقيق وحده، بصلاحية service_role دائماً.
- *
- * Always service_role, never the visitor's own token. Migration 209 honours
- * `x-danat-client-ip`, `x-danat-request-path` and `p_actor_id` only for that
- * role — because `write_audit` is granted to `authenticated` and PostgREST
- * exposes it, so a signed-in user could otherwise attach a false address, path
- * or actor to an audit row.
- *
- * `autoRefreshToken: false` remains set for the same reason every other client
- * in this codebase sets it: auth-js starts its refresh ticker unconditionally
- * off-browser, and a ticker outliving a per-request client is what previously
- * revoked browser session families as suspected token reuse.
- */
-function auditClient(headers: ForwardedHeaders) {
-  const url = process.env.SUPABASE_URL || process.env.SELF_SUPABASE_URL;
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SELF_SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) return null;
-
-  return createClient<Database>(url, serviceRoleKey, {
-    global: { headers },
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-}
-
-/**
  * يكتب صف تدقيق واحداً لمحاولة دخول، ولا يفشل أبداً بشكل يمنع الدخول.
  *
  * Swallowing the error is deliberate. An audit outage must not become an
@@ -140,7 +110,7 @@ function auditClient(headers: ForwardedHeaders) {
 export async function recordLoginAttempt(input: LoginAuditInput): Promise<void> {
   try {
     const headers = forwardedRequestHeaders();
-    const client = auditClient(headers);
+    const client = loginAuditClient(headers);
     if (!client) return;
 
     const { error } = await client.rpc("write_audit", {
@@ -185,7 +155,7 @@ export async function recordFailedLoginAttempt(input: {
 }): Promise<void> {
   try {
     const headers = forwardedRequestHeaders();
-    const client = auditClient(headers);
+    const client = loginAuditClient(headers);
     if (!client) return;
 
     const { error } = await client.rpc("record_failed_login", {

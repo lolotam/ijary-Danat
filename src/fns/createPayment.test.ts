@@ -22,9 +22,8 @@ vi.mock("@tanstack/react-start", () => {
   };
 });
 
-// Mock supabaseAdmin inline to avoid ReferenceError
-vi.mock("@/integrations/supabase/client.server", () => {
-  const adminMock = {
+const { adminMock } = vi.hoisted(() => ({
+  adminMock: {
     from: vi.fn().mockReturnThis(),
     select: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
@@ -32,13 +31,29 @@ vi.mock("@/integrations/supabase/client.server", () => {
     eq: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockReturnThis(),
     single: vi.fn().mockReturnThis(),
-  };
-  return {
-    supabaseAdmin: adminMock,
-  };
-});
+  },
+}));
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => adminMock,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "company-123",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  getRequestCompany: () => ({
+    id: "company-123",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+}));
+
+const supabaseAdmin = adminMock;
 import {
   assertPortalMethodEnabled,
   buildHostedPaymentPayload,
@@ -403,7 +418,11 @@ describe("createPayment authorization", () => {
             eq: () => ({
               single: () =>
                 Promise.resolve({
-                  data: { id: "tenant-123", company_id: null, tenant_portal_enabled: true },
+                  data: {
+                    id: "tenant-123",
+                    company_id: "company-123",
+                    tenant_portal_enabled: true,
+                  },
                   error: null,
                 }),
             }),

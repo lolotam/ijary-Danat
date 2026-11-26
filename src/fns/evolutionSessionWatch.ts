@@ -1,5 +1,6 @@
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { isReportableSkip } from "@/fns/notificationSkip";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { EvolutionApiError, extractState } from "@/lib/evolution/client";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 
@@ -35,7 +36,8 @@ async function dispatchDisconnectAlert(source: "webhook" | "send"): Promise<void
  */
 export async function confirmSessionDisconnect(): Promise<void> {
   try {
-    const rowResult = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+    const rowResult = await db
       .from("evolution_connections")
       .select("instance_name, disconnect_alert_armed, last_connection_state")
       .eq("id", 1)
@@ -55,7 +57,7 @@ export async function confirmSessionDisconnect(): Promise<void> {
       return;
     }
 
-    const providerResult = await supabaseAdmin
+    const providerResult = await db
       .from("provider_configs")
       .select("is_enabled, config")
       .eq("provider", "evolution_api")
@@ -83,7 +85,7 @@ export async function confirmSessionDisconnect(): Promise<void> {
     }
 
     if (liveState === "open") {
-      const heal = await supabaseAdmin
+      const heal = await db
         .from("evolution_connections")
         .update({ last_connection_state: "open" })
         .eq("id", 1)
@@ -112,7 +114,8 @@ export async function confirmSessionDisconnect(): Promise<void> {
  */
 export async function reportSendSessionDisconnected(): Promise<void> {
   try {
-    const closeUpdate = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+    const closeUpdate = await db
       .from("evolution_connections")
       .update({ last_connection_state: "close" })
       .eq("id", 1)

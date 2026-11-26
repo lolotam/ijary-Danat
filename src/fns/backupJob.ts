@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { createBackupArchive } from "@/fns/backupCore";
 import { isBackupDue, type AutoBackupState } from "@/lib/backupArchive";
 
@@ -34,24 +35,32 @@ function isUniqueViolation(error: unknown): boolean {
  * period key — an archive whose name claims a day it does not contain — and
  * would let a backdated run consume a period that the real day still needs.
  */
-export async function runBackupJob(_asOfIgnored?: string | null): Promise<{
+/**
+ * يشغل وظيفة النسخ الاحتياطي التلقائي للشركة الحالية إذا كانت مستحقة.
+ */
+export async function runBackupJob(
+  _asOfIgnored?: string | null,
+  companyId?: string,
+): Promise<{
   skipped?: string;
   created?: string;
 }> {
-  // Read oldest company row
-  const { data: companies, error: cmpError } = await supabaseAdmin
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  const db = companyClient(resolvedCompanyId);
+
+  const { data: company, error: cmpError } = await db
     .from("companies")
     .select("backup_daily_enabled, backup_weekly_enabled")
-    .order("created_at", { ascending: true })
-    .limit(1);
+    .eq("id", resolvedCompanyId)
+    .maybeSingle();
 
   if (cmpError) throw new Error(`Could not fetch company settings: ${cmpError.message}`);
 
-  const dailyEnabled = companies?.[0]?.backup_daily_enabled ?? false;
-  const weeklyEnabled = companies?.[0]?.backup_weekly_enabled ?? false;
+  const dailyEnabled = company?.backup_daily_enabled ?? false;
+  const weeklyEnabled = company?.backup_weekly_enabled ?? false;
 
   // Read newest automatic backup
-  const { data: newest, error: newestError } = await supabaseAdmin
+  const { data: newest, error: newestError } = await db
     .from("backups")
     .select("created_at, period_key")
     .eq("kind", "automatic")

@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, actAsSuperuser, captureRaise, closePool, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  captureRaise,
+  closePool,
+  seedCompanyUser,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -15,25 +22,23 @@ afterAll(closePool);
  * have shipped as a green success that deleted nothing before the policy.
  */
 
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبارية معزولة لاختبارات صلاحيات التقارير المولّدة. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة تقارير ${tag}`, `Reports Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+  return rows[0].id;
 }
 
-async function seedGeneratedReport(client: PoolClient): Promise<string> {
+/** يزرع صف تقرير مولّد مرتبطاً بشركة محددة. */
+async function seedGeneratedReport(client: PoolClient, companyId: string): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.generated_reports (html_content, sent)
-     values ('<p>fixture</p>', false)
+    `insert into public.generated_reports (company_id, html_content, sent)
+     values ($1, '<p>fixture</p>', false)
      returning id`,
+    [companyId],
   );
   return rows[0].id;
 }
@@ -43,8 +48,9 @@ describe("generated_reports delete RLS (migration 98)", () => {
     // Accountant is staff (is_staff) and may read/export reports, but does not
     // hold reports.delete. Assert the row survives — do not assert a raise.
     await withRollback(async (client) => {
-      const reportId = await seedGeneratedReport(client);
-      const accountant = await seedUserWithRole(client, "accountant");
+      const companyId = await seedCompany(client);
+      const reportId = await seedGeneratedReport(client, companyId);
+      const accountant = await seedCompanyUser(client, companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       const deleted = await client.query(
@@ -63,8 +69,9 @@ describe("generated_reports delete RLS (migration 98)", () => {
 
   test("user with reports.delete can delete the row", async () => {
     await withRollback(async (client) => {
-      const reportId = await seedGeneratedReport(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      const reportId = await seedGeneratedReport(client, companyId);
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const deleted = await client.query(
@@ -83,7 +90,8 @@ describe("generated_reports delete RLS (migration 98)", () => {
 
   test("anon cannot select or delete", async () => {
     await withRollback(async (client) => {
-      const reportId = await seedGeneratedReport(client);
+      const companyId = await seedCompany(client);
+      const reportId = await seedGeneratedReport(client, companyId);
       await actAs(client, "anon");
 
       expect(
@@ -110,13 +118,15 @@ describe("generated_reports delete RLS (migration 98)", () => {
     // statement fails at the privilege gate before RLS. That distinction is
     // exactly the trap this suite exists to document.
     await withRollback(async (client) => {
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const raised = await captureRaise(client, () =>
         client.query(
-          `insert into public.generated_reports (html_content, sent)
-           values ('<p>should-not-insert</p>', false)`,
+          `insert into public.generated_reports (company_id, html_content, sent)
+           values ($1, '<p>should-not-insert</p>', false)`,
+          [companyId],
         ),
       );
       expect(raised).toMatch(/permission denied/i);

@@ -120,7 +120,19 @@ const { fake } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: fake.client }));
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => ({ companyClient: () => fake.client }));
 
 import { resendEventDetails, respondToResendWebhook, verifySvixSignature } from "./resendWebhook";
 

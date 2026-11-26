@@ -38,7 +38,19 @@ const db = {
   ingested: [] as Record<string, unknown>[],
 };
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   function builder(table: string) {
     const chain: any = {
       _messageId: null as string | null,
@@ -59,42 +71,47 @@ vi.mock("@/integrations/supabase/client.server", () => {
     };
     return chain;
   }
-  return {
-    supabaseAdmin: {
-      from: (table: string) => builder(table),
-      rpc: vi.fn().mockImplementation((_name: string, args: { p_rows: unknown }) => {
-        db.ingested.push(...(args.p_rows as Record<string, unknown>[]));
-        return Promise.resolve({ data: 1, error: null });
-      }),
-      storage: {
-        from: () => ({
-          download: (path: string) => {
-            const file = db.storage[path];
-            if (!file) return Promise.resolve({ data: null, error: { message: "not found" } });
-            return Promise.resolve({
-              data: {
-                type: file.type,
-                // Slice to the Buffer's own view — .buffer alone is Node's
-                // shared pool slab and would leak unrelated bytes.
-                arrayBuffer: () =>
-                  Promise.resolve(
-                    file.bytes.buffer.slice(
-                      file.bytes.byteOffset,
-                      file.bytes.byteOffset + file.bytes.byteLength,
-                    ),
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: vi.fn().mockImplementation((_name: string, args: { p_rows: unknown }) => {
+      db.ingested.push(...(args.p_rows as Record<string, unknown>[]));
+      return Promise.resolve({ data: 1, error: null });
+    }),
+    storage: {
+      from: () => ({
+        download: (path: string) => {
+          const file = db.storage[path];
+          if (!file) return Promise.resolve({ data: null, error: { message: "not found" } });
+          return Promise.resolve({
+            data: {
+              type: file.type,
+              // Slice to the Buffer's own view — .buffer alone is Node's
+              // shared pool slab and would leak unrelated bytes.
+              arrayBuffer: () =>
+                Promise.resolve(
+                  file.bytes.buffer.slice(
+                    file.bytes.byteOffset,
+                    file.bytes.byteOffset + file.bytes.byteLength,
                   ),
-              },
-              error: null,
-            });
-          },
-          upload: (path: string, bytes: Buffer, opts: { contentType: string }) => {
-            db.storage[path] = { bytes, type: opts.contentType };
-            db.uploads.push(path);
-            return Promise.resolve({ data: { path }, error: null });
-          },
-        }),
-      },
+                ),
+            },
+            error: null,
+          });
+        },
+        upload: (path: string, bytes: Buffer, opts: { contentType: string }) => {
+          db.storage[path] = { bytes, type: opts.contentType };
+          db.uploads.push(path);
+          return Promise.resolve({ data: { path }, error: null });
+        },
+      }),
     },
+  };
+  return {
+    companyClient: () => client,
+    serverCompanyClient: (explicitCompanyId?: string) => ({
+      companyId: explicitCompanyId ?? TEST_COMPANY.id,
+      client,
+    }),
   };
 });
 
@@ -147,7 +164,7 @@ describe("whatsappMedia server fns", () => {
 
   it("serves a download from the bucket cache without calling Evolution", async () => {
     db.messages["wamid-doc"] = mediaRow();
-    db.storage["chat/96550123456/wamid-doc/receipt.pdf"] = {
+    db.storage[`companies/${TEST_COMPANY.id}/chat/96550123456/wamid-doc/receipt.pdf`] = {
       bytes: Buffer.from("cached-bytes"),
       type: "application/pdf",
     };
@@ -178,7 +195,9 @@ describe("whatsappMedia server fns", () => {
     expect(String(vi.mocked(globalThis.fetch).mock.calls[0][0])).toBe(
       "http://evolution:8080/chat/getBase64FromMediaMessage/danat",
     );
-    expect(db.uploads).toEqual(["chat/96550123456/wamid-doc/receipt.pdf"]);
+    expect(db.uploads).toEqual([
+      `companies/${TEST_COMPANY.id}/chat/96550123456/wamid-doc/receipt.pdf`,
+    ]);
   });
 
   it("names a nameless image from its MIME type — never a fake '.image' extension", async () => {
@@ -205,7 +224,7 @@ describe("whatsappMedia server fns", () => {
     expect(result.mimeType).toBe("image/jpeg");
     // Nameless media caches under the constant leaf so the path is computable
     // before the MIME type is known.
-    expect(db.uploads).toEqual(["chat/96550123456/WAMIDIMG1XYZ/file"]);
+    expect(db.uploads).toEqual([`companies/${TEST_COMPANY.id}/chat/96550123456/WAMIDIMG1XYZ/file`]);
   });
 
   it("refuses a message that carries no file", async () => {
@@ -232,7 +251,7 @@ describe("whatsappMedia server fns", () => {
       from_me: true,
       media_id: null,
     });
-    db.storage["chat/96550123456/sent-stuck/receipt.pdf"] = {
+    db.storage[`companies/${TEST_COMPANY.id}/chat/96550123456/sent-stuck/receipt.pdf`] = {
       bytes: Buffer.from("sent-cached-bytes"),
       type: "application/pdf",
     };
@@ -283,7 +302,9 @@ describe("whatsappMedia server fns", () => {
       media: PDF_BASE64,
       fileName: "contract.pdf",
     });
-    expect(db.uploads).toEqual(["chat/96550123456/sent-1/contract.pdf"]);
+    expect(db.uploads).toEqual([
+      `companies/${TEST_COMPANY.id}/chat/96550123456/sent-1/contract.pdf`,
+    ]);
     // The outbound row carries media_id at send time — the message key id —
     // because the webhook echo that would otherwise set it is not guaranteed.
     expect(db.ingested).toHaveLength(1);
@@ -319,7 +340,7 @@ describe("whatsappMedia server fns", () => {
 
   it("forwards a cached media message without re-fetching from Evolution", async () => {
     db.messages["wamid-doc"] = mediaRow();
-    db.storage["chat/96550123456/wamid-doc/receipt.pdf"] = {
+    db.storage[`companies/${TEST_COMPANY.id}/chat/96550123456/wamid-doc/receipt.pdf`] = {
       bytes: Buffer.from("cached-bytes"),
       type: "application/pdf",
     };

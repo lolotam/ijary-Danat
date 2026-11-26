@@ -6,8 +6,13 @@ vi.mock("@tanstack/react-start", async () =>
   (await import("./dispatchNotification.testkit")).tanstackStartModule(),
 );
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
-vi.mock("@/integrations/supabase/client.server", async () =>
-  (await import("./notifyUserCredentials.boundary.testkit")).credentialBoundarySupabaseModule(),
+vi.mock("@/company/requestCompany.server", async () =>
+  (await import("./dispatchNotification.testkit")).requestCompanyModule(),
+);
+vi.mock("@/company/companyClient.server", async () =>
+  (
+    await import("./notifyUserCredentials.boundary.testkit")
+  ).credentialBoundaryCompanyClientModule(),
 );
 vi.mock("nodemailer", () => ({
   default: {

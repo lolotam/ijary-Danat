@@ -1,6 +1,9 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { sendEmailChannel } from "@/fns/dispatchEmailChannel";
 import { sendWhatsAppChannel } from "@/fns/dispatchWhatsAppChannel";
 import {
@@ -10,8 +13,12 @@ import {
 } from "@/fns/notificationChannel";
 import { requirePermission } from "@/fns/requirePermission";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json, NotificationProvider, Tables } from "@/integrations/supabase/database.types";
+import type {
+  Database,
+  Json,
+  NotificationProvider,
+  Tables,
+} from "@/integrations/supabase/database.types";
 import type { EmailAttachment } from "@/lib/providers/types";
 import { ProviderDeliveryError } from "@/lib/providers/types";
 import { EvolutionProviderError } from "@/lib/providers/evolution";
@@ -19,6 +26,7 @@ import { PostoraProviderError } from "@/lib/providers/postora";
 import { isTenantBoundAudience, TENANT_PAUSED_REASON } from "@/lib/tenantNotificationsPaused";
 
 const schema = z.object({ notificationId: z.string().uuid() });
+type DispatchDb = SupabaseClient<Database>;
 
 function stringValue(value: Json, key: string): string | null {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
@@ -27,17 +35,13 @@ function stringValue(value: Json, key: string): string | null {
 }
 
 async function updateNotification(
+  db: DispatchDb,
   id: string,
   updates: Partial<Tables<"notifications">>,
 ): Promise<Tables<"notifications">> {
-  const result = await supabaseAdmin
-    .from("notifications")
-    .update(updates)
-    .eq("id", id)
-    .select("*")
-    .single();
+  const result = await db.from("notifications").update(updates).eq("id", id).select("*").single();
   if (result.error) throw new Error(result.error.message);
-  const auditWrite = await supabaseAdmin.rpc("write_audit", {
+  const auditWrite = await db.rpc("write_audit", {
     p_action: "notification.dispatch",
     p_entity_type: "notification",
     p_entity_id: id,
@@ -56,8 +60,8 @@ async function updateNotification(
 }
 
 /** يقرأ المزوّدين المفعّلين، مفهرسين باسم المزوّد. */
-async function enabledConfigs(): Promise<EnabledConfigs> {
-  const result = await supabaseAdmin.from("provider_configs").select("*").eq("is_enabled", true);
+async function enabledConfigs(db: DispatchDb): Promise<EnabledConfigs> {
+  const result = await db.from("provider_configs").select("*").eq("is_enabled", true);
   if (result.error) throw new Error(result.error.message);
   return new Map(result.data.map((config) => [config.provider, config]));
 }
@@ -72,7 +76,7 @@ async function enabledConfigs(): Promise<EnabledConfigs> {
  * `attachment_paths` and is only produced complete, so an index that has no name
  * falls back to the stored basename rather than borrowing its neighbour's.
  */
-async function loadAttachments(payload: Json): Promise<EmailAttachment[]> {
+async function loadAttachments(db: DispatchDb, payload: Json): Promise<EmailAttachment[]> {
   const paths = stringArray(payload, "attachment_paths");
   if (!paths.length) return [];
   const displayNames = stringArray(payload, "attachment_names");
@@ -80,7 +84,7 @@ async function loadAttachments(payload: Json): Promise<EmailAttachment[]> {
   for (const [index, path] of paths.entries()) {
     // Paths are stored as "bucket/object/path" or default deposit-attachments relative paths.
     const bucket = stringValue(payload, "attachment_bucket") ?? "deposit-attachments";
-    const download = await supabaseAdmin.storage.from(bucket).download(path);
+    const download = await db.storage.from(bucket).download(path);
     if (download.error) {
       // Was a bare `continue`: the mail went out with the attachment silently
       // missing, indistinguishable from one that never had it configured.
@@ -113,8 +117,12 @@ async function loadAttachments(payload: Json): Promise<EmailAttachment[]> {
  */
 export async function dispatchNotificationRecord(
   notificationId: string,
+  opts?: { companyId?: string },
 ): Promise<Tables<"notifications">> {
-  const notificationResult = await supabaseAdmin
+  const companyId = opts?.companyId ?? requireRequestCompany().id;
+  const db = companyClient(companyId);
+
+  const notificationResult = await db
     .from("notifications")
     .select("*")
     .eq("id", notificationId)
@@ -124,10 +132,10 @@ export async function dispatchNotificationRecord(
   if (notification.state === "cancelled" || notification.state === "sent") return notification;
 
   const tenantResult = notification.tenant_id
-    ? await supabaseAdmin.from("tenants").select("*").eq("id", notification.tenant_id).single()
+    ? await db.from("tenants").select("*").eq("id", notification.tenant_id).single()
     : null;
   if (tenantResult?.error) {
-    return updateNotification(notification.id, {
+    return updateNotification(db, notification.id, {
       state: "failed",
       failure_reason: tenantResult.error.message,
       retry_count: notification.retry_count + 1,
@@ -142,18 +150,18 @@ export async function dispatchNotificationRecord(
   // drain retries. The tenant was loaded above for every row that has one, and
   // an unreadable tenant already failed the row, so no send reaches here unread.
   if (isTenantBoundAudience(notification.audience) && tenant?.notifications_paused) {
-    return updateNotification(notification.id, {
+    return updateNotification(db, notification.id, {
       state: "skipped",
       failure_reason: TENANT_PAUSED_REASON,
     });
   }
 
-  const configs = await enabledConfigs();
+  const configs = await enabledConfigs(db);
   const messageIds: string[] = [];
   let selectedProvider: NotificationProvider | null = null;
   let senderAddress: string | null = notification.sender_address;
   const issues: NotificationIssue[] = [];
-  const attachments = await loadAttachments(notification.payload);
+  const attachments = await loadAttachments(db, notification.payload);
 
   try {
     const channelInput = { notification, tenant, configs, attachments };
@@ -177,7 +185,7 @@ export async function dispatchNotificationRecord(
     }
 
     if (!messageIds.length) {
-      return updateNotification(notification.id, {
+      return updateNotification(db, notification.id, {
         // `every`, not `some`: a batch whose email skipped but whose WhatsApp
         // genuinely failed must stay `failed` so the drain job retries the
         // leg a retry can still deliver. The length guard keeps an empty
@@ -191,7 +199,7 @@ export async function dispatchNotificationRecord(
         sender_address: senderAddress,
       });
     }
-    return updateNotification(notification.id, {
+    return updateNotification(db, notification.id, {
       state: "sent",
       sent_at: new Date().toISOString(),
       provider: selectedProvider,
@@ -200,7 +208,7 @@ export async function dispatchNotificationRecord(
       sender_address: senderAddress,
     });
   } catch (error) {
-    return updateNotification(notification.id, {
+    return updateNotification(db, notification.id, {
       state: "failed",
       failure_reason: error instanceof Error ? error.message : "Notification dispatch failed.",
       error_code:

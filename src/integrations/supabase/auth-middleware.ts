@@ -2,6 +2,8 @@ import { createMiddleware } from "@tanstack/react-start";
 import { getRequest, setResponseStatus } from "@tanstack/react-start/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { getRequestCompany } from "@/company/requestCompany.server";
+
 import type { Database } from "./database.types";
 
 /**
@@ -24,11 +26,12 @@ function refuse(status: 401 | 500, message: string): never {
 }
 
 /**
- * وسيطة دوال الخادم: تتحقق من رمز الجلسة وتحقن عميل Supabase باسم المستخدم.
+ * وسيطة دوال الخادم: تتحقق من رمز الجلسة ومطابقة شركة المستخدم مع شركة المضيف وتحقن عميل Supabase باسم المستخدم.
  *
  * Reads Authorization: Bearer <access_token>, validates it against Supabase
- * Auth, and injects a per-request client that acts as the signed-in user, so
- * RLS applies to everything the handler reads through it.
+ * Auth, verifies `current_company_id()` via the user-scoped client matches
+ * the resolved request host company, and injects a per-request client so RLS
+ * applies to everything the handler reads through it.
  */
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
@@ -53,6 +56,16 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
 
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data.user) {
+      refuse(401, "Unauthorized");
+    }
+
+    const requestCompanyId = getRequestCompany()?.id;
+    if (!requestCompanyId) {
+      refuse(401, "Unauthorized");
+    }
+
+    const { data: userCompanyId, error: companyError } = await supabase.rpc("current_company_id");
+    if (companyError || !userCompanyId || userCompanyId !== requestCompanyId) {
       refuse(401, "Unauthorized");
     }
 

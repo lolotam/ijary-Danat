@@ -25,7 +25,19 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth:
 
 const SECRET = "current-secret";
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   /**
    * بديل مبسّط لعميل Supabase: جلسة مفتوحة، ولا صورة مخزّنة لأي رقم.
    *
@@ -59,11 +71,12 @@ vi.mock("@/integrations/supabase/client.server", () => {
     });
     return chain;
   }
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: () => Promise.resolve({ data: 1, error: null }),
+  };
   return {
-    supabaseAdmin: {
-      from: (table: string) => builder(table),
-      rpc: () => Promise.resolve({ data: 1, error: null }),
-    },
+    companyClient: () => client,
   };
 });
 

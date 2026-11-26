@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { closePool, withRollback } from "@/db/testDb";
+import { closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -15,7 +15,24 @@ afterAll(closePool);
  * equality match would pass a naive review and fail for most real people.
  */
 
-async function seedProfile(client: PoolClient, phone: string | null, email: string) {
+/** ينشئ شركة اختبارية ويضبط سياقها لاختبارات البحث برقم الهاتف. */
+async function seedPhoneCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة هاتف ${tag}`, `Phone Co ${tag}`],
+  );
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
+}
+
+/** ينشئ مستخدماً وملفاً شخصياً مرتبطاً بالشركة ورقم الهاتف المحدد. */
+async function seedProfile(
+  client: PoolClient,
+  companyId: string,
+  phone: string | null,
+  email: string,
+) {
   const id = randomUUID();
   await client.query(
     `insert into auth.users (id, instance_id, aud, role, email)
@@ -25,9 +42,13 @@ async function seedProfile(client: PoolClient, phone: string | null, email: stri
   // Inserting the auth user already creates the profile row via the
   // handle_new_user trigger, so this fills it in rather than creating it.
   await client.query(
-    `insert into public.profiles (id, email, phone) values ($1, $2, $3)
-     on conflict (id) do update set email = excluded.email, phone = excluded.phone`,
-    [id, email, phone],
+    `insert into public.profiles (id, company_id, email, phone, display_name)
+     values ($1, $2, $3, $4, $5)
+     on conflict (id) do update
+       set company_id = excluded.company_id,
+           email = excluded.email,
+           phone = excluded.phone`,
+    [id, companyId, email, phone, `User ${id.slice(0, 8)}`],
   );
   return id;
 }
@@ -44,8 +65,9 @@ describe("finding an account by mobile number", () => {
     "matches a profile whose number is stored as %s",
     async (stored) => {
       await withRollback(async (client) => {
+        const companyId = await seedPhoneCompany(client);
         const email = `${randomUUID()}@example.test`;
-        const id = await seedProfile(client, stored, email);
+        const id = await seedProfile(client, companyId, stored, email);
 
         const found = await lookup(client, "51234567");
 
@@ -65,9 +87,10 @@ describe("finding an account by mobile number", () => {
      * refuse.
      */
     await withRollback(async (client) => {
+      const companyId = await seedPhoneCompany(client);
       const shared = "+965 9999 8888";
-      await seedProfile(client, shared, `${randomUUID()}@example.test`);
-      await seedProfile(client, shared, `${randomUUID()}@example.test`);
+      await seedProfile(client, companyId, shared, `${randomUUID()}@example.test`);
+      await seedProfile(client, companyId, shared, `${randomUUID()}@example.test`);
 
       expect(await lookup(client, "99998888")).toHaveLength(2);
     });
@@ -82,11 +105,14 @@ describe("finding an account by mobile number", () => {
      * entirely correct.
      */
     await withRollback(async (client) => {
+      const companyId = await seedPhoneCompany(client);
       const email = `${randomUUID()}@example.test`;
-      const id = await seedProfile(client, null, email);
+      const id = await seedProfile(client, companyId, null, email);
       const { rows: tenant } = await client.query(
-        `insert into public.tenants (name, mobile) values ('مستأجر اختبار', '+965 9999 0731')
+        `insert into public.tenants (company_id, name, mobile)
+         values ($1, 'مستأجر اختبار', '+965 9999 0731')
          returning id`,
+        [companyId],
       );
       await client.query(`update public.profiles set tenant_id = $1 where id = $2`, [
         tenant[0].id,
@@ -99,7 +125,8 @@ describe("finding an account by mobile number", () => {
 
   test("does not match a profile with no phone recorded", async () => {
     await withRollback(async (client) => {
-      const id = await seedProfile(client, null, `${randomUUID()}@example.test`);
+      const companyId = await seedPhoneCompany(client);
+      const id = await seedProfile(client, companyId, null, `${randomUUID()}@example.test`);
 
       expect((await lookup(client, "51234567")).map((row) => row.id)).not.toContain(id);
     });
@@ -108,7 +135,8 @@ describe("finding an account by mobile number", () => {
   test("a short stored number cannot match on a partial suffix", async () => {
     // A profile holding '4567' must not be found by someone typing 51234567.
     await withRollback(async (client) => {
-      const id = await seedProfile(client, "4567", `${randomUUID()}@example.test`);
+      const companyId = await seedPhoneCompany(client);
+      const id = await seedProfile(client, companyId, "4567", `${randomUUID()}@example.test`);
 
       expect((await lookup(client, "51234567")).map((row) => row.id)).not.toContain(id);
     });

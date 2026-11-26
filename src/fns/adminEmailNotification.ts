@@ -1,10 +1,11 @@
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { alreadyNotified } from "@/fns/notificationSkip";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json, NotificationType, Tables } from "@/integrations/supabase/database.types";
 import { renderEmailDocument, type EmailLocale } from "@/lib/emailTemplates";
 import { escapeVariables } from "@/lib/templateRender";
@@ -51,16 +52,14 @@ export interface CompanyDefaults {
 }
 
 /**
- * يقرأ لغة الشركة الافتراضية وعملتها، مع قيم احتياطية حين لا يوجد صف.
- *
- * The oldest company row is the operating company; there is one in practice.
+ * يقرأ لغة الشركة الافتراضية وعملتها لشركة الطلب أو المعرّف الممرّر، مع قيم احتياطية عند غياب الصف.
  */
-export async function loadCompanyDefaults(): Promise<CompanyDefaults> {
-  const company = await supabaseAdmin
+export async function loadCompanyDefaults(companyId?: string): Promise<CompanyDefaults> {
+  const resolvedCompanyId = companyId ?? requireRequestCompany().id;
+  const company = await companyClient(resolvedCompanyId)
     .from("companies")
     .select("default_locale, currency")
-    .order("created_at")
-    .limit(1)
+    .eq("id", resolvedCompanyId)
     .maybeSingle();
   return {
     locale: (company.data?.default_locale ?? "ar") as EmailLocale,
@@ -79,9 +78,9 @@ export function rowOrThrow<T>(result: PostgrestSingleResponse<T>): T {
   return result.data;
 }
 
-/** يقرأ اسم المستأجر للرسالة، أو "-" حين لا يوجد صف. */
+/** يقرأ اسم المستأجر للرسالة ضمن نطاق الشركة، أو "-" حين لا يوجد صف. */
 export async function loadTenantName(tenantId: string): Promise<string> {
-  const tenant = await supabaseAdmin
+  const tenant = await companyClient(requireRequestCompany().id)
     .from("tenants")
     .select("name")
     .eq("id", tenantId)
@@ -89,9 +88,9 @@ export async function loadTenantName(tenantId: string): Promise<string> {
   return tenant.data?.name ?? "-";
 }
 
-/** يقرأ رمز العقد للرسالة، أو "-" حين لا يوجد صف. */
+/** يقرأ رمز العقد للرسالة ضمن نطاق الشركة، أو "-" حين لا يوجد صف. */
 export async function loadContractCode(contractId: string): Promise<string> {
-  const contract = await supabaseAdmin
+  const contract = await companyClient(requireRequestCompany().id)
     .from("contracts")
     .select("code")
     .eq("id", contractId)

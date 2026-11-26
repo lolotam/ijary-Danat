@@ -1,25 +1,25 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requirePermission } from "@/fns/requirePermission";
 
 const schema = z.object({ asOf: z.string().date().nullable().optional() });
 export type EvaluateOverdueInput = z.infer<typeof schema>;
 
 /**
- * Service-role entry point for the unattended cron run. Kept separate from the
- * server fn below, which stays user-scoped so RLS and has_permission still apply
- * to a human clicking the button. evaluate_overdue skips its own permission check
- * when auth.role() is service_role, so the two callers need different clients.
+ * ينفّذ تقييم الفواتير المتأخرة للشركة الحالية عبر دور خدمة الشركة.
  */
-export async function runEvaluateOverdueJob(asOf: string | null = null) {
-  const { data, error } = await supabaseAdmin.rpc("evaluate_overdue", { p_as_of: asOf });
+export async function runEvaluateOverdueJob(asOf: string | null = null, companyId?: string) {
+  const db = companyClient(companyId ?? requireRequestCompany().id);
+  const { data, error } = await db.rpc("evaluate_overdue", { p_as_of: asOf });
   if (error) throw new Error(error.message);
   return { count: data?.length ?? 0, transitions: data };
 }
 
+/** نقطة دخول المستخدم لتقييم الفواتير المتأخرة بعد التحقق من الصلاحية. */
 export const evaluateOverdue = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(schema)

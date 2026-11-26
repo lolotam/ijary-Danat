@@ -45,8 +45,23 @@ export function tanstackStartModule() {
   };
 }
 
-/** Factory for `vi.mock("@/integrations/supabase/client.server", …)`. */
-export function supabaseAdminModule() {
+export const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+/** مصنع `vi.mock("@/company/requestCompany.server", …)` لاختبارات المُرسل. */
+export function requestCompanyModule() {
+  return {
+    getRequestCompany: () => TEST_COMPANY,
+    requireRequestCompany: () => TEST_COMPANY,
+    runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+  };
+}
+
+/** مصنع `vi.mock("@/company/companyClient.server", …)` لاختبارات المُرسل. */
+export function companyClientModule() {
   function builder(table: string) {
     const chain: any = {
       _update: null,
@@ -81,30 +96,35 @@ export function supabaseAdminModule() {
     };
     return chain;
   }
-  return {
-    supabaseAdmin: {
-      from: (table: string) => builder(table),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
-      storage: {
-        from: () => ({
-          download: (path: string) => {
-            const file = db.attachments[path];
-            if (!file) return Promise.resolve({ data: null, error: { message: "not found" } });
-            return Promise.resolve({
-              data: {
-                type: file.type,
-                arrayBuffer: () => Promise.resolve(file.bytes.buffer),
-              },
-              error: null,
-            });
-          },
-          upload: (path: string) => {
-            db.uploads.push(path);
-            return Promise.resolve({ data: { path }, error: null });
-          },
-        }),
-      },
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    storage: {
+      from: () => ({
+        download: (path: string) => {
+          const file = db.attachments[path];
+          if (!file) return Promise.resolve({ data: null, error: { message: "not found" } });
+          return Promise.resolve({
+            data: {
+              type: file.type,
+              arrayBuffer: () => Promise.resolve(file.bytes.buffer),
+            },
+            error: null,
+          });
+        },
+        upload: (path: string) => {
+          db.uploads.push(path);
+          return Promise.resolve({ data: { path }, error: null });
+        },
+      }),
     },
+  };
+  return {
+    companyClient: () => client,
+    serverCompanyClient: (explicitCompanyId?: string) => ({
+      companyId: explicitCompanyId ?? TEST_COMPANY.id,
+      client,
+    }),
   };
 }
 

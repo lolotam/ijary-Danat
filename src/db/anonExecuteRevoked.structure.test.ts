@@ -32,7 +32,6 @@ export const GROUP_3_REVOKE_TARGETS = [
   { name: "set_invoice_paid", args: "uuid, boolean" },
   { name: "_seed_option_items", args: "text, jsonb" },
   { name: "build_scheduled_report_html", args: "uuid, date" },
-  { name: "erase_all_data", args: "" },
   { name: "get_budget_summary", args: "date, date, uuid, uuid" },
   { name: "get_deposit_total", args: "date, date, text, text, text" },
   { name: "identify_contract_expiry_reminders", args: "date" },

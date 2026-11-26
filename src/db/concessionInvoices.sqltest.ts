@@ -76,11 +76,12 @@ async function insertUnpaidInvoice(
 }
 
 /**
- * يُدخل تنازل خصم ثابت أو نسبة على العقد.
+ * يُدخل تنازل خصم ثابت أو نسبة على العقد ضمن الشركة المحددة.
  */
 async function insertConcession(
   client: PoolClient,
   input: {
+    companyId: string;
     contractId: string;
     type: "fixed_discount" | "percentage_discount";
     startDate: string;
@@ -91,10 +92,11 @@ async function insertConcession(
 ): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
     `insert into public.concessions
-       (contract_id, type, status, start_date, end_date, discount_amount, discount_percent)
-     values ($1, $2, 'active', $3::date, $4::date, $5, $6)
+       (company_id, contract_id, type, status, start_date, end_date, discount_amount, discount_percent)
+     values ($1, $2, $3, 'active', $4::date, $5::date, $6, $7)
      returning id`,
     [
+      input.companyId,
       input.contractId,
       input.type,
       input.startDate,
@@ -138,6 +140,7 @@ describe("apply_concession_to_invoices", () => {
         code: "INV-ci-keep-0000250",
       });
       const concessionId = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -185,6 +188,7 @@ describe("apply_concession_to_invoices", () => {
         subtotal: 500,
       });
       const first = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -192,6 +196,7 @@ describe("apply_concession_to_invoices", () => {
         amount: 100,
       });
       const second = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -232,6 +237,7 @@ describe("apply_concession_to_invoices", () => {
         code: "INV-restore-1",
       });
       const concessionId = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -258,6 +264,7 @@ describe("apply_concession_to_invoices", () => {
       expect(links.rowCount).toBe(0);
 
       const replacement = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -292,6 +299,7 @@ describe("apply_concession_to_invoices", () => {
         code: "INV-keep-me",
       });
       const concessionId = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -333,6 +341,7 @@ describe("apply_concession_to_invoices", () => {
         [invoice.id],
       );
       const concessionId = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -362,6 +371,7 @@ describe("apply_concession_to_invoices", () => {
         monthlyAmount: 500,
       });
       const b = await seedContract(client, {
+        companyId: a.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         monthlyAmount: 400,
@@ -376,6 +386,7 @@ describe("apply_concession_to_invoices", () => {
         subtotal: 400,
       });
       const concessionId = await insertConcession(client, {
+        companyId: a.companyId,
         contractId: a.contractId,
         type: "fixed_discount",
         startDate: "2026-03-01",
@@ -429,6 +440,7 @@ describe("apply_concession_to_invoices", () => {
         subtotal: 500,
       });
       const concessionId = await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "fixed_discount",
         startDate: "2026-01-01",
@@ -460,6 +472,7 @@ describe("generate_invoices_for_year no longer applies date-range discounts", ()
         monthlyAmount: 1000,
       });
       await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "percentage_discount",
         startDate: "2026-01-01",
@@ -467,6 +480,7 @@ describe("generate_invoices_for_year no longer applies date-range discounts", ()
         percent: 10,
       });
       await insertConcession(client, {
+        companyId: base.companyId,
         contractId: base.contractId,
         type: "percentage_discount",
         startDate: "2026-01-01",

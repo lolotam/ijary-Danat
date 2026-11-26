@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { actAs, actAsSuperuser, captureRaiseError, closePool, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  captureRaiseError,
+  closePool,
+  seedCompanyUser,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -16,64 +23,47 @@ afterAll(closePool);
  * re-orphan rows the way the 2026-09-26 Roof_Apartment edit did.
  */
 
-/** ينشئ مستخدماً بدور معين حتى تُحسم `has_permission` لصالحه. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
-}
-
 interface RenameProbe {
   itemId: string;
+  companyId: string;
   value: string;
   unitIds: string[];
 }
 
 /**
- * يزرع عنصر `unit_types` بقيمة فريدة ووحدتين تخزنانها.
+ * يزرع عنصر `unit_types` بقيمة فريدة ووحدتين تخزنانها ضمن نفس الشركة.
  *
  * Each test builds its own probe inside its own rollback: the value is uuid
- * suffixed so the UNIQUE(list_id, value) constraint can never collide with
- * another test's probe or with seed data.
+ * suffixed so the UNIQUE(company_id, list_id, value) constraint can never
+ * collide with another test's probe or with seed data.
  */
 async function seedRenameProbe(client: PoolClient): Promise<RenameProbe> {
   const tag = randomUUID().slice(0, 8);
   const value = `probe_${tag}`;
-  const { rows: lists } = await client.query<{ id: string }>(
-    `select id from public.option_lists where code = 'unit_types'`,
+  const { rows: lists } = await client.query<{ id: string; company_id: string }>(
+    `select id, company_id from public.option_lists where code = 'unit_types' limit 1`,
   );
+  const companyId = lists[0].company_id;
   const { rows: items } = await client.query<{ id: string }>(
-    `insert into public.option_list_items (list_id, value, label_ar, label_en)
-     values ($1, $2, $3, $4) returning id`,
-    [lists[0].id, value, `اختبار ${tag}`, `Probe ${tag}`],
-  );
-  const company = await client.query<{ id: string }>(
-    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
-    [`شركة ${tag}`, `Co ${tag}`],
+    `insert into public.option_list_items (company_id, list_id, value, label_ar, label_en)
+     values ($1, $2, $3, $4, $5) returning id`,
+    [companyId, lists[0].id, value, `اختبار ${tag}`, `Probe ${tag}`],
   );
   const property = await client.query<{ id: string }>(
     `insert into public.properties (code, company_id, name_ar, name_en)
      values ($1, $2, $3, $4) returning id`,
-    [`P-${tag}`, company.rows[0].id, `عقار ${tag}`, `Property ${tag}`],
+    [`P-${tag}`, companyId, `عقار ${tag}`, `Property ${tag}`],
   );
   const unitIds: string[] = [];
   for (const suffix of ["a", "b"]) {
     const { rows: units } = await client.query<{ id: string }>(
-      `insert into public.units (code, property_id, name, type)
-       values ($1, $2, $3, $4) returning id`,
-      [`U-${tag}-${suffix}`, property.rows[0].id, `Unit ${tag} ${suffix}`, value],
+      `insert into public.units (company_id, code, property_id, name, type)
+       values ($1, $2, $3, $4, $5) returning id`,
+      [companyId, `U-${tag}-${suffix}`, property.rows[0].id, `Unit ${tag} ${suffix}`, value],
     );
     unitIds.push(units[0].id);
   }
-  return { itemId: items[0].id, value, unitIds };
+  return { itemId: items[0].id, companyId, value, unitIds };
 }
 
 /** يعيد قيمة عنصر القائمة من قاعدة البيانات. */
@@ -94,16 +84,21 @@ async function unitTypeOf(client: PoolClient, unitId: string): Promise<string> {
   return rows[0].type;
 }
 
-/** يعيد معرّف عنصر مزروع في قائمة معروفة. */
-async function seededItemId(client: PoolClient, listCode: string, value: string): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    `select i.id
+/** يعيد معرّف عنصر مزروع في قائمة معروفة ومعرّف شركته. */
+async function seededItemId(
+  client: PoolClient,
+  listCode: string,
+  value: string,
+): Promise<{ itemId: string; companyId: string }> {
+  const { rows } = await client.query<{ id: string; company_id: string }>(
+    `select i.id, i.company_id
        from public.option_list_items i
-       join public.option_lists l on l.id = i.list_id
-      where l.code = $1 and i.value = $2`,
+       join public.option_lists l on l.id = i.list_id and l.company_id = i.company_id
+      where l.code = $1 and i.value = $2
+      limit 1`,
     [listCode, value],
   );
-  return rows[0].id;
+  return { itemId: rows[0].id, companyId: rows[0].company_id };
 }
 
 describe("rename cascades to every storing column", () => {
@@ -112,7 +107,7 @@ describe("rename cascades to every storing column", () => {
       // probe_ values are unbound (not in UNIT_FLOOR_TYPE_BINDING), so (a)
       // exercises the unbound rename path.
       const probe = await seedRenameProbe(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, probe.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const { rows } = await client.query<{ rename_option_list_value: unknown }>(
@@ -147,7 +142,7 @@ describe("rename cascades to every storing column", () => {
       const probe = await seedRenameProbe(client);
       // Accountant holds reports.read and invoices.read but not settings.lists,
       // so the denial below can only come from the permission check.
-      const accountant = await seedUserWithRole(client, "accountant");
+      const accountant = await seedCompanyUser(client, probe.companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       const error = (await captureRaiseError(client, () =>
@@ -174,14 +169,15 @@ describe("rename cascades to every storing column", () => {
     await withRollback(async (client) => {
       const probe = await seedRenameProbe(client);
       const { rows: lists } = await client.query<{ id: string }>(
-        `select id from public.option_lists where code = 'unit_types'`,
+        `select id from public.option_lists where company_id = $1 and code = 'unit_types'`,
+        [probe.companyId],
       );
       await client.query(
-        `insert into public.option_list_items (list_id, value, label_ar, label_en)
-         values ($1, 'probe_taken', 'محجوز', 'Taken')`,
-        [lists[0].id],
+        `insert into public.option_list_items (company_id, list_id, value, label_ar, label_en)
+         values ($1, $2, 'probe_taken', 'محجوز', 'Taken')`,
+        [probe.companyId, lists[0].id],
       );
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, probe.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const error = (await captureRaiseError(client, () =>
@@ -205,8 +201,8 @@ describe("rename cascades to every storing column", () => {
     // tenant_lifecycles backs the tenants.lifecycle enum (migration 04) even
     // though the TS enum module omits it — the migration rejects it anyway.
     await withRollback(async (client) => {
-      const itemId = await seededItemId(client, listCode, value);
-      const admin = await seedUserWithRole(client, "admin");
+      const { itemId, companyId } = await seededItemId(client, listCode, value);
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const error = (await captureRaiseError(client, () =>
@@ -222,7 +218,7 @@ describe("rename cascades to every storing column", () => {
   test("(d2) a direct value update raises 42501 but label edits still succeed", async () => {
     await withRollback(async (client) => {
       const probe = await seedRenameProbe(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, probe.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const error = (await captureRaiseError(client, () =>
@@ -260,7 +256,7 @@ describe("rename cascades to every storing column", () => {
   test("(e) count returns the same counts without changing anything", async () => {
     await withRollback(async (client) => {
       const probe = await seedRenameProbe(client);
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedCompanyUser(client, probe.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const { rows } = await client.query<{ count_option_list_value_usage: unknown }>(
@@ -306,8 +302,12 @@ describe("rename cascades to every storing column", () => {
     // migration 159, so a string cascade could rewrite the wrong rows and the
     // migration refuses the rename instead.
     await withRollback(async (client) => {
-      const itemId = await seededItemId(client, "manual_payment_reasons", "bank_transfer");
-      const admin = await seedUserWithRole(client, "admin");
+      const { itemId, companyId } = await seededItemId(
+        client,
+        "manual_payment_reasons",
+        "bank_transfer",
+      );
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const error = (await captureRaiseError(client, () =>
@@ -322,8 +322,8 @@ describe("rename cascades to every storing column", () => {
 
   test("(h) bound unit_floors value roof rejects the rename with 22023", async () => {
     await withRollback(async (client) => {
-      const itemId = await seededItemId(client, "unit_floors", "roof");
-      const admin = await seedUserWithRole(client, "admin");
+      const { itemId, companyId } = await seededItemId(client, "unit_floors", "roof");
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const error = (await captureRaiseError(client, () =>
@@ -339,8 +339,12 @@ describe("rename cascades to every storing column", () => {
 
   test("(h2) bound unit_types value managemental-services rejects the rename with 22023", async () => {
     await withRollback(async (client) => {
-      const itemId = await seededItemId(client, "unit_types", "managemental-services");
-      const admin = await seedUserWithRole(client, "admin");
+      const { itemId, companyId } = await seededItemId(
+        client,
+        "unit_types",
+        "managemental-services",
+      );
+      const admin = await seedCompanyUser(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const error = (await captureRaiseError(client, () =>

@@ -82,6 +82,15 @@ export default tseslint.config(
           message:
             "Do not dynamically import src/integrations/supabase/client.server.ts outside the platform allow-list. Use companyClient(companyId) from @/company/companyClient.server instead.",
         },
+        {
+          // A hand-built `createClient(url, serviceRoleKey)` bypasses RLS exactly like
+          // `supabaseAdmin` but slips past the import rule above. Assignments are
+          // allowed so tests can still set the variable.
+          selector:
+            "MemberExpression[object.object.name='process'][object.property.name='env'][property.name=/SERVICE_ROLE_KEY$/]:not(AssignmentExpression > MemberExpression.left)",
+          message:
+            "Do not read the service_role key outside the platform allow-list. Use companyClient(companyId), or move the code under src/platform/.",
+        },
       ],
     },
   },

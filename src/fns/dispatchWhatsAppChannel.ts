@@ -1,3 +1,5 @@
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { deliverEvolutionNotification } from "@/fns/evolutionDelivery";
 import {
   tenantOptedOut,
@@ -6,7 +8,6 @@ import {
   type EnabledConfigs,
   type NotificationIssue,
 } from "@/fns/notificationChannel";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 import { sendWithPostora } from "@/lib/providers/postora";
 import { sendWithTwilio } from "@/lib/providers/twilio";
@@ -43,12 +44,12 @@ export function whatsappProvider(configs: EnabledConfigs): Tables<"provider_conf
   return null;
 }
 
-/** يقرأ ربط القالب المعتمد لدى المزوّد لرمز القالب المحلي (migration 38). */
+/** يقرأ ربط القالب المعتمد لدى المزوّد لرمز القالب المحلي (migration 38) ضمن الشركة. */
 async function loadTemplateMapping(
   templateCode: string | null,
 ): Promise<ProviderTemplateMapping | null> {
   if (!templateCode) return null;
-  const result = await supabaseAdmin
+  const result = await companyClient(requireRequestCompany().id)
     .from("notification_templates")
     .select(
       "allow_freeform, provider_language_code, provider_param_keys, provider_template_name, twilio_content_sid, twilio_variable_keys",

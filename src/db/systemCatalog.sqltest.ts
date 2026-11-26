@@ -1,8 +1,22 @@
+import { randomUUID } from "node:crypto";
+
+import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { closePool, withRollback } from "@/db/testDb";
+import { closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
+
+/** ينشئ شركة اختبار ويضبط سياقها لاختبارات حذف عناصر التصنيف النظامية. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة تصنيف ${tag}`, `Catalog Co ${tag}`],
+  );
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
+}
 
 /**
  * Deleting seeded catalogue rows — inverted from the original assertion.
@@ -23,8 +37,8 @@ const CATALOGS = [
   {
     table: "public.option_list_items",
     keyColumn: "value",
-    seed: `insert into public.option_list_items (list_id, value, label_ar, label_en, is_system)
-           select id, $1, 'اختبار', 'Test', $2 from public.option_lists limit 1`,
+    seed: `insert into public.option_list_items (company_id, list_id, value, label_ar, label_en, is_system)
+           select company_id, id, $1, 'اختبار', 'Test', $2 from public.option_lists limit 1`,
   },
   {
     table: "public.expense_categories",
@@ -40,6 +54,7 @@ describe("seeded catalogue rows can be deleted", () => {
     "$table deletes a system row instead of refusing it",
     async ({ table, seed, keyColumn }) => {
       await withRollback(async (client) => {
+        await seedCompany(client);
         const key = `sys_${Date.now()}`;
         await client.query(seed, [key, true]);
         const { rowCount } = await client.query(
@@ -53,6 +68,7 @@ describe("seeded catalogue rows can be deleted", () => {
 
   test.each(CATALOGS)("$table still deletes a custom row", async ({ table, seed, keyColumn }) => {
     await withRollback(async (client) => {
+      await seedCompany(client);
       const key = `custom_${Date.now()}`;
       await client.query(seed, [key, false]);
       const { rowCount } = await client.query(
@@ -77,15 +93,16 @@ describe("seeded catalogue rows can be deleted", () => {
  */
 test("deleting a category in use keeps the expense and clears only its category", async () => {
   await withRollback(async (client) => {
+    const companyId = await seedCompany(client);
     const code = `used_${Date.now()}`;
     const { rows: category } = await client.query(
-      `insert into public.expense_categories (code, name_ar, name_en, is_system)
-       values ($1, $1, 'Test', true) returning id`,
-      [code],
+      `insert into public.expense_categories (company_id, code, name_ar, name_en, is_system)
+       values ($1, $2, $2, 'Test', true) returning id`,
+      [companyId, code],
     );
     const { rows: expense } = await client.query(
-      `insert into public.expenses (category_id, amount) values ($1, 125.500) returning id`,
-      [category[0].id],
+      `insert into public.expenses (company_id, category_id, amount) values ($1, $2, 125.500) returning id`,
+      [companyId, category[0].id],
     );
 
     await client.query(`delete from public.expense_categories where id = $1`, [category[0].id]);

@@ -7,6 +7,7 @@ import {
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
@@ -90,22 +91,22 @@ async function addContractForTenant(
 ): Promise<{ contractId: string; unitId: string }> {
   const tag = randomUUID().slice(0, 8);
   const unit = await client.query<{ id: string }>(
-    `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-    [`U-b-${tag}`, base.propertyId, `Unit B ${tag}`],
+    `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+    [base.companyId, `U-b-${tag}`, base.propertyId, `Unit B ${tag}`],
   );
   const unitId = unit.rows[0].id;
   const contract = await client.query<{ id: string }>(
     `insert into public.contracts
-       (code, tenant_id, start_date, end_date, due_day, grace_days, deposit, state)
-     values ($1, $2, $3::date, $4::date, 1, 0, 0, 'active'::public.contract_states)
+       (company_id, code, tenant_id, start_date, end_date, due_day, grace_days, deposit, state)
+     values ($1, $2, $3, $4::date, $5::date, 1, 0, 0, 'active'::public.contract_states)
      returning id`,
-    [`C-b-${tag}`, base.tenantId, options.startDate, options.endDate],
+    [base.companyId, `C-b-${tag}`, base.tenantId, options.startDate, options.endDate],
   );
   const contractId = contract.rows[0].id;
   await client.query(
-    `insert into public.contract_units (contract_id, unit_id, monthly_amount, line_order)
-     values ($1, $2, $3, 1)`,
-    [contractId, unitId, options.monthlyAmount ?? 500],
+    `insert into public.contract_units (company_id, contract_id, unit_id, monthly_amount, line_order)
+     values ($1, $2, $3, $4, 1)`,
+    [base.companyId, contractId, unitId, options.monthlyAmount ?? 500],
   );
   return { contractId, unitId };
 }
@@ -213,6 +214,7 @@ describe("evaluate_portal_payable_invoices by contract (migration 121)", () => {
         endDate: "2026-12-31",
       });
       const other = await seedContract(client, {
+        companyId: mine.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -228,19 +230,13 @@ describe("evaluate_portal_payable_invoices by contract (migration 121)", () => {
   });
 });
 
-/** ينشئ مستخدمًا بدور محدد في auth.users و user_roles. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+/** ينشئ مستخدمًا بدور محدد في auth.users و profiles و user_roles ضمن الشركة. */
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "ppay");
 }
 
 /** يستدعي الدالة مع طلب تضمين العقود المخفية. */
@@ -360,7 +356,7 @@ describe("evaluate_portal_payable_invoices hides hide_from_portal contracts (mig
         roof.contractId,
       ]);
 
-      const tenantUser = await seedUserWithRole(client, "tenant");
+      const tenantUser = await seedUserWithRole(client, roof.companyId, "tenant");
       await client.query(`update public.profiles set tenant_id = $1 where id = $2`, [
         roof.tenantId,
         tenantUser,
@@ -392,7 +388,7 @@ describe("update_contract_portal_visibility (migration 210)", () => {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, fixture.companyId, "admin");
 
       await actAs(client, "authenticated", admin);
       await client.query(`select public.update_contract_portal_visibility($1, true)`, [
@@ -422,7 +418,7 @@ describe("update_contract_portal_visibility (migration 210)", () => {
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const tenantUser = await seedUserWithRole(client, "tenant");
+      const tenantUser = await seedUserWithRole(client, fixture.companyId, "tenant");
 
       await actAs(client, "authenticated", tenantUser);
       const raised = await captureRaise(client, () =>

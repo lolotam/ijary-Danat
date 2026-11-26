@@ -1,12 +1,12 @@
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
-import { randomUUID } from "node:crypto";
 
 import {
   actAs,
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
@@ -27,19 +27,13 @@ afterAll(closePool);
  * Every call below goes to the RPC directly, because the bypass is the scenario.
  */
 
-/** ينشئ مستخدمًا بدور محدد في auth.users و user_roles. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+/** ينشئ مستخدمًا بدور محدد ضمن الشركة في auth.users و user_roles. */
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "alloc");
 }
 
 type MonthInvoice = { id: string; total: number };
@@ -58,13 +52,18 @@ async function invoicesOldestFirst(
   return rows.map((row) => ({ id: row.id, total: Number(row.total) }));
 }
 
-/** دفعة مؤكّدة غير مخصّصة للمستأجر بالمبلغ المعطى. */
-async function seedPayment(client: PoolClient, tenantId: string, amount: number): Promise<string> {
+/** دفعة مؤكّدة غير مخصّصة للمستأجر بالمبلغ المعطى ضمن الشركة. */
+async function seedPayment(
+  client: PoolClient,
+  companyId: string,
+  tenantId: string,
+  amount: number,
+): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.payments (code, tenant_id, method, amount, payment_date, status)
-     values (public.next_payment_code(), $1, 'cash', $2, current_date, 'confirmed')
+    `insert into public.payments (company_id, code, tenant_id, method, amount, payment_date, status)
+     values ($1, public.next_payment_code(), $2, 'cash', $3, current_date, 'confirmed')
      returning id`,
-    [tenantId, amount],
+    [companyId, tenantId, amount],
   );
   return rows[0].id;
 }
@@ -91,8 +90,13 @@ async function seedTwoOpenMonths(client: PoolClient) {
   const invoices = await invoicesOldestFirst(client, fixture.contractId);
   expect(invoices.length).toBeGreaterThanOrEqual(2);
   const [january, february] = invoices;
-  const paymentId = await seedPayment(client, fixture.tenantId, january.total + february.total);
-  const admin = await seedUserWithRole(client, "admin");
+  const paymentId = await seedPayment(
+    client,
+    fixture.companyId,
+    fixture.tenantId,
+    january.total + february.total,
+  );
+  const admin = await seedUserWithRole(client, fixture.companyId, "admin");
   return { ...fixture, january, february, paymentId, admin };
 }
 
@@ -181,6 +185,7 @@ describe("apply_payment_allocation enforces oldest-first for direct callers (mig
       const a = await seedTwoOpenMonths(client);
       // A second contract for the SAME tenant, so one payment can span both.
       const b = await seedContract(client, {
+        companyId: a.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         monthlyAmount: 200,
@@ -190,7 +195,12 @@ describe("apply_payment_allocation enforces oldest-first for direct callers (mig
         b.contractId,
       ]);
       const [bJanuary] = await invoicesOldestFirst(client, b.contractId);
-      const paymentId = await seedPayment(client, a.tenantId, a.january.total + bJanuary.total);
+      const paymentId = await seedPayment(
+        client,
+        a.companyId,
+        a.tenantId,
+        a.january.total + bJanuary.total,
+      );
 
       // Contract A's January and contract B's January: each is the oldest open
       // invoice on its own contract. A's open February must not block B.

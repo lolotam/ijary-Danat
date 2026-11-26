@@ -48,7 +48,19 @@ function projectSelected(
   return projected;
 }
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   function builder() {
     const chain: any = {
       _id: null as string | null,
@@ -90,13 +102,13 @@ vi.mock("@/integrations/supabase/client.server", () => {
     return chain;
   }
   return {
-    supabaseAdmin: {
+    companyClient: () => ({
       from: () => builder(),
       rpc: (_name: string, args: Record<string, unknown>) => {
         db.audit = args;
         return Promise.resolve({ data: null, error: null });
       },
-    },
+    }),
   };
 });
 

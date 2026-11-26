@@ -1,12 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { loadCompanyDefaults, rowOrThrow } from "@/fns/adminEmailNotification";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { depositConfirmationTemplate, renderEmailDocument } from "@/lib/emailTemplates";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
 import { requireAnyPermission } from "@/fns/requirePermission";
@@ -14,15 +15,14 @@ import { requireAnyPermission } from "@/fns/requirePermission";
 const schema = z.object({ depositId: z.string().uuid() });
 
 async function enqueueDepositConfirmation(depositId: string, targets: WorkflowRecipientTarget[]) {
-  const deposit = rowOrThrow(
-    await supabaseAdmin.from("deposits").select("*").eq("id", depositId).single(),
-  );
+  const db = companyClient(requireRequestCompany().id);
+  const deposit = rowOrThrow(await db.from("deposits").select("*").eq("id", depositId).single());
   if (deposit.status !== "confirmed") {
     return { skipped: true as const, reason: "Deposit is not confirmed." };
   }
 
   // Idempotency: skip if we already logged a deposit confirmation for this deposit.
-  const existing = await supabaseAdmin
+  const existing = await db
     .from("notifications")
     .select("id")
     .eq("type", "deposit_confirmation")

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { getRequestCompany } from "@/company/requestCompany.server";
 import {
   GOOGLE_TOKEN_ENDPOINT,
   INTEGRATIONS_PATH,
@@ -87,29 +88,26 @@ async function handleCallback(request: Request): Promise<Response> {
     }
   }
 
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-  if (companyError || !company) return redirectTo("no-company");
+  const companyId = stateResult.payload.companyId ?? getRequestCompany()?.id;
+  if (!companyId) return redirectTo("no-company");
 
   // company_id is unique, so reconnecting replaces the grant in place rather
   // than accumulating stale tokens.
-  const { error } = await supabaseAdmin.from("gmail_connections").upsert(
-    {
-      company_id: company.id,
-      email_address: emailAddress,
-      refresh_token: token.refresh_token,
-      scope: token.scope ?? null,
-      token_type: token.token_type ?? null,
-      connected_by: stateResult.payload.userId,
-      connected_at: new Date().toISOString(),
-      last_sync_error: null,
-    },
-    { onConflict: "company_id" },
-  );
+  const { error } = await companyClient(companyId)
+    .from("gmail_connections")
+    .upsert(
+      {
+        company_id: companyId,
+        email_address: emailAddress,
+        refresh_token: token.refresh_token,
+        scope: token.scope ?? null,
+        token_type: token.token_type ?? null,
+        connected_by: stateResult.payload.userId,
+        connected_at: new Date().toISOString(),
+        last_sync_error: null,
+      },
+      { onConflict: "company_id" },
+    );
   if (error) {
     console.error("[gmail-oauth] failed to persist connection", error.message);
     return redirectTo("save-failed");

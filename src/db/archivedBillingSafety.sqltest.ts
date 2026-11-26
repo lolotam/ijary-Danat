@@ -54,6 +54,7 @@ describe("archived contracts are not billable", () => {
         endDate: "2026-12-31",
       });
       const archived = await seedContract(client, {
+        companyId: live.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -170,6 +171,7 @@ describe("archived contracts are not billable", () => {
         graceDays: 0,
       });
       const archived = await seedContract(client, {
+        companyId: live.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
         graceDays: 0,
@@ -220,6 +222,7 @@ describe("archived contracts are not billable", () => {
         endDate: "2026-08-31",
       });
       const archived = await seedContract(client, {
+        companyId: live.companyId,
         startDate: "2026-01-01",
         endDate: "2026-08-31",
       });

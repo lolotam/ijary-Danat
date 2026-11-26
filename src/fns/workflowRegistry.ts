@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
 
 /**
@@ -30,7 +31,7 @@ export async function readWorkflowGate(key: string): Promise<{
   targets: WorkflowRecipientTarget[];
 }> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await companyClient(requireRequestCompany().id)
       .from("cron_jobs")
       .select("is_active, recipient_targets")
       .eq("key", key)
@@ -75,7 +76,7 @@ export async function recordWorkflowRun(
   errorMessage: string | null,
 ): Promise<void> {
   try {
-    await supabaseAdmin.rpc("record_cron_run", {
+    await companyClient(requireRequestCompany().id).rpc("record_cron_run", {
       _key: key,
       _status: status,
       _duration_ms: durationMs,

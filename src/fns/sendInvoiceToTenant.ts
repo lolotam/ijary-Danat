@@ -1,10 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { joinLocalizedList } from "@/lib/contractUnits";
 import { formatIsoMonthYear, formatMonthYear } from "@/lib/dateDisplay";
 import {
@@ -62,18 +63,17 @@ export const sendInvoiceToTenant = createServerFn({ method: "POST" })
       refusal: "You do not have permission to update an invoice.",
     });
 
-    const invoiceRes = await supabaseAdmin
-      .from("invoices")
-      .select("*")
-      .eq("id", data.invoiceId)
-      .single();
+    const companyRecord = requireRequestCompany();
+    const db = companyClient(companyRecord.id);
+
+    const invoiceRes = await db.from("invoices").select("*").eq("id", data.invoiceId).single();
     if (invoiceRes.error || !invoiceRes.data) {
       throw new Error(invoiceRes.error?.message ?? "Invoice not found");
     }
     const invoice = invoiceRes.data;
 
     const [tenantRes, itemsRes] = await Promise.all([
-      supabaseAdmin
+      db
         .from("tenants")
         .select("id, name, email, whatsapp, mobile, preferred_language")
         .eq("id", invoice.tenant_id)
@@ -82,7 +82,7 @@ export const sendInvoiceToTenant = createServerFn({ method: "POST" })
       // (migration 112) — the rent lines on invoice_items carry the per-unit
       // attribution instead, so every unit the invoice covers is resolved from
       // there rather than from the invoice's own (possibly absent) unit_id.
-      supabaseAdmin
+      db
         .from("invoice_items")
         .select("unit_id")
         .eq("invoice_id", invoice.id)
@@ -97,7 +97,7 @@ export const sendInvoiceToTenant = createServerFn({ method: "POST" })
       ...new Set(itemsRes.data.map((row) => row.unit_id).filter((id): id is string => id != null)),
     ];
     const unitsRes = unitIds.length
-      ? await supabaseAdmin.from("units").select("id, name, property_id").in("id", unitIds)
+      ? await db.from("units").select("id, name, property_id").in("id", unitIds)
       : {
           data: [] as Array<{ id: string; name: string; property_id: string | null }>,
           error: null,
@@ -110,16 +110,15 @@ export const sendInvoiceToTenant = createServerFn({ method: "POST" })
     ];
     const [propertiesRes, companyRes] = await Promise.all([
       propertyIds.length
-        ? supabaseAdmin.from("properties").select("id, name_ar, name_en").in("id", propertyIds)
+        ? db.from("properties").select("id, name_ar, name_en").in("id", propertyIds)
         : Promise.resolve({
             data: [] as Array<{ id: string; name_ar: string; name_en: string | null }>,
             error: null,
           }),
-      supabaseAdmin
+      db
         .from("companies")
         .select("name_ar, name_en, invoice_footer_ar, invoice_footer_en")
-        .order("created_at")
-        .limit(1)
+        .eq("id", companyRecord.id)
         .maybeSingle(),
     ]);
     if (propertiesRes.error) throw new Error(propertiesRes.error.message);

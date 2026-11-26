@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import type MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Json } from "@/integrations/supabase/database.types";
 import { requirePermission } from "@/fns/requirePermission";
@@ -282,15 +284,8 @@ async function recordLocalSentMessage(input: {
   subject: string;
   body: string;
 }): Promise<void> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-  if (companyError) throw new Error(companyError.message);
+  const company = requireRequestCompany();
+  const db = companyClient(company.id);
 
   const toAddress = input.to.join(", ");
   const now = new Date().toISOString();
@@ -303,7 +298,7 @@ async function recordLocalSentMessage(input: {
     source: "gmailSend",
   } as unknown as Json;
 
-  const { error } = await supabaseAdmin.from("gmail_messages").upsert(
+  const { error } = await db.from("gmail_messages").upsert(
     {
       company_id: company.id,
       // Gmail message id from the send response (brief: Part B.2).
@@ -343,12 +338,10 @@ async function resolveThreading(data: GmailSendInput) {
 
   // Imported lazily so the pure parsing module stays out of this file's import
   // graph when nothing is being replied to.
-  const [{ supabaseAdmin }, { buildReplyHeaders, extractHeaders }] = await Promise.all([
-    import("@/integrations/supabase/client.server"),
-    import("@/lib/gmailMessage"),
-  ]);
+  const { buildReplyHeaders, extractHeaders } = await import("@/lib/gmailMessage");
+  const db = companyClient(requireRequestCompany().id);
 
-  const { data: parent } = await supabaseAdmin
+  const { data: parent } = await db
     .from("gmail_messages")
     .select("thread_id, raw_payload")
     .eq("id", data.replyToMessageId)

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
+import { resolveUploadCompanyId } from "@/company/browserCompany";
+import { companyStoragePath } from "@/company/storagePath";
 import { usePermissions } from "@/hooks/usePermissions";
 import { normalizePostgrestSearch } from "@/hooks/querySearch";
 import { supabase } from "@/integrations/supabase/client";
@@ -107,13 +109,17 @@ async function uploadAttachment(
   file: File,
 ): Promise<string> {
   assertPdfOrImageWithinStorageLimit(file);
+  const resolvedCompanyId = await resolveUploadCompanyId(companyId);
   const extension =
     file.name
       .split(".")
       .pop()
       ?.toLowerCase()
       .replace(/[^a-z0-9]/g, "") || "bin";
-  const path = `companies/${companyId ?? "unassigned"}/deposits/${id}/${crypto.randomUUID()}.${extension}`;
+  const path = companyStoragePath(
+    resolvedCompanyId,
+    `deposits/${id}/${crypto.randomUUID()}.${extension}`,
+  );
   const upload = await supabase.storage
     .from("deposit-attachments")
     .upload(path, file, { upsert: false });

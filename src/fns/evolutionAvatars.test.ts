@@ -22,7 +22,19 @@ const db = {
   updates: [] as { table: string; values: Record<string, unknown>; filter: string }[],
 };
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   /**
    * بديل مبسّط لسلسلة استعلامات PostgREST يسجّل التحديثات ويعيد صفوف الاختبار.
    *
@@ -57,7 +69,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
     });
     return chain;
   }
-  return { supabaseAdmin: { from: (table: string) => builder(table) } };
+  const client = { from: (table: string) => builder(table) };
+  return { companyClient: () => client };
 });
 
 vi.mock("@/fns/evolutionSession", () => ({

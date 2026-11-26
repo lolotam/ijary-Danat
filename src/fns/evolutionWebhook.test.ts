@@ -28,7 +28,19 @@ const db = {
   rpcError: null as { message: string } | null,
 };
 
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   function builder(table: string) {
     const chain: any = {
       _values: null as Record<string, unknown> | null,
@@ -57,14 +69,15 @@ vi.mock("@/integrations/supabase/client.server", () => {
     };
     return chain;
   }
-  return {
-    supabaseAdmin: {
-      from: (table: string) => builder(table),
-      rpc: (name: string, args: Record<string, unknown>) => {
-        db.rpcCalls.push({ name, args });
-        return Promise.resolve({ data: 1, error: db.rpcError });
-      },
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: (name: string, args: Record<string, unknown>) => {
+      db.rpcCalls.push({ name, args });
+      return Promise.resolve({ data: 1, error: db.rpcError });
     },
+  };
+  return {
+    companyClient: () => client,
   };
 });
 

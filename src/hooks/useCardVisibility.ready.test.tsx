@@ -27,11 +27,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       if (table === "companies") {
         return {
           select: () => ({
-            order: () => ({
-              limit: () => ({
-                maybeSingle: () => Promise.resolve({ data: { id: "company-1" }, error: null }),
-              }),
-            }),
+            maybeSingle: () => Promise.resolve({ data: { id: "company-1" }, error: null }),
           }),
         };
       }

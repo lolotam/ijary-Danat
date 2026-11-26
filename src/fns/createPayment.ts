@@ -2,8 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json, Tables } from "@/integrations/supabase/database.types";
 import { enabledPaymentMethods } from "@/lib/paymentHandoff";
 
@@ -291,6 +292,7 @@ async function invoiceSelection(input: {
 
 async function auditPaymentRequest(
   supabase: AuthenticatedSupabase,
+  db: AuthenticatedSupabase,
   paymentRequest: Tables<"payment_requests">,
 ) {
   const auditQuery = await supabase.rpc("write_audit", {
@@ -308,7 +310,7 @@ async function auditPaymentRequest(
     p_error_code: null,
   });
   if (!auditQuery.error) return;
-  await failPaymentRequest(paymentRequest.id, auditQuery.error.message);
+  await failPaymentRequest(db, paymentRequest.id, auditQuery.error.message);
   throw new Error(`Audit log write failed: ${auditQuery.error.message}`);
 }
 
@@ -374,15 +376,25 @@ async function createHostedPayment(input: {
   };
 }
 
-async function failPaymentRequest(paymentRequestId: string, message: string) {
-  await supabaseAdmin
+/** يعلّم طلب الدفع فاشلاً ويحفظ رسالة الخطأ عبر عميل الشركة. */
+async function failPaymentRequest(
+  db: AuthenticatedSupabase,
+  paymentRequestId: string,
+  message: string,
+) {
+  await db
     .from("payment_requests")
     .update({ status: "failed", gateway_response: { error: message } })
     .eq("id", paymentRequestId);
 }
 
-async function saveGatewayExecution(paymentRequestId: string, execution: GatewayExecution) {
-  const updateQuery = await supabaseAdmin
+/** يحفظ رابط البوابة ومعرّف الفاتورة الناتج على طلب الدفع عبر عميل الشركة. */
+async function saveGatewayExecution(
+  db: AuthenticatedSupabase,
+  paymentRequestId: string,
+  execution: GatewayExecution,
+) {
+  const updateQuery = await db
     .from("payment_requests")
     .update({
       provider_invoice_id: execution.providerInvoiceId,
@@ -404,12 +416,17 @@ export const createPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(inputSchema)
   .handler(async ({ data: requestInput, context }) => {
+    const company = requireRequestCompany();
     const payingTenantId = await tenantIdFromInvoices(context.supabase, requestInput.invoiceIds);
     const tenantContext = await tenantPaymentContext(
       context.supabase,
       context.userId,
       payingTenantId,
     );
+    if (tenantContext.tenant.company_id !== company.id) {
+      throw new Error("Invalid invoice selection.");
+    }
+    const db = companyClient(company.id);
     // Before `reservePaymentRequest`, deliberately: a refusal that ran after it
     // would still have minted or reset a payment_requests row for a payment
     // that can never happen. Staff are exempt for the same reason they are
@@ -430,6 +447,7 @@ export const createPayment = createServerFn({ method: "POST" })
     const gatewayConfig = gatewayConfigFromEnv();
     const appBaseUrl = process.env.APP_BASE_URL || "https://danat-future.com";
     const reservation = await reservePaymentRequest({
+      companyId: company.id,
       tenantId: tenantContext.tenant.id,
       userId: context.userId,
       selection,
@@ -441,7 +459,7 @@ export const createPayment = createServerFn({ method: "POST" })
         paymentRequestCode: reservation.request.code,
       };
     }
-    await auditPaymentRequest(context.supabase, reservation.request);
+    await auditPaymentRequest(context.supabase, db, reservation.request);
     try {
       // MyFatoorah replaces callback query strings, so keep the fallback code in the path.
       const redirectUrl = `${appBaseUrl.replace(/\/$/, "")}/portal/payments/callback/${encodeURIComponent(reservation.request.code)}`;
@@ -453,11 +471,11 @@ export const createPayment = createServerFn({ method: "POST" })
         tenant: tenantContext.tenant,
         paymentMethod: requestInput.paymentMethod,
       });
-      return await saveGatewayExecution(reservation.request.id, execution);
+      return await saveGatewayExecution(db, reservation.request.id, execution);
     } catch (gatewayError) {
       const message =
         gatewayError instanceof Error ? gatewayError.message : "MyFatoorah request failed.";
-      await failPaymentRequest(reservation.request.id, message);
+      await failPaymentRequest(db, reservation.request.id, message);
       throw new Error(message, { cause: gatewayError });
     }
   });

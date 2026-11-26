@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   loadTenantName,
@@ -12,7 +14,6 @@ import {
 } from "@/fns/adminEmailNotification";
 import { requirePermission } from "@/fns/requirePermission";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { NotificationType, Tables } from "@/integrations/supabase/database.types";
 import { joinLocalizedList } from "@/lib/contractUnits";
 import type { EmailLocale } from "@/lib/emailTemplates";
@@ -37,14 +38,15 @@ function notificationType(event: ContractEvent): NotificationType {
  * them, not just the first.
  */
 async function loadUnitNames(contractId: string, locale: EmailLocale): Promise<string> {
-  const contractUnits = await supabaseAdmin
+  const db = companyClient(requireRequestCompany().id);
+  const contractUnits = await db
     .from("contract_units")
     .select("unit_id")
     .eq("contract_id", contractId)
     .order("line_order");
   const unitIds = [...new Set((contractUnits.data ?? []).map((row) => row.unit_id))];
   if (!unitIds.length) return "-";
-  const units = await supabaseAdmin.from("units").select("name").in("id", unitIds);
+  const units = await db.from("units").select("name").in("id", unitIds);
   if (!units.data?.length) return "-";
   return joinLocalizedList(
     units.data.map((row) => row.name),
@@ -106,7 +108,13 @@ function notifyContractEvent(
   return notifyAdminEvent(`contract-${event}`, {
     type: notificationType(event),
     load: async () =>
-      rowOrThrow(await supabaseAdmin.from("contracts").select("*").eq("id", contractId).single()),
+      rowOrThrow(
+        await companyClient(requireRequestCompany().id)
+          .from("contracts")
+          .select("*")
+          .eq("id", contractId)
+          .single(),
+      ),
     dedupeMatch: { contract_id: contractId, event },
     build: (contract) => buildContractMessage(contract, event),
   });

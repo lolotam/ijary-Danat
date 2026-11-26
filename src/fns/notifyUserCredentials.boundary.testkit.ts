@@ -61,19 +61,24 @@ export function resetCredentialBoundary() {
   Object.assign(credentialBoundary, emptyStore());
 }
 
-/** مصنع `vi.mock("@/integrations/supabase/client.server")`. */
-export function credentialBoundarySupabaseModule() {
-  return {
-    supabaseAdmin: {
-      from: (table: string) => tableChain(table),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
-      storage: {
-        from: () => ({
-          download: () => Promise.resolve({ data: null, error: { message: "not found" } }),
-          upload: (path: string) => Promise.resolve({ data: { path }, error: null }),
-        }),
-      },
+/** مصنع `vi.mock("@/company/companyClient.server")`. */
+export function credentialBoundaryCompanyClientModule() {
+  const client = {
+    from: (table: string) => tableChain(table),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    storage: {
+      from: () => ({
+        download: () => Promise.resolve({ data: null, error: { message: "not found" } }),
+        upload: (path: string) => Promise.resolve({ data: { path }, error: null }),
+      }),
     },
+  };
+  return {
+    companyClient: () => client,
+    serverCompanyClient: (explicitCompanyId?: string) => ({
+      companyId: explicitCompanyId ?? "00000000-0000-4000-8000-000000000001",
+      client,
+    }),
   };
 }
 

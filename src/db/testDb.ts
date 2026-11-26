@@ -96,6 +96,60 @@ export async function actAsSuperuser(client: PoolClient): Promise<void> {
 }
 
 /**
+ * يضبط سياق الشركة في ادعاءات JWT المؤقتة عند العمل بصلاحية `postgres` حتى تعمل الدوال المعتمدة على `current_company_id()`.
+ */
+export async function setCompanyClaimContext(client: PoolClient, companyId: string): Promise<void> {
+  const {
+    rows: [{ role }],
+  } = await client.query<{ role: string | null }>(
+    `select nullif(current_setting('role', true), '') as role`,
+  );
+  if (!role || role === "none" || role === "postgres") {
+    await client.query("select set_config('request.jwt.claims', $1, true)", [
+      JSON.stringify({ role: "company_service", company_id: companyId }),
+    ]);
+  }
+}
+
+/**
+ * ينشئ مستخدماً في `auth.users` مع صف `profiles` ودور في `user_roles` ضمن الشركة المحددة.
+ */
+export async function seedCompanyUser(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+  emailPrefix = "user",
+): Promise<string> {
+  const userId = randomUUID();
+  const email = `${emailPrefix}-${userId.slice(0, 8)}@example.test`;
+  await client.query(
+    `insert into auth.users (id, instance_id, aud, role, email)
+     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
+    [userId, email],
+  );
+  await client.query(
+    `insert into public.profiles (id, company_id, display_name, is_active)
+     values ($1, $2, $3, true)
+     on conflict (id) do update set company_id = excluded.company_id, is_active = true`,
+    [userId, companyId, `${role} ${userId.slice(0, 8)}`],
+  );
+  await client.query(
+    `insert into public.user_roles (user_id, company_id, role)
+     values ($1, $2, $3::public.app_role)`,
+    [userId, companyId, role],
+  );
+  await client.query(
+    `insert into public.role_permissions (company_id, role, permission_code)
+     select distinct $1::uuid, $2::public.app_role, rp.permission_code
+       from public.role_permissions rp
+      where rp.role = $2::public.app_role
+     on conflict (company_id, role, permission_code) do nothing`,
+    [companyId, role],
+  );
+  return userId;
+}
+
+/**
  * Run `run` inside a SAVEPOINT and return the error message it raised, or null if it
  * succeeded.
  *
@@ -159,6 +213,8 @@ export interface ContractFixture {
 }
 
 interface ContractOptions {
+  /** Reuse an existing company instead of creating a new one (for same-company multi-contract fixtures). */
+  companyId?: string;
   startDate: string;
   endDate: string;
   /** Defaults to 'active' — the only state generate_invoices acts on. */
@@ -199,11 +255,15 @@ export async function seedContract(
   } = options;
   const tag = randomUUID().slice(0, 8);
 
-  const company = await client.query<{ id: string }>(
-    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
-    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
-  );
-  const companyId = company.rows[0].id;
+  let companyId = options.companyId;
+  if (!companyId) {
+    const company = await client.query<{ id: string }>(
+      `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+      [`شركة اختبار ${tag}`, `Test Co ${tag}`],
+    );
+    companyId = company.rows[0].id;
+  }
+  await setCompanyClaimContext(client, companyId);
 
   const property = await client.query<{ id: string }>(
     `insert into public.properties (code, company_id, name_ar, name_en)
@@ -213,8 +273,8 @@ export async function seedContract(
   const propertyId = property.rows[0].id;
 
   const unit = await client.query<{ id: string }>(
-    `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-    [`U-${tag}`, propertyId, `Unit ${tag}`],
+    `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+    [companyId, `U-${tag}`, propertyId, `Unit ${tag}`],
   );
   const unitId = unit.rows[0].id;
 
@@ -225,9 +285,7 @@ export async function seedContract(
   );
   const tenantId = tenant.rows[0].id;
 
-  // contracts has no company_id — it reaches the company through
-  // tenant_id -> tenants.company_id, which is what generate_invoices reads when
-  // stamping invoices.company_id.
+  // contracts carries company_id with composite FKs to tenants and units.
   //
   // unit_id is NOT written here: the column is dropped entirely in migration
   // 118. contract_units (migration 110) is the sole source of truth for which
@@ -237,10 +295,10 @@ export async function seedContract(
   // contract_units (migration 110). Writing it would be silently overwritten.
   const contract = await client.query<{ id: string }>(
     `insert into public.contracts
-       (code, tenant_id, start_date, end_date, due_day, grace_days, deposit, state)
-     values ($1, $2, $3::date, $4::date, $5, $6, $7, $8::public.contract_states)
+       (company_id, code, tenant_id, start_date, end_date, due_day, grace_days, deposit, state)
+     values ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9::public.contract_states)
      returning id`,
-    [`C-${tag}`, tenantId, startDate, endDate, dueDay, graceDays, deposit, state],
+    [companyId, `C-${tag}`, tenantId, startDate, endDate, dueDay, graceDays, deposit, state],
   );
   const contractId = contract.rows[0].id;
 
@@ -250,19 +308,20 @@ export async function seedContract(
   const unitIds: string[] = [unitId];
   for (let index = 1; index < unitPlan.length; index += 1) {
     const extra = await client.query<{ id: string }>(
-      `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-      [`U-${tag}-${index}`, propertyId, `Unit ${tag}-${index}`],
+      `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+      [companyId, `U-${tag}-${index}`, propertyId, `Unit ${tag}-${index}`],
     );
     unitIds.push(extra.rows[0].id);
   }
   for (const [index, unitRow] of unitPlan.entries()) {
     await client.query(
-      `insert into public.contract_units (contract_id, unit_id, monthly_amount, line_order)
-       values ($1, $2, $3, $4)`,
-      [contractId, unitIds[index], unitRow.monthlyAmount, index + 1],
+      `insert into public.contract_units (company_id, contract_id, unit_id, monthly_amount, line_order)
+       values ($1, $2, $3, $4, $5)`,
+      [companyId, contractId, unitIds[index], unitRow.monthlyAmount, index + 1],
     );
   }
 
+  await setCompanyClaimContext(client, companyId);
   return { companyId, propertyId, unitId, unitIds, tenantId, contractId };
 }
 

@@ -1,10 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getAuthAdmin } from "@/platform/authAdmin.server";
 import { requireRole } from "@/fns/requirePermission";
 
 /**
@@ -37,13 +39,20 @@ export const deleteAppUser = createServerFn({ method: "POST" })
       throw new Error("You cannot delete your own account.");
     }
 
-    const profile = await supabaseAdmin
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const profile = await db
       .from("profiles")
       .select("username, display_name, tenant_id")
       .eq("id", data.userId)
       .maybeSingle();
+    if (profile.error) throw new Error(profile.error.message);
+    if (!profile.data) {
+      throw new Error("User account was not found in this company.");
+    }
 
-    const deleteRes = await supabaseAdmin.auth.admin.deleteUser(data.userId);
+    const deleteRes = await getAuthAdmin().deleteUser(data.userId);
     if (deleteRes.error) {
       throw new Error(authErrorMessage(deleteRes.error, "Failed to delete the auth user"));
     }
@@ -52,13 +61,9 @@ export const deleteAppUser = createServerFn({ method: "POST" })
     // should find nothing. It is here because "the toast was green and the row
     // is still there" is precisely the failure being fixed — the delete is
     // confirmed rather than assumed.
-    const survivor = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("id", data.userId)
-      .maybeSingle();
+    const survivor = await db.from("profiles").select("id").eq("id", data.userId).maybeSingle();
     if (survivor.data) {
-      const cleanup = await supabaseAdmin.from("profiles").delete().eq("id", data.userId);
+      const cleanup = await db.from("profiles").delete().eq("id", data.userId);
       if (cleanup.error) {
         throw new Error(
           `The sign-in account was deleted but its profile row could not be removed: ${cleanup.error.message}`,
@@ -66,7 +71,7 @@ export const deleteAppUser = createServerFn({ method: "POST" })
       }
     }
 
-    await supabaseAdmin.rpc("write_audit", {
+    await db.rpc("write_audit", {
       p_action: "user.delete",
       p_entity_type: "user",
       p_entity_id: data.userId,

@@ -14,8 +14,15 @@ import {
   restoreBackup,
 } from "@/fns/restoreBackup";
 import { createBackupArchive, deleteBackupRecord } from "@/fns/backupCore";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildArchive, sha256Hex } from "@/lib/backupArchive";
+
+const supabaseAdmin = vi.hoisted(() => ({
+  from: vi.fn(),
+  rpc: vi.fn(),
+  storage: {
+    from: vi.fn(),
+  },
+}));
 
 vi.mock("@tanstack/react-start", () => {
   // A FRESH object per createServerFn() call. `mockReturnValue(fn)` evaluates
@@ -54,17 +61,18 @@ vi.mock("@/fns/backupCore", () => ({
   BACKUP_RETENTION_KEEP_PRE_RESTORE: 5,
 }));
 
-vi.mock("@/integrations/supabase/client.server", () => {
-  return {
-    supabaseAdmin: {
-      from: vi.fn(),
-      rpc: vi.fn(),
-      storage: {
-        from: vi.fn(),
-      },
-    },
-  };
-});
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => supabaseAdmin,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+}));
 
 describe("backup.ts", () => {
   beforeEach(() => {

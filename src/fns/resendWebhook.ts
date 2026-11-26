@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { Json } from "@/integrations/supabase/database.types";
 import { constantTimeEquals, decodeBase64, hmacBase64 } from "@/lib/webhookSignature";
 
@@ -241,7 +242,7 @@ function escapeLikePattern(value: string): string {
  * `email_id` is unique on its own.
  */
 async function findNotificationIdByMessageId(emailId: string): Promise<string | null> {
-  const query = await supabaseAdmin
+  const query = await companyClient(requireRequestCompany().id)
     .from("notifications")
     .select("id, provider_message_id")
     .like("provider_message_id", `%${escapeLikePattern(emailId)}%`)
@@ -286,7 +287,10 @@ export type EventRecordOutcome = "inserted" | "corrected" | "replay";
  * delivery; only a collision between two *verified* rows is a true replay.
  */
 async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome> {
+  const companyId = requireRequestCompany().id;
+  const db = companyClient(companyId);
   const row = {
+    company_id: companyId,
     provider: "resend" as const,
     event_type: input.details.eventType,
     provider_event_id: input.providerEventId,
@@ -302,7 +306,7 @@ async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome>
     error: input.error ?? null,
   };
 
-  const insert = await supabaseAdmin.from("email_webhook_events").insert(row).select("id").single();
+  const insert = await db.from("email_webhook_events").insert(row).select("id").single();
   if (!insert.error) return "inserted";
   if (insert.error.code !== "23505") throw new Error(insert.error.message);
 
@@ -313,7 +317,7 @@ async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome>
   // does not cover null ids — so a collision without one is unreachable rather
   // than merely unlikely. Reported as a replay instead of guessed at.
   if (!input.signatureValid || !input.providerEventId) return "replay";
-  const correction = await supabaseAdmin
+  const correction = await db
     .from("email_webhook_events")
     .update(row)
     .eq("provider", "resend")
@@ -556,7 +560,7 @@ export async function respondToResendWebhook(
   // moved to needs_review matches nothing, so a redelivery, an out-of-order
   // event and a duplicate all resolve to the same harmless no-op — and a
   // notification a human has since re-queued is never quietly overwritten.
-  const update = await supabaseAdmin
+  const update = await companyClient(requireRequestCompany().id)
     .from("notifications")
     .update({
       state: "needs_review",

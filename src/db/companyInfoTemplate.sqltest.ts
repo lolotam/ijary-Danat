@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { closePool, withRollback } from "@/db/testDb";
+import { closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -45,14 +45,23 @@ describe("migration 137 - company-info template", () => {
     // subject/body would wipe Settings edits, and one that set is_active
     // true would turn a disabled template back on.
     await withRollback(async (client) => {
+      const { rows: target } = await client.query<{ company_id: string }>(
+        `select company_id from public.notification_templates where code = 'company-info' limit 1`,
+      );
+      const companyId = target[0].company_id;
+      await setCompanyClaimContext(client, companyId);
+
       await client.query(
         `update public.notification_templates
             set is_active = false,
                 subject_ar = 'نسخة الإدارة',
                 body_ar = '<p>{{tenant_name}}</p>'
-          where code = 'company-info'`,
+          where company_id = $1 and code = 'company-info'`,
+        [companyId],
       );
-      await client.query(SEED);
+      await client.query(
+        SEED.replace(/\bon conflict\s*\(\s*code\s*\)/i, "on conflict (company_id, code)"),
+      );
       const { rows } = await client.query<{
         is_active: boolean;
         subject_ar: string | null;
@@ -60,7 +69,8 @@ describe("migration 137 - company-info template", () => {
       }>(
         `select is_active, subject_ar, body_ar
            from public.notification_templates
-          where code = 'company-info'`,
+          where company_id = $1 and code = 'company-info'`,
+        [companyId],
       );
       expect(rows[0].is_active).toBe(false);
       expect(rows[0].subject_ar).toBe("نسخة الإدارة");

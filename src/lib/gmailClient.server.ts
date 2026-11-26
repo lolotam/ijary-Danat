@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
 import { PROVIDER_TIMEOUT_MS } from "@/lib/providers/types";
 
 /**
@@ -44,15 +44,19 @@ export interface GmailGrant {
  * appear connected and still refuse to send. It is intentionally unset in
  * production for exactly that reason.
  */
-export async function readGmailGrant(): Promise<GmailGrant | null> {
+/**
+ * يحسم بيانات اعتماد Gmail الخاصة بالشركة الحالية أو بالمتغيّر البيئي الاحتياطي.
+ */
+export async function readGmailGrant(explicitCompanyId?: string): Promise<GmailGrant | null> {
   const clientId = process.env.GMAIL_CLIENT_ID;
   const clientSecret = process.env.GMAIL_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
 
-  const { data: connection } = await supabaseAdmin
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
+  const { data: connection } = await client
     .from("gmail_connections")
     .select("id, refresh_token, email_address, scope")
-    .limit(1)
+    .eq("company_id", companyId)
     .maybeSingle();
 
   const refreshToken = connection?.refresh_token || process.env.GMAIL_REFRESH_TOKEN;

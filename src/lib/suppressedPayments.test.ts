@@ -19,39 +19,42 @@ let contractData: Array<{
   hide_from_portal?: boolean | null;
 }> = [];
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "payment_allocations") {
-        return {
-          select: () => ({
-            in: async () => ({ data: allocationData, error: null }),
-          }),
-        };
-      }
-      if (table === "invoices") {
-        return {
-          select: () => ({
-            in: async () => ({ data: invoiceData, error: null }),
-          }),
-        };
-      }
-      if (table === "payments") {
-        return { select: () => ({ in: async () => ({ data: paymentData, error: null }) }) };
-      }
-      if (table === "payment_requests") {
-        return { select: () => ({ in: async () => ({ data: requestData, error: null }) }) };
-      }
-      if (table === "contracts") {
-        return {
-          select: () => ({
-            in: async () => ({ data: contractData, error: null }),
-          }),
-        };
-      }
-      return { select: () => ({ in: async () => ({ data: [], error: null }) }) };
+vi.mock("@/company/companyClient.server", () => ({
+  serverCompanyClient: () => ({
+    companyId: "11111111-1111-4111-8111-111111111111",
+    client: {
+      from: (table: string) => {
+        if (table === "payment_allocations") {
+          return {
+            select: () => ({
+              in: async () => ({ data: allocationData, error: null }),
+            }),
+          };
+        }
+        if (table === "invoices") {
+          return {
+            select: () => ({
+              in: async () => ({ data: invoiceData, error: null }),
+            }),
+          };
+        }
+        if (table === "payments") {
+          return { select: () => ({ in: async () => ({ data: paymentData, error: null }) }) };
+        }
+        if (table === "payment_requests") {
+          return { select: () => ({ in: async () => ({ data: requestData, error: null }) }) };
+        }
+        if (table === "contracts") {
+          return {
+            select: () => ({
+              in: async () => ({ data: contractData, error: null }),
+            }),
+          };
+        }
+        return { select: () => ({ in: async () => ({ data: [], error: null }) }) };
+      },
     },
-  },
+  }),
 }));
 
 const { getSuppressedPaymentIds } = await import("./suppressedPayments");

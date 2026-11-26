@@ -8,6 +8,7 @@ import {
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
@@ -57,24 +58,9 @@ async function seedExpenseCategory(client: PoolClient, nameAr: string, nameEn: s
  * so these tests must adopt a real identity, then hand the role back before
  * asserting through RLS-protected tables.
  */
-async function seedAdmin(client: PoolClient): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, 'admin'::public.app_role)`,
-    [userId],
-  );
-  await client.query(
-    `insert into public.profiles (id, email, display_name, is_active)
-     values ($1, $2, 'Extra Charges Admin', true)
-     on conflict (id) do nothing`,
-    [userId, `${userId}@example.test`],
-  );
-  return userId;
+/** ينشئ مستخدماً إدارياً ضمن الشركة لاستدعاء دوال الحفظ التي تفرض الصلاحيات. */
+async function seedAdmin(client: PoolClient, companyId: string): Promise<string> {
+  return seedCompanyUser(client, companyId, "admin", "ec-admin");
 }
 
 /** عقد لسنة كاملة بإيجار واحد، جاهز للتوليد. */
@@ -386,18 +372,19 @@ describe("save_contract_with_units extra charges", () => {
   /** يستدعي دالة الحفظ بحمولة العقد الحالية زائد المصروفات المطلوبة. */
   async function save(client: PoolClient, contractId: string, extraCharges: unknown) {
     const { rows } = await client.query<Record<string, unknown>>(
-      `select tenant_id, type::text as type, state::text as state, start_date, end_date,
+      `select company_id, tenant_id, type::text as type, state::text as state, start_date, end_date,
               duration_months, due_day, grace_days, deposit
          from public.contracts where id = $1`,
       [contractId],
     );
-    const contract: Record<string, unknown> = { ...rows[0] };
+    const { company_id: companyId, ...contractFields } = rows[0];
+    const contract: Record<string, unknown> = { ...contractFields };
     if (extraCharges !== undefined) contract.extra_charges = extraCharges;
     const units = await client.query<{ unit_id: string; monthly_amount: string }>(
       `select unit_id, monthly_amount from public.contract_units where contract_id = $1`,
       [contractId],
     );
-    await actAs(client, "authenticated", await seedAdmin(client));
+    await actAs(client, "authenticated", await seedAdmin(client, companyId as string));
     try {
       await client.query(`select public.save_contract_with_units($1::jsonb, $2::jsonb, $3)`, [
         JSON.stringify(contract),
@@ -524,7 +511,7 @@ describe("append_extra_charge_items is not reachable as an RPC", () => {
     // and a hole if a tenant can reach it: they could add billed lines to an
     // invoice by naming a contract id and a free line number.
     await withRollback(async (client) => {
-      const { contractId } = await seedYearContract(client, 1000);
+      const { companyId, contractId } = await seedYearContract(client, 1000);
       await addExtraCharge(
         client,
         contractId,
@@ -534,7 +521,7 @@ describe("append_extra_charge_items is not reachable as an RPC", () => {
       await generateYear(client, contractId);
       const invoice = await firstInvoice(client, contractId);
 
-      await actAs(client, "authenticated", await seedAdmin(client));
+      await actAs(client, "authenticated", await seedAdmin(client, companyId));
       // Through captureRaise: Postgres aborts the whole transaction on an
       // error, so a bare rejects.toThrow() here would take the teardown — and
       // every later assertion — down with it.
@@ -556,7 +543,7 @@ describe("append_extra_charge_items is not reachable as an RPC", () => {
     // rather than against whoever invoked the outer function — this is what
     // proves that reasoning rather than assuming it.
     await withRollback(async (client) => {
-      const { contractId } = await seedYearContract(client, 1000);
+      const { companyId, contractId } = await seedYearContract(client, 1000);
       await addExtraCharge(
         client,
         contractId,
@@ -564,7 +551,7 @@ describe("append_extra_charge_items is not reachable as an RPC", () => {
         100,
       );
 
-      await actAs(client, "authenticated", await seedAdmin(client));
+      await actAs(client, "authenticated", await seedAdmin(client, companyId));
       try {
         await client.query(`select * from public.generate_invoices_for_year($1, $2, true)`, [
           contractId,

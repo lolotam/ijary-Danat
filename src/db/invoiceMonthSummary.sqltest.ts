@@ -3,14 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import {
-  actAs,
-  actAsSuperuser,
-  captureRaise,
-  closePool,
-  seedContract,
-  withRollback,
-} from "@/db/testDb";
+import { actAs, captureRaise, closePool, seedContract, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -54,6 +47,7 @@ async function summary(
 }
 
 interface SplitScenario {
+  companyId: string;
   aPropertyId: string;
   bPropertyId: string;
   cPropertyId: string;
@@ -75,11 +69,13 @@ async function seedSplitScenario(client: PoolClient): Promise<SplitScenario> {
     units: [{ monthlyAmount: 300 }],
   });
   const b = await seedContract(client, {
+    companyId: a.companyId,
     startDate: "2029-01-01",
     endDate: "2029-12-31",
     units: [{ monthlyAmount: 200 }],
   });
   const s = await seedContract(client, {
+    companyId: a.companyId,
     startDate: "2029-01-01",
     endDate: "2029-12-31",
     units: [{ monthlyAmount: 300 }, { monthlyAmount: 200 }],
@@ -98,6 +94,7 @@ async function seedSplitScenario(client: PoolClient): Promise<SplitScenario> {
     ]);
   }
   return {
+    companyId: a.companyId,
     aPropertyId: a.propertyId,
     bPropertyId: b.propertyId,
     cPropertyId: s.propertyId,
@@ -115,19 +112,20 @@ async function seedSplitScenario(client: PoolClient): Promise<SplitScenario> {
  */
 async function payInvoice(
   client: PoolClient,
+  companyId: string,
   tenantId: string,
   invoiceId: string,
   amount: number,
 ): Promise<void> {
   const payment = await client.query<{ id: string }>(
-    `insert into public.payments (tenant_id, amount, method, status, payment_date)
-     values ($1, $2, 'cash', 'confirmed', '2029-01-15') returning id`,
-    [tenantId, amount],
+    `insert into public.payments (company_id, tenant_id, amount, method, status, payment_date)
+     values ($1, $2, $3, 'cash', 'confirmed', '2029-01-15') returning id`,
+    [companyId, tenantId, amount],
   );
   await client.query(
-    `insert into public.payment_allocations (payment_id, invoice_id, amount)
-     values ($1, $2, $3)`,
-    [payment.rows[0].id, invoiceId, amount],
+    `insert into public.payment_allocations (company_id, payment_id, invoice_id, amount)
+     values ($1, $2, $3, $4)`,
+    [companyId, payment.rows[0].id, invoiceId, amount],
   );
   await client.query(`select public.recompute_invoice_from_confirmed($1)`, [invoiceId]);
 }
@@ -135,7 +133,6 @@ async function payInvoice(
 describe("get_invoice_month_summary", () => {
   test("null property aggregates whole invoices: 3 per month, 1000 total", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       await seedSplitScenario(client);
       const rows = await summary(client, 2029, null);
       expect(rows).toHaveLength(12);
@@ -152,7 +149,6 @@ describe("get_invoice_month_summary", () => {
 
   test("each property takes its own contract plus its share of the shared invoice", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fx = await seedSplitScenario(client);
       const aRows = await summary(client, 2029, fx.aPropertyId);
       const bRows = await summary(client, 2029, fx.bPropertyId);
@@ -173,14 +169,13 @@ describe("get_invoice_month_summary", () => {
 
   test("a partial payment on the shared invoice follows the same share", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fx = await seedSplitScenario(client);
       const { rows } = await client.query<{ id: string }>(
         `select id from public.invoices
           where contract_id = $1 and period_year = 2029 and period_month = 1`,
         [fx.sContractId],
       );
-      await payInvoice(client, fx.sTenantId, rows[0].id, 250);
+      await payInvoice(client, fx.companyId, fx.sTenantId, rows[0].id, 250);
       const aJanuary = (await summary(client, 2029, fx.aPropertyId))[0];
       const bJanuary = (await summary(client, 2029, fx.bPropertyId))[0];
       // B: own 200 unpaid + shared 250 × 0.4 paid of 500 × 0.4.
@@ -194,13 +189,12 @@ describe("get_invoice_month_summary", () => {
 
   test("a zero-amount rent line still counts as a touch, with zero money", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const fx = await seedSplitScenario(client);
       const tag = randomUUID().slice(0, 8);
       const unit = await client.query<{ id: string }>(
-        `insert into public.units (code, property_id, name)
-         values ($1, $2, $3) returning id`,
-        [`UZ-${tag}`, fx.cPropertyId, `Zero unit ${tag}`],
+        `insert into public.units (company_id, code, property_id, name)
+         values ($1, $2, $3, $4) returning id`,
+        [fx.companyId, `UZ-${tag}`, fx.cPropertyId, `Zero unit ${tag}`],
       );
       const { rows } = await client.query<{ id: string }>(
         `select id from public.invoices
@@ -214,10 +208,10 @@ describe("get_invoice_month_summary", () => {
       );
       await client.query(
         `insert into public.invoice_items
-           (invoice_id, line, unit_id, description_ar, description_en,
+           (company_id, invoice_id, line, unit_id, description_ar, description_en,
             quantity, unit_price, discount_percent, amount, is_concession)
-         values ($1, $2, $3, 'بند صفري', 'Zero line', 1, 0, 0, 0, false)`,
-        [invoiceId, Number(lineRows[0].max) + 1, unit.rows[0].id],
+         values ($1, $2, $3, $4, 'بند صفري', 'Zero line', 1, 0, 0, 0, false)`,
+        [fx.companyId, invoiceId, Number(lineRows[0].max) + 1, unit.rows[0].id],
       );
       const cRows = await summary(client, 2029, fx.cPropertyId);
       expect(cRows.filter((row) => row.count > 0).map((row) => row.month)).toEqual([2]);
@@ -231,7 +225,6 @@ describe("get_invoice_month_summary", () => {
 
   test("thirds of a discounted dinar round once per month: 0.333 per building, 1 overall", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const tag = randomUUID().slice(0, 8);
       const t = await seedContract(client, {
         startDate: "2030-01-01",
@@ -300,7 +293,6 @@ describe("get_invoice_month_summary", () => {
 
   test("a property with no invoices returns 12 zero rows", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const lonely = await seedContract(client, {
         startDate: "2029-01-01",
         endDate: "2029-12-31",
@@ -322,7 +314,6 @@ describe("get_invoice_month_summary", () => {
 
   test("anon cannot execute but authenticated can", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
       const { rows } = await client.query<{ allowed: boolean }>(
         `select has_function_privilege('anon', 'public.get_invoice_month_summary(integer, uuid)', 'execute') as allowed`,
       );
@@ -336,12 +327,20 @@ describe("get_invoice_month_summary", () => {
 
   test("an authenticated user without invoices.read is refused", async () => {
     await withRollback(async (client) => {
-      await actAsSuperuser(client);
+      const company = await client.query<{ id: string }>(
+        `insert into public.companies (name_ar, name_en) values ('شركة ملخص', 'Summary Co') returning id`,
+      );
       const { rows } = await client.query<{ id: string }>(
         `insert into auth.users (id, instance_id, aud, role, email)
          values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
                  'authenticated', 'authenticated', 'nobody-summary@example.test')
          returning id`,
+      );
+      await client.query(
+        `insert into public.profiles (id, company_id, display_name, is_active)
+         values ($1, $2, 'No Role', true)
+         on conflict (id) do update set company_id = excluded.company_id, is_active = true`,
+        [rows[0].id, company.rows[0].id],
       );
       // No role assignment, so has_permission() returns false for every code.
       await actAs(client, "authenticated", rows[0].id);

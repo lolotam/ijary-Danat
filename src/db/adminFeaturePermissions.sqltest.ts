@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, captureRaise, closePool, withRollback } from "@/db/testDb";
+import { actAs, captureRaise, closePool, seedCompanyUser, withRollback } from "@/db/testDb";
 import { PERMISSION_CODES } from "@/lib/permissions";
 
 afterAll(closePool);
@@ -15,23 +15,29 @@ afterAll(closePool);
  * does not know), and the RLS policy must check the code rather than a role.
  */
 
-/** ينشئ مستخدماً بدور محاسب، ويمنحه الصلاحيات المذكورة عبر role_permissions. */
-async function seedAccountant(client: PoolClient, codes: string[]): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار جديدة ويعيد معرّفها. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
   );
-  await client.query(`insert into public.user_roles (user_id, role) values ($1, 'accountant')`, [
-    userId,
-  ]);
-  // Grants are per role, so they are rolled back with the test transaction.
+  return rows[0].id;
+}
+
+/** ينشئ مستخدماً بدور محاسب ضمن الشركة، ويمنحه الصلاحيات المذكورة عبر role_permissions. */
+async function seedAccountant(
+  client: PoolClient,
+  companyId: string,
+  codes: string[],
+): Promise<string> {
+  const userId = await seedCompanyUser(client, companyId, "accountant", "afp-acct");
+  // Grants are per company and role, so they are rolled back with the test transaction.
   for (const code of codes) {
     await client.query(
-      `insert into public.role_permissions (role, permission_code)
-       values ('accountant', $1) on conflict do nothing`,
-      [code],
+      `insert into public.role_permissions (company_id, role, permission_code)
+       values ($1, 'accountant', $2) on conflict do nothing`,
+      [companyId, code],
     );
   }
   return userId;
@@ -62,19 +68,29 @@ describe("RLS follows the migration-230 codes, not the admin role", () => {
     ["landing_page_sections", "enabled", "landing_page.update"],
   ])("%s is writable with %s's code and not without it", async (table, column, code) => {
     await withRollback(async (client) => {
-      const { rows } = await client.query<{ n: number }>(
-        `select count(*)::int as n from public.${table}`,
+      const { rows } = await client.query<{ n: number; company_id: string | null }>(
+        `select count(*)::int as n, min(company_id::text) as company_id from public.${table}`,
       );
       // The assertion below is only meaningful if there is a row to touch.
       expect(rows[0].n).toBeGreaterThan(0);
+      const companyId = rows[0].company_id!;
 
-      const without = await seedAccountant(client, []);
+      const without = await seedAccountant(client, companyId, []);
+      await client.query(
+        `delete from public.role_permissions
+          where company_id = $1 and role = 'accountant' and permission_code = $2`,
+        [companyId, code],
+      );
       await actAs(client, "authenticated", without);
       expect(await touchableRows(client, table, column)).toBe(0);
     });
 
     await withRollback(async (client) => {
-      const granted = await seedAccountant(client, [code]);
+      const { rows } = await client.query<{ company_id: string | null }>(
+        `select min(company_id::text) as company_id from public.${table}`,
+      );
+      const companyId = rows[0].company_id!;
+      const granted = await seedAccountant(client, companyId, [code]);
       await actAs(client, "authenticated", granted);
       expect(await touchableRows(client, table, column)).toBeGreaterThan(0);
     });
@@ -90,13 +106,15 @@ describe("RLS follows the migration-230 codes, not the admin role", () => {
       ]);
 
     await withRollback(async (client) => {
-      const without = await seedAccountant(client, []);
+      const companyId = await seedCompany(client);
+      const without = await seedAccountant(client, companyId, []);
       await actAs(client, "authenticated", without);
       expect(await captureRaise(client, () => insert(client))).toMatch(/row-level security/i);
     });
 
     await withRollback(async (client) => {
-      const granted = await seedAccountant(client, [code]);
+      const companyId = await seedCompany(client);
+      const granted = await seedAccountant(client, companyId, [code]);
       await actAs(client, "authenticated", granted);
       expect(await captureRaise(client, () => insert(client))).toBeNull();
     });

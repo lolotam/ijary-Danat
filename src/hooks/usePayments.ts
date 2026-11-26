@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { resolveUploadCompanyId } from "@/company/browserCompany";
+import { companyStoragePath } from "@/company/storagePath";
 import { usePermissions } from "@/hooks/usePermissions";
 import { normalizePostgrestSearch } from "@/hooks/querySearch";
 import { supabase } from "@/integrations/supabase/client";
@@ -187,15 +189,20 @@ export function useCreateManualPayment() {
     mutationFn: async (input: CreateManualPaymentInput) => {
       if (!permissions.can(PERMISSIONS.PAYMENTS_CREATE)) throw new Error("Permission denied.");
       const id = crypto.randomUUID();
+      let resolvedCompanyId = input.companyId;
       let attachmentPath: string | null = null;
       if (input.attachment) {
         assertPdfOrImageWithinStorageLimit(input.attachment);
+        resolvedCompanyId = await resolveUploadCompanyId(input.companyId);
         const extension = input.attachment.name
           .split(".")
           .pop()
           ?.toLowerCase()
           .replace(/[^a-z0-9]/g, "");
-        attachmentPath = `companies/${input.companyId ?? "unassigned"}/tenants/${input.tenantId}/payments/${id}/evidence.${extension || "bin"}`;
+        attachmentPath = companyStoragePath(
+          resolvedCompanyId,
+          `tenants/${input.tenantId}/payments/${id}/evidence.${extension || "bin"}`,
+        );
         const { error: uploadError } = await supabase.storage
           .from("payment-attachments")
           .upload(attachmentPath, input.attachment, { upsert: false });
@@ -208,7 +215,7 @@ export function useCreateManualPayment() {
         .from("payments")
         .insert({
           id,
-          company_id: input.companyId,
+          company_id: resolvedCompanyId,
           tenant_id: input.tenantId,
           account_type: input.accountType,
           method: input.method,

@@ -6,7 +6,6 @@ import { Download } from "lucide-react";
 import { toast } from "sonner";
 
 import { SettingsForm } from "@/components/admin/settings/CompanySettingsForm";
-import { EraseAllDataSection } from "@/components/admin/settings/EraseAllDataSection";
 import {
   companyFormValues,
   companyUpdate,
@@ -148,8 +147,6 @@ function CompanySettingsPage() {
           />
         </CardContent>
       </Card>
-
-      <EraseAllDataSection isAdmin={permissions.isAdmin} />
     </div>
   );
 }

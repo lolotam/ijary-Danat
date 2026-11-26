@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
+import { companyStoragePath } from "@/company/storagePath";
+import type { Database } from "@/integrations/supabase/database.types";
 import { renderHtmlToPdf, wrapHtmlForPdf } from "@/lib/serverPdf";
 
 /**
@@ -59,12 +62,12 @@ function contentFingerprint(printableHtml: string): string {
  * did not need is a wasted couple of seconds, while wrongly reporting a hit
  * would attach a document that does not exist.
  */
-async function storedAlready(path: string): Promise<boolean> {
+async function storedAlready(client: SupabaseClient<Database>, path: string): Promise<boolean> {
   const separator = path.lastIndexOf("/");
   const folder = path.slice(0, separator);
   const objectName = path.slice(separator + 1);
 
-  const listing = await supabaseAdmin.storage
+  const listing = await client.storage
     .from(REPORT_DOCUMENTS_BUCKET)
     .list(folder, { search: objectName, limit: 100 });
   if (listing.error) {
@@ -77,14 +80,7 @@ async function storedAlready(path: string): Promise<boolean> {
 }
 
 /**
- * Render `html` and store it under `<prefix>/<name>-<discriminator>-<hash>.pdf`.
- *
- * An identical document already in the bucket is reused as-is: resending a
- * report, or re-notifying a payment, used to spawn Chromium and re-print bytes
- * that were already stored, roughly two seconds of work per send to arrive at
- * the same file. The stored copy is also what the recipient originally got, so
- * reusing it makes a resend genuinely the *same* document rather than one that
- * merely ought to match.
+ * يحوّل HTML إلى PDF ويخزّنه تحت مسار الشركة `companies/<companyId>/<prefix>/<name>-<discriminator>-<hash>.pdf`.
  *
  * Returns `null` rather than throwing when rendering or upload fails. A report
  * whose PDF could not be produced must still reach its recipients as HTML —
@@ -93,23 +89,28 @@ async function storedAlready(path: string): Promise<boolean> {
  */
 export async function renderAndStorePdf(input: {
   arabic: boolean;
+  companyId?: string;
   discriminator: string;
   html: string;
   name: string;
   prefix: string;
 }): Promise<StoredPdf | null> {
+  const { companyId, client } = serverCompanyClient(input.companyId);
   const printableHtml = wrapHtmlForPdf(input.html, { arabic: input.arabic });
-  const path = `${safeKeySegment(input.prefix)}/${safeKeySegment(input.name)}-${safeKeySegment(
-    input.discriminator,
-  )}-${contentFingerprint(printableHtml)}.pdf`;
+  const path = companyStoragePath(
+    companyId,
+    `${safeKeySegment(input.prefix)}/${safeKeySegment(input.name)}-${safeKeySegment(
+      input.discriminator,
+    )}-${contentFingerprint(printableHtml)}.pdf`,
+  );
 
   try {
-    if (await storedAlready(path)) {
+    if (await storedAlready(client, path)) {
       return { bucket: REPORT_DOCUMENTS_BUCKET, path };
     }
 
     const pdf = await renderHtmlToPdf(printableHtml);
-    const upload = await supabaseAdmin.storage
+    const upload = await client.storage
       .from(REPORT_DOCUMENTS_BUCKET)
       .upload(path, pdf, { contentType: "application/pdf", upsert: true });
     if (upload.error) {

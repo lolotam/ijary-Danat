@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 import type { PoolClient } from "pg";
 
-import { seedContract } from "@/db/testDb";
+import { seedCompanyUser, seedContract } from "@/db/testDb";
 
 /**
  * تجهيزات مشتركة لاختبارات تعديل الدفعة الجزئية (الهجرة 191).
@@ -146,18 +146,26 @@ export async function editPartial(
 /**
  * مستخدم إداري حقيقي لاختبار صلاحية RPC التعديل.
  */
-export async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+export async function seedUserWithRole(
+  client: PoolClient,
+  role: string,
+  companyId?: string,
+): Promise<string> {
+  let cid = companyId;
+  if (!cid) {
+    const { rows } = await client.query<{ id: string | null }>(
+      `select public.current_company_id() as id`,
+    );
+    if (rows[0]?.id) {
+      cid = rows[0].id;
+    } else {
+      const created = await client.query<{ id: string }>(
+        `insert into public.companies (name_ar, name_en) values ('شركة اختبار', 'Test Co') returning id`,
+      );
+      cid = created.rows[0].id;
+    }
+  }
+  return seedCompanyUser(client, cid, role, "pp");
 }
 
 /**

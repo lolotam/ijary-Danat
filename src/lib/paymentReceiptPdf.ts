@@ -1,8 +1,10 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { serverCompanyClient } from "@/company/companyClient.server";
 import type { AllocationWithInvoice } from "@/hooks/usePaymentAllocations";
 import type { Company } from "@/hooks/useCompany";
 import { t, type Locale } from "@/i18n/dictionary";
-import type { Tables } from "@/integrations/supabase/database.types";
+import type { Database, Tables } from "@/integrations/supabase/database.types";
 import { fetchInChunks } from "@/lib/idChunks";
 import {
   EXTRA_CHARGE_ITEM_COLUMNS,
@@ -73,11 +75,14 @@ type ReceiptRow = ReceiptIdentity &
  * Broad on purpose, and narrow in reach: nothing but this one lookup is inside
  * the `try`, so a failure anywhere else still surfaces.
  */
-async function fetchExtraCharges(invoiceIds: string[]): Promise<Map<string, ExtraChargeLine[]>> {
+async function fetchExtraCharges(
+  client: SupabaseClient<Database>,
+  invoiceIds: string[],
+): Promise<Map<string, ExtraChargeLine[]>> {
   if (!invoiceIds.length) return new Map();
   try {
     const rows = await fetchInChunks(invoiceIds, (chunk) =>
-      supabaseAdmin.from("invoice_items").select(EXTRA_CHARGE_ITEM_COLUMNS).in("invoice_id", chunk),
+      client.from("invoice_items").select(EXTRA_CHARGE_ITEM_COLUMNS).in("invoice_id", chunk),
     );
     return resolveExtraChargesByInvoice(rows);
   } catch (error) {
@@ -88,26 +93,12 @@ async function fetchExtraCharges(invoiceIds: string[]): Promise<Map<string, Extr
 
 /**
  * يجلب تخصيصات الدفعات مع فواتيرها، باستعلام واحد لكل الدفعات.
- *
- * Fetched here rather than reused from the notification builder because the
- * receipt needs whole rows — each allocation's invoice code and period — while
- * that builder selects only the few columns its own text names. Widening its
- * query to serve this would couple the two.
- *
- * The invoices are fetched and joined in memory rather than embedded as
- * `invoice:invoices(*)`, mirroring `fetchPaymentAllocations`. `database.types.ts`
- * is hand-maintained and declares no relationship between the two tables, so an
- * embedded select types as a `SelectQueryError` and only compiles behind a cast
- * that asserts a shape the types cannot vouch for.
- *
- * A failed query is logged and yields a receipt showing its total without the
- * per-invoice breakdown. On this path a half-loaded receipt beats none: the
- * money has already moved and the mail still has to go.
  */
 async function fetchAllocationsWithInvoices(
+  client: SupabaseClient<Database>,
   paymentIds: string[],
 ): Promise<AllocationWithInvoice[]> {
-  const allocationsResult = await supabaseAdmin
+  const allocationsResult = await client
     .from("payment_allocations")
     .select("*")
     .in("payment_id", paymentIds)
@@ -120,22 +111,17 @@ async function fetchAllocationsWithInvoices(
   const allocations = allocationsResult.data ?? [];
   const invoiceIds = [...new Set(allocations.map((allocation) => allocation.invoice_id))];
   const invoiceResult = invoiceIds.length
-    ? await supabaseAdmin.from("invoices").select("*").in("id", invoiceIds)
+    ? await client.from("invoices").select("*").in("id", invoiceIds)
     : { data: [] as Tables<"invoices">[], error: null };
   if (invoiceResult.error) {
     console.error("[paymentReceiptPdf] invoices query failed", invoiceResult.error.message);
   }
-  // Known, pre-existing, and NOT fixed here: this lookup is neither chunked nor
-  // row-cap-checked either. Its clip is far less reachable — one row per
-  // invoice against the items table's several — and costs a receipt line its
-  // code and period rather than its money. It predates this change and deserves
-  // its own, with a test.
 
   const invoiceById = new Map(
     (invoiceResult.data ?? []).map((invoice) => [invoice.id, invoice] as const),
   );
 
-  const extraChargesFor = await fetchExtraCharges(invoiceIds);
+  const extraChargesFor = await fetchExtraCharges(client, invoiceIds);
 
   return allocations.map((allocation) => ({
     ...allocation,
@@ -182,12 +168,15 @@ function groupByPaymentId(
 const BREAKDOWN_BATCH_SIZE = 8;
 
 async function fetchBreakdowns(
+  client: SupabaseClient<Database>,
   invoiceIds: string[],
 ): Promise<Map<string, InvoicePaymentBreakdown>> {
   const breakdowns = new Map<string, InvoicePaymentBreakdown>();
   for (let start = 0; start < invoiceIds.length; start += BREAKDOWN_BATCH_SIZE) {
     const batch = invoiceIds.slice(start, start + BREAKDOWN_BATCH_SIZE);
-    const snapshots = await Promise.all(batch.map(fetchBreakdown));
+    const snapshots = await Promise.all(
+      batch.map((invoiceId) => fetchBreakdown(client, invoiceId)),
+    );
     for (const [invoiceId, snapshot] of snapshots) {
       if (snapshot) breakdowns.set(invoiceId, snapshot);
     }
@@ -197,17 +186,13 @@ async function fetchBreakdowns(
 
 /**
  * يجلب لقطة سداد فاتورة واحدة، ويعيد null عند الفشل بعد تسجيله.
- *
- * Broad on purpose and narrow in reach, the same rule the other lookups here
- * follow: the RPC error and the jsonb shape are two different failures and
- * neither may throw out of a notification, so both are caught in the one place
- * that can name the invoice they belong to.
  */
 async function fetchBreakdown(
+  client: SupabaseClient<Database>,
   invoiceId: string,
 ): Promise<readonly [string, InvoicePaymentBreakdown | null]> {
   try {
-    const { data, error } = await supabaseAdmin.rpc("get_invoice_payment_breakdown", {
+    const { data, error } = await client.rpc("get_invoice_payment_breakdown", {
       p_invoice_id: invoiceId,
     });
     if (error) throw new Error(error.message);
@@ -220,20 +205,14 @@ async function fetchBreakdown(
 
 /**
  * يحمّل علاقات الفواتير المسدَّدة، وبلا رمي استثناء.
- *
- * A failed lookup degrades to the invoice rows with no relations attached
- * rather than to no document, because the relations decide what a few grid
- * cells *say* and not which paper is printed: the tenant, unit and property
- * rows fall back to their em-dash and the sheet is otherwise the one the
- * platform prints. Losing the attachment over an empty unit cell would be the
- * worse trade, and the money has already moved by the time we are here.
  */
 async function fetchInvoiceRelations(
+  client: SupabaseClient<Database>,
   invoices: Tables<"invoices">[],
 ): Promise<Map<string, InvoiceWithRelations>> {
   if (!invoices.length) return new Map();
   try {
-    const enriched = await loadInvoicesWithRelations(supabaseAdmin, invoices);
+    const enriched = await loadInvoicesWithRelations(client, invoices);
     return new Map(enriched.map((invoice) => [invoice.id, invoice] as const));
   } catch (error) {
     console.error("[paymentReceiptPdf] invoice relations query failed", error);
@@ -243,20 +222,10 @@ async function fetchInvoiceRelations(
 
 /**
  * يحمّل كل ما يحتاجه بناء الإيصال: التخصيصات مجمّعة وبيانات الشركة والمستأجر.
- *
- * The company row carries the logo, bank details and footer the document
- * prints. Both builders tolerate a null company, so a failed lookup is logged
- * and the paper renders without the letterhead. The tenant select is explicit so
- * the commercial names cannot silently go missing and every emailed document
- * fall back to the legal name. The receipts lookup is what heads each document
- * with its issued number rather than the payment code, so the attachment, the
- * portal download and the office copy agree.
- *
- * The invoice relations and the payment snapshots are loaded in a second pass
- * because both are keyed on the invoices the allocations name, which the first
- * pass is what discovers.
  */
 async function loadReceiptContext(
+  client: SupabaseClient<Database>,
+  companyId: string,
   paymentIds: string[],
   tenantId: string | null,
 ): Promise<{
@@ -268,7 +237,7 @@ async function loadReceiptContext(
   tenant: PartyNameTenant | null;
 }> {
   const tenantQuery = tenantId
-    ? supabaseAdmin
+    ? client
         .from("tenants")
         .select("commercial_name, commercial_name_ar, commercial_name_en, name, name_en")
         .eq("id", tenantId)
@@ -276,18 +245,10 @@ async function loadReceiptContext(
     : Promise.resolve({ data: null as PartyNameTenant | null, error: null });
 
   const [allocations, companyResult, tenantResult, receiptResult] = await Promise.all([
-    fetchAllocationsWithInvoices(paymentIds),
-    supabaseAdmin
-      .from("companies")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
+    fetchAllocationsWithInvoices(client, paymentIds),
+    client.from("companies").select("*").eq("id", companyId).maybeSingle(),
     tenantQuery,
-    // `id`, `amount` and `currency` alongside the code and date because
-    // `buildPaymentDocument` takes the receipt row itself, not just its
-    // identity — the same shape the two screens hand it.
-    supabaseAdmin
+    client
       .from("receipts")
       .select("id, code, issue_date, amount, currency, payment_id")
       .in("payment_id", paymentIds),
@@ -304,8 +265,11 @@ async function loadReceiptContext(
 
   const settled = settledInvoicesOf(allocations);
   const [invoicesById, breakdowns] = await Promise.all([
-    fetchInvoiceRelations(settled),
-    fetchBreakdowns(settled.map((invoice) => invoice.id)),
+    fetchInvoiceRelations(client, settled),
+    fetchBreakdowns(
+      client,
+      settled.map((invoice) => invoice.id),
+    ),
   ]);
 
   return {
@@ -351,14 +315,20 @@ async function loadReceiptContext(
  * *different design* is not a degradation, it is the bug.
  */
 export async function renderPaymentReceiptPdfs(input: {
+  companyId?: string;
   locale: Locale;
   manualPaymentReason: string | null;
   payments: Tables<"payments">[];
 }): Promise<StoredReceiptPdf[]> {
   if (!input.payments.length) return [];
 
+  const { companyId, client } = serverCompanyClient(
+    input.companyId ?? input.payments[0]?.company_id,
+  );
   const { allocationsByPayment, breakdowns, company, invoicesById, receiptByPayment, tenant } =
     await loadReceiptContext(
+      client,
+      companyId,
       input.payments.map((payment) => payment.id),
       input.payments[0]?.tenant_id ?? null,
     );
@@ -369,6 +339,7 @@ export async function renderPaymentReceiptPdfs(input: {
         allocations: allocationsByPayment.get(payment.id) ?? [],
         breakdowns,
         company,
+        companyId,
         invoicesById,
         locale: input.locale,
         manualPaymentReason: input.manualPaymentReason,
@@ -397,6 +368,7 @@ async function renderOnePayment(
     allocations: AllocationWithInvoice[];
     breakdowns: Map<string, InvoicePaymentBreakdown>;
     company: Company | null;
+    companyId: string;
     invoicesById: Map<string, InvoiceWithRelations>;
     locale: Locale;
     manualPaymentReason: string | null;
@@ -441,6 +413,7 @@ async function renderOnePayment(
     // whatever language it is read in, and `wrapHtmlForPdf` puts this on the
     // `<html>` element the receipt's own `dir` sits inside.
     arabic: printable.dir === "rtl",
+    companyId: context.companyId,
     // The id, not the code: it is the one value that cannot collide, and it
     // makes the upload idempotent — a re-render of the same payment overwrites
     // its own object instead of littering the bucket.

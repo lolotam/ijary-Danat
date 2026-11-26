@@ -8,11 +8,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const limit = vi.fn();
-vi.mock("@/integrations/supabase/client.server", () => {
+const TEST_COMPANY = {
+  id: "00000000-0000-4000-8000-000000000001",
+  slug: "danat",
+  status: "active" as const,
+};
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => TEST_COMPANY,
+  requireRequestCompany: () => TEST_COMPANY,
+  runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
+}));
+
+vi.mock("@/company/companyClient.server", () => {
   const builder: Record<string, unknown> = {};
   for (const m of ["from", "select", "eq", "contains", "neq"]) builder[m] = () => builder;
   builder.limit = (...args: unknown[]) => limit(...args);
-  return { supabaseAdmin: builder };
+  return { companyClient: () => builder };
 });
 
 const { alreadyNotified, isReportableSkip } = await import("@/fns/notificationSkip");

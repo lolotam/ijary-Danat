@@ -18,14 +18,23 @@ import { seedContract } from "@/db/testDb";
 export const THIS_YEAR = new Date().getFullYear();
 
 /** تصنيف مصروف جديد لكل اختبار — `code` فريد فلا تتشارك الاختبارات صفاً. */
-async function seedExpenseCategory(client: PoolClient) {
+async function seedExpenseCategory(client: PoolClient, companyId: string) {
   const tag = randomUUID().slice(0, 8);
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.expense_categories (code, name_ar, name_en)
-     values ($1, 'نظافة', 'Cleaning') returning id`,
-    [`EC-${tag}`],
+    `insert into public.expense_categories (company_id, code, name_ar, name_en)
+     values ($1, $2, 'نظافة', 'Cleaning') returning id`,
+    [companyId, `EC-${tag}`],
   );
   return rows[0].id;
+}
+
+/** يجلب معرّف الشركة لعقد معيّن لربط الصفوف التابعة به. */
+async function contractCompanyId(client: PoolClient, contractId: string): Promise<string> {
+  const { rows } = await client.query<{ company_id: string }>(
+    `select company_id from public.contracts where id = $1`,
+    [contractId],
+  );
+  return rows[0].company_id;
 }
 
 /** عقد لسنة كاملة بإيجار واحد. */
@@ -38,10 +47,11 @@ export async function seedYearContract(client: PoolClient, monthlyAmount = 500) 
 }
 
 export async function addExtraCharge(client: PoolClient, contractId: string, amount: number) {
+  const companyId = await contractCompanyId(client, contractId);
   await client.query(
-    `insert into public.contract_extra_charges (contract_id, category_id, amount, line_order)
-     values ($1, $2, $3, 1)`,
-    [contractId, await seedExpenseCategory(client), amount],
+    `insert into public.contract_extra_charges (company_id, contract_id, category_id, amount, line_order)
+     values ($1, $2, $3, $4, 1)`,
+    [companyId, contractId, await seedExpenseCategory(client, companyId), amount],
   );
 }
 
@@ -52,11 +62,12 @@ export async function addExtraCharge(client: PoolClient, contractId: string, amo
  * so the free period and the billed periods are never the same row.
  */
 export async function makeJanuaryFree(client: PoolClient, contractId: string) {
+  const companyId = await contractCompanyId(client, contractId);
   await client.query(
     `insert into public.concessions
-       (contract_id, type, status, start_date, end_date, free_months)
-     values ($1, 'free_months', 'active', $2::date, $3::date, 1)`,
-    [contractId, `${THIS_YEAR}-01-01`, `${THIS_YEAR}-01-31`],
+       (company_id, contract_id, type, status, start_date, end_date, free_months)
+     values ($1, $2, 'free_months', 'active', $3::date, $4::date, 1)`,
+    [companyId, contractId, `${THIS_YEAR}-01-01`, `${THIS_YEAR}-01-31`],
   );
 }
 

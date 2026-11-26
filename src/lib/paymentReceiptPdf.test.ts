@@ -24,34 +24,39 @@ const renderHtmlToPdf = vi.fn();
  * real, so these tests prove what actually reaches the renderer and the bucket
  * rather than what a stubbed helper was asked for.
  */
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "payment_allocations") {
-        return { select: () => ({ in: () => ({ order: () => ({ order: allocationsIn }) }) }) };
-      }
-      if (table === "invoices") {
-        return { select: () => ({ in: invoicesIn }) };
-      }
-      if (table === "invoice_items") {
-        return { select: () => ({ in: invoiceItemsIn }) };
-      }
-      if (table === "receipts") {
-        return { select: () => ({ in: receiptsIn }) };
-      }
-      if (table === "tenants") {
-        // The party lookup reads one row by id; the invoice-sheet enrichment
-        // reads many by `in()`. Both hang off the same table.
-        return { select: () => ({ eq: () => ({ maybeSingle: tenantRow }), in: relationIn }) };
-      }
-      if (table === "units" || table === "properties" || table === "contracts") {
-        return { select: () => ({ in: relationIn }) };
-      }
-      return { select: () => ({ order: () => ({ limit: () => ({ maybeSingle: companyRow }) }) }) };
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+
+vi.mock("@/company/companyClient.server", () => ({
+  serverCompanyClient: (explicitCompanyId?: string) => ({
+    companyId: explicitCompanyId ?? COMPANY_ID,
+    client: {
+      from: (table: string) => {
+        if (table === "payment_allocations") {
+          return { select: () => ({ in: () => ({ order: () => ({ order: allocationsIn }) }) }) };
+        }
+        if (table === "invoices") {
+          return { select: () => ({ in: invoicesIn }) };
+        }
+        if (table === "invoice_items") {
+          return { select: () => ({ in: invoiceItemsIn }) };
+        }
+        if (table === "receipts") {
+          return { select: () => ({ in: receiptsIn }) };
+        }
+        if (table === "tenants") {
+          // The party lookup reads one row by id; the invoice-sheet enrichment
+          // reads many by `in()`. Both hang off the same table.
+          return { select: () => ({ eq: () => ({ maybeSingle: tenantRow }), in: relationIn }) };
+        }
+        if (table === "units" || table === "properties" || table === "contracts") {
+          return { select: () => ({ in: relationIn }) };
+        }
+        return { select: () => ({ eq: () => ({ maybeSingle: companyRow }) }) };
+      },
+      rpc: (name: string, args: Record<string, unknown>) => breakdownRpc(name, args),
+      storage: { from: () => ({ list, upload }) },
     },
-    rpc: (name: string, args: Record<string, unknown>) => breakdownRpc(name, args),
-    storage: { from: () => ({ list, upload }) },
-  },
+  }),
 }));
 
 vi.mock("@/lib/serverPdf", async () => {
@@ -68,6 +73,7 @@ const { renderPaymentReceiptPdfs } = await import("./paymentReceiptPdf");
 
 const PAYMENT_A = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  company_id: COMPANY_ID,
   tenant_id: "tenant-1",
   code: "PAY-1",
   amount: 250,
@@ -146,10 +152,14 @@ describe("renderPaymentReceiptPdfs", () => {
     expect(stored).toHaveLength(2);
     expect(uploadedPaths()).toEqual([
       expect.stringMatching(
-        new RegExp(`^payment-receipts/PAY-1-${PAYMENT_A.id}-[0-9a-f]{12}\\.pdf$`),
+        new RegExp(
+          `^companies/${COMPANY_ID}/payment-receipts/PAY-1-${PAYMENT_A.id}-[0-9a-f]{12}\\.pdf$`,
+        ),
       ),
       expect.stringMatching(
-        new RegExp(`^payment-receipts/PAY-2-${PAYMENT_B.id}-[0-9a-f]{12}\\.pdf$`),
+        new RegExp(
+          `^companies/${COMPANY_ID}/payment-receipts/PAY-2-${PAYMENT_B.id}-[0-9a-f]{12}\\.pdf$`,
+        ),
       ),
     ]);
     expect(stored.map((document) => document.bucket)).toEqual([

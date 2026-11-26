@@ -1,11 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
 import { normalisePhoneForSave } from "@/lib/phoneConflicts.server";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getAuthAdmin } from "@/platform/authAdmin.server";
 import type { AppRole, TablesUpdate } from "@/integrations/supabase/database.types";
 import { syncTenantContact } from "@/fns/syncTenantContact";
 import { isTenantAccountConflict, TENANT_ALREADY_HAS_ACCOUNT } from "@/lib/tenantPortalAccount";
@@ -56,13 +58,16 @@ export const updateAppUser = createServerFn({ method: "POST" })
       refusal: "Only an admin may update a user account.",
     });
 
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
     // The profile's current tenant link is read once, before any durable
     // write: it decides both which tenant the phone-conflict check excludes
     // and which tenant the contact sync targets when this request does not
     // move the link itself. Skipped when neither needs it.
     let currentTenantId: string | null = null;
     if (data.phone !== undefined || data.tenantId === undefined) {
-      const currentProfile = await supabaseAdmin
+      const currentProfile = await db
         .from("profiles")
         .select("tenant_id")
         .eq("id", data.userId)
@@ -99,7 +104,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
     // or password had already changed would fail the save yet keep the new
     // credentials. The unique index still catches a concurrent re-link.
     if (data.tenantId) {
-      const linked = await supabaseAdmin
+      const linked = await db
         .from("profiles")
         .select("id")
         .eq("tenant_id", data.tenantId)
@@ -123,7 +128,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
       };
     }
     if (Object.keys(authUpdates).length) {
-      const authRes = await supabaseAdmin.auth.admin.updateUserById(data.userId, authUpdates);
+      const authRes = await getAuthAdmin().updateUserById(data.userId, authUpdates);
       if (authRes.error) {
         if (authEmail && isEmailTaken(authRes.error)) throw await emailTakenError(authEmail);
         throw new Error(authErrorMessage(authRes.error, "Failed to update the auth user"));
@@ -139,10 +144,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
     // cleared the portal link, and only the second should write.
     if (data.tenantId !== undefined) profileUpdates.tenant_id = data.tenantId;
     if (Object.keys(profileUpdates).length) {
-      const profileRes = await supabaseAdmin
-        .from("profiles")
-        .update(profileUpdates)
-        .eq("id", data.userId);
+      const profileRes = await db.from("profiles").update(profileUpdates).eq("id", data.userId);
       if (profileRes.error) {
         if (isUsernameConflict(profileRes.error)) {
           throw usernameTakenError(data.username!);
@@ -163,10 +165,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
     // createAppUser: this must not fail the whole save, and the previously
     // linked tenant's portal is left alone — other accounts may still use it.
     if (data.tenantId) {
-      await supabaseAdmin
-        .from("tenants")
-        .update({ tenant_portal_enabled: true })
-        .eq("id", data.tenantId);
+      await db.from("tenants").update({ tenant_portal_enabled: true }).eq("id", data.tenantId);
     }
 
     /*
@@ -180,10 +179,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
      * which are the only things that should ever touch it.
      */
     if (data.role) {
-      const existing = await supabaseAdmin
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", data.userId);
+      const existing = await db.from("user_roles").select("role").eq("user_id", data.userId);
       if (existing.error) throw new Error(existing.error.message);
 
       const managerial = (existing.data ?? [])
@@ -192,16 +188,19 @@ export const updateAppUser = createServerFn({ method: "POST" })
 
       if (!managerial.includes(data.role)) {
         if (managerial.length) {
-          const dropped = await supabaseAdmin
+          const dropped = await db
             .from("user_roles")
             .delete()
             .eq("user_id", data.userId)
             .in("role", managerial);
           if (dropped.error) throw new Error(dropped.error.message);
         }
-        const granted = await supabaseAdmin
-          .from("user_roles")
-          .insert({ user_id: data.userId, role: data.role, granted_by: context.userId });
+        const granted = await db.from("user_roles").insert({
+          company_id: company.id,
+          user_id: data.userId,
+          role: data.role,
+          granted_by: context.userId,
+        });
         if (granted.error) throw new Error(granted.error.message);
       }
     }
@@ -209,15 +208,16 @@ export const updateAppUser = createServerFn({ method: "POST" })
     // Replace rather than diff: the lists are small and a full replace lands on
     // the same result whatever the previous state was.
     if (data.tenantIds !== undefined) {
-      const cleared = await supabaseAdmin
+      const cleared = await db
         .from("user_tenants" as any)
         .delete()
         .eq("user_id", data.userId);
       if (cleared.error) throw new Error(cleared.error.message);
 
       if (data.tenantIds.length) {
-        const linked = await supabaseAdmin.from("user_tenants" as any).insert(
+        const linked = await db.from("user_tenants" as any).insert(
           data.tenantIds.map((tenantId) => ({
+            company_id: company.id,
             user_id: data.userId,
             tenant_id: tenantId,
             created_by: context.userId,
@@ -227,7 +227,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
       }
     }
 
-    await supabaseAdmin.rpc("write_audit", {
+    await db.rpc("write_audit", {
       p_action: "user.update",
       p_entity_type: "user",
       p_entity_id: data.userId,

@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 import { t, type Locale } from "@/i18n/dictionary";
 import { buildInvoiceDocument } from "@/lib/invoiceDocument";
@@ -7,7 +7,7 @@ import { loadInvoicesWithRelations } from "@/lib/invoiceRelations";
 import { safeFilename } from "@/lib/safeFilename";
 import { renderAndStorePdf, type StoredPdf } from "@/lib/reportPdfAttachment";
 
-/** Path prefix inside `report-documents`; migration 109's policy matches the bucket, not the path. */
+/** Path prefix inside `report-documents`; `285_storage_company_paths.sql` prefixes with `companies/<companyId>/`. */
 const INVOICE_PREFIX = "invoice-documents";
 
 /**
@@ -20,22 +20,19 @@ const INVOICE_PREFIX = "invoice-documents";
  * goes out is an outage. Every failure is logged with the invoice code.
  */
 export async function renderInvoiceDocumentPdf(input: {
+  companyId?: string;
   invoice: Tables<"invoices">;
   locale: Locale;
 }): Promise<(StoredPdf & { displayName: string }) | null> {
   const { invoice, locale } = input;
   try {
-    const [enriched] = await loadInvoicesWithRelations(supabaseAdmin, [invoice]);
-    const breakdown = await supabaseAdmin.rpc("get_invoice_payment_breakdown", {
+    const { companyId, client } = serverCompanyClient(input.companyId ?? invoice.company_id);
+    const [enriched] = await loadInvoicesWithRelations(client, [invoice]);
+    const breakdown = await client.rpc("get_invoice_payment_breakdown", {
       p_invoice_id: invoice.id,
     });
     if (breakdown.error) throw new Error(breakdown.error.message);
-    const company = await supabaseAdmin
-      .from("companies")
-      .select("*")
-      .order("created_at")
-      .limit(1)
-      .maybeSingle();
+    const company = await client.from("companies").select("*").eq("id", companyId).maybeSingle();
     if (company.error) throw new Error(company.error.message);
     const document = buildInvoiceDocument(
       enriched,
@@ -46,6 +43,7 @@ export async function renderInvoiceDocumentPdf(input: {
     );
     const stored = await renderAndStorePdf({
       arabic: true,
+      companyId,
       discriminator: invoice.id,
       html: document.html,
       name: invoice.code,

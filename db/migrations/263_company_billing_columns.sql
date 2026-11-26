@@ -17,7 +17,7 @@ update public.invoices i
      i.company_id,
      (select c.company_id from public.contracts c where c.id = i.contract_id),
      (select t.company_id from public.tenants t where t.id = i.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where i.company_id is null;
 
@@ -97,7 +97,7 @@ update public.invoice_items ii
    set company_id = coalesce(
      ii.company_id,
      (select i.company_id from public.invoices i where i.id = ii.invoice_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where ii.company_id is null;
 
@@ -158,7 +158,7 @@ update public.payment_requests pr
    set company_id = coalesce(
      pr.company_id,
      (select t.company_id from public.tenants t where t.id = pr.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where pr.company_id is null;
 
@@ -229,7 +229,7 @@ update public.payments p
    set company_id = coalesce(
      p.company_id,
      (select t.company_id from public.tenants t where t.id = p.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where p.company_id is null;
 
@@ -321,7 +321,7 @@ update public.payment_allocations pa
      pa.company_id,
      (select p.company_id from public.payments p where p.id = pa.payment_id),
      (select i.company_id from public.invoices i where i.id = pa.invoice_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where pa.company_id is null;
 
@@ -387,7 +387,7 @@ update public.receipts r
      r.company_id,
      (select p.company_id from public.payments p where p.id = r.payment_id),
      (select t.company_id from public.tenants t where t.id = r.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where r.company_id is null;
 
@@ -451,7 +451,7 @@ alter table public.webhook_events
   add column if not exists company_id uuid;
 
 update public.webhook_events we
-   set company_id = (select co.id from public.companies co order by co.created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where we.company_id is null;
 
 alter table public.webhook_events
@@ -483,7 +483,7 @@ alter table public.email_webhook_events
   add column if not exists company_id uuid;
 
 update public.email_webhook_events ewe
-   set company_id = (select co.id from public.companies co order by co.created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where ewe.company_id is null;
 
 alter table public.email_webhook_events

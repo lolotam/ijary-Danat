@@ -1,4 +1,9 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import {
+  getRequestCompany,
+  requireRequestCompany,
+  runWithRequestCompany,
+} from "@/company/requestCompany.server";
 import type { Json } from "@/integrations/supabase/database.types";
 import {
   describeGmailApiError,
@@ -93,9 +98,13 @@ async function readConfig(): Promise<{ config: GmailConfig; connectionId: string
 }
 
 /** Records the outcome so the settings page can show it without a log dive. */
-async function recordSyncOutcome(connectionId: string | null, error: string | null): Promise<void> {
+async function recordSyncOutcome(
+  companyId: string,
+  connectionId: string | null,
+  error: string | null,
+): Promise<void> {
   if (!connectionId) return;
-  await supabaseAdmin
+  await companyClient(companyId)
     .from("gmail_connections")
     .update({ last_synced_at: new Date().toISOString(), last_sync_error: error })
     .eq("id", connectionId);
@@ -244,12 +253,13 @@ type InsertRow = {
  * wasted fetch costs quota, a wrongly skipped message is never stored at all.
  */
 async function unseenMessages(
+  db: ReturnType<typeof companyClient>,
   companyId: string,
   messages: GmailListMessage[],
 ): Promise<GmailListMessage[]> {
   if (messages.length === 0) return [];
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from("gmail_messages")
     .select("gmail_id")
     .eq("company_id", companyId)
@@ -355,11 +365,15 @@ async function buildRows(
  * Returns the Gmail ids it handled, so the caller does not then insert the
  * duplicate this exists to prevent.
  */
-async function hydrateSentPlaceholders(companyId: string, built: BuiltRow[]): Promise<Set<string>> {
+async function hydrateSentPlaceholders(
+  db: ReturnType<typeof companyClient>,
+  companyId: string,
+  built: BuiltRow[],
+): Promise<Set<string>> {
   const hydrated = new Set<string>();
 
   for (const { gmailId, row } of built) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from("gmail_messages")
       .update({
         thread_id: row.thread_id,
@@ -404,17 +418,8 @@ async function hydrateSentPlaceholders(companyId: string, built: BuiltRow[]): Pr
  * pages it finished, and because the upsert ignores duplicates, the next tick
  * skips them cheaply and gets further.
  */
-async function syncMailbox(config: GmailConfig): Promise<SyncResult> {
-  // Resolve the single company row (the app is single-tenant per deployment).
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
-  if (companyError) throw new Error(`gmail-sync: ${companyError.message}`);
-  const companyId = company.id;
-
+async function syncMailbox(companyId: string, config: GmailConfig): Promise<SyncResult> {
+  const db = companyClient(companyId);
   const accessToken = await getGmailAccessToken(config);
   const authHeader = { Authorization: `Bearer ${accessToken}` };
 
@@ -434,7 +439,7 @@ async function syncMailbox(config: GmailConfig): Promise<SyncResult> {
       // is spent on them, which is what keeps a steady-state run inside Gmail's
       // per-minute budget — and, in the normal case of no new mail, at zero
       // message fetches.
-      const unseen = (await unseenMessages(companyId, batch)).slice(
+      const unseen = (await unseenMessages(db, companyId, batch)).slice(
         0,
         MAX_FETCHES_PER_RUN - fetched,
       );
@@ -445,12 +450,12 @@ async function syncMailbox(config: GmailConfig): Promise<SyncResult> {
         if (built.rows.length) {
           // A message sent from the app already has a row; it just has no MIME
           // tree. Filling it beats adding a second row beside it.
-          const hydrated = await hydrateSentPlaceholders(companyId, built.rows);
+          const hydrated = await hydrateSentPlaceholders(db, companyId, built.rows);
           const fresh = built.rows.filter((entry) => !hydrated.has(entry.gmailId));
 
           if (fresh.length) {
             // Idempotent — re-syncing the same window cannot duplicate rows.
-            const { error: insertError } = await supabaseAdmin.from("gmail_messages").upsert(
+            const { error: insertError } = await db.from("gmail_messages").upsert(
               fresh.map((entry) => entry.row),
               { onConflict: "company_id,message_id", ignoreDuplicates: true },
             );
@@ -482,19 +487,37 @@ async function syncMailbox(config: GmailConfig): Promise<SyncResult> {
   return throttled ? { synced, reason: "rate-limited" } : { synced };
 }
 
-export async function runGmailSyncJob(_asOf?: string | null): Promise<SyncResult> {
-  const resolved = await readConfig();
-  if (!resolved) return { synced: 0, reason: "not-configured" };
+/**
+ * يزامن رسائل صندوق Gmail الخاصة بالشركة المحددة أو شركة الطلب الحالية.
+ */
+export async function runGmailSyncJob(
+  _asOf?: string | null,
+  explicitCompanyId?: string,
+): Promise<SyncResult> {
+  const activeCompany = getRequestCompany();
+  const companyId = explicitCompanyId ?? requireRequestCompany().id;
+  const companyContext =
+    activeCompany?.id === companyId
+      ? activeCompany
+      : { id: companyId, slug: "", status: "active" as const, host: "" };
+  return runWithRequestCompany(companyContext, async () => {
+    const resolved = await readConfig();
+    if (!resolved) return { synced: 0, reason: "not-configured" };
 
-  const { config, connectionId } = resolved;
-  try {
-    const result = await syncMailbox(config);
-    await recordSyncOutcome(connectionId, null);
-    return result;
-  } catch (error) {
-    // Surfaced on the integrations page. The job still throws so the cron tick
-    // reports red — recording the reason is for the admin, not a substitute.
-    await recordSyncOutcome(connectionId, error instanceof Error ? error.message : String(error));
-    throw error;
-  }
+    const { config, connectionId } = resolved;
+    try {
+      const result = await syncMailbox(companyId, config);
+      await recordSyncOutcome(companyId, connectionId, null);
+      return result;
+    } catch (error) {
+      // Surfaced on the integrations page. The job still throws so the cron tick
+      // reports red — recording the reason is for the admin, not a substitute.
+      await recordSyncOutcome(
+        companyId,
+        connectionId,
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+  });
 }

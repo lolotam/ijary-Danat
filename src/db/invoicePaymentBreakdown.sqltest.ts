@@ -50,10 +50,11 @@ async function insertPartial(
 }
 
 /**
- * مستخدم بدور معيّن، واختياريًا مربوط بمستأجر عبر profiles.
+ * مستخدم بدور معيّن ضمن شركة محددة، واختياريًا مربوط بمستأجر عبر profiles.
  */
 async function seedUser(
   client: PoolClient,
+  companyId: string,
   role: string,
   tenantId: string | null = null,
 ): Promise<string> {
@@ -64,13 +65,18 @@ async function seedUser(
     [userId, `${userId}@example.test`],
   );
   await client.query(
-    `insert into public.profiles (id, tenant_id) values ($1, $2)
-     on conflict (id) do update set tenant_id = excluded.tenant_id`,
-    [userId, tenantId],
+    `insert into public.profiles (id, company_id, tenant_id, display_name, is_active)
+     values ($1, $2, $3, $4, true)
+     on conflict (id) do update
+       set company_id = excluded.company_id,
+           tenant_id = excluded.tenant_id,
+           is_active = true`,
+    [userId, companyId, tenantId, `${role} ${userId.slice(0, 8)}`],
   );
   await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
+    `insert into public.user_roles (user_id, company_id, role)
+     values ($1, $2, $3::public.app_role)`,
+    [userId, companyId, role],
   );
   return userId;
 }
@@ -118,7 +124,7 @@ describe("get_invoice_payment_breakdown", () => {
       await insertPartial(client, fx, { amount: 200 });
       const invoiceId = fx.invoices[0].id;
 
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
       const staffView = await breakdown(client, invoiceId);
       expect(staffView).not.toBeNull();
@@ -127,17 +133,18 @@ describe("get_invoice_payment_breakdown", () => {
       expect(staffView!.groups[0].method).toBe("cash");
 
       await actAsSuperuser(client);
-      const owner = await seedUser(client, "tenant", fx.tenantId);
+      const owner = await seedUser(client, fx.companyId, "tenant", fx.tenantId);
       await actAs(client, "authenticated", owner);
       const ownerView = await breakdown(client, invoiceId);
       expect(ownerView).toEqual(staffView);
 
       await actAsSuperuser(client);
       const other = await seedContract(client, {
+        companyId: fx.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const stranger = await seedUser(client, "tenant", other.tenantId);
+      const stranger = await seedUser(client, other.companyId, "tenant", other.tenantId);
       await actAs(client, "authenticated", stranger);
       expect(await breakdown(client, invoiceId)).toBeNull();
     });
@@ -162,7 +169,7 @@ describe("get_invoice_payment_breakdown", () => {
       await client.query(`select public.recompute_invoice_from_confirmed($1)`, [invoiceId]);
       await client.query(`select public.reverse_payment($1, 'test')`, [payment.rows[0].id]);
 
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
       const view = await breakdown(client, invoiceId);
       expect(view!.groups).toEqual([]);
@@ -176,7 +183,7 @@ describe("get_invoice_payment_breakdown", () => {
       await insertPartial(client, fx, { amount: 100 });
       await insertPartial(client, fx, { amount: 150 });
 
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
       const view = await breakdown(client, fx.invoices[0].id);
       expect(view!.groups).toHaveLength(1);
@@ -211,7 +218,7 @@ describe("get_invoice_payment_breakdown", () => {
       );
       await client.query(`select public.recompute_invoice_from_confirmed($1)`, [invoiceId]);
 
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
       const view = await breakdown(client, invoiceId);
       expect(view!.groups.map((group) => group.source)).toEqual(["gateway"]);
@@ -224,7 +231,7 @@ describe("get_invoice_payment_breakdown", () => {
       await insertPartial(client, fx, { amount: 200 });
       await client.query(`update public.invoices set paid = 50 where id = $1`, [fx.invoices[0].id]);
 
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
       const view = await breakdown(client, fx.invoices[0].id);
       expect(view!.reconciled).toBe(false);
@@ -239,7 +246,7 @@ describe("get_partial_payment_edit_context", () => {
     await withRollback(async (client) => {
       const fx = await scenario(client);
       const partialId = await insertPartial(client, fx, { amount: 200 });
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const ctx = await editContext(client, partialId);
@@ -257,7 +264,7 @@ describe("get_partial_payment_edit_context", () => {
       await client.query(`update public.partial_payments set invoice_id = null where id = $1`, [
         partialId,
       ]);
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       const ctx = await editContext(client, partialId);
@@ -272,10 +279,11 @@ describe("get_partial_payment_edit_context", () => {
       const fx = await scenario(client);
       const partialId = await insertPartial(client, fx, { amount: 200 });
       const other = await seedContract(client, {
+        companyId: fx.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
-      const stranger = await seedUser(client, "tenant", other.tenantId);
+      const stranger = await seedUser(client, other.companyId, "tenant", other.tenantId);
       await actAs(client, "authenticated", stranger);
 
       expect(await editContext(client, partialId)).toBeNull();
@@ -306,7 +314,7 @@ describe("get_invoice_payment_breakdown last_paid_on (migration 227)", () => {
         );
       }
 
-      const admin = await seedUser(client, "admin");
+      const admin = await seedUser(client, fx.companyId, "admin");
       await actAs(client, "authenticated", admin);
       const view = (await breakdown(client, invoiceId)) as unknown as {
         groups: Array<{ first_paid_on: string; last_paid_on: string }>;
@@ -341,7 +349,7 @@ describe("get_invoice_payment_breakdown for the service role (migration 238)", (
     await withRollback(async (client) => {
       const fx = await scenario(client);
       await insertPartial(client, fx, { amount: 200 });
-      const nobody = await seedUser(client, "tenant", null);
+      const nobody = await seedUser(client, fx.companyId, "tenant", null);
 
       await actAs(client, "authenticated", nobody);
 

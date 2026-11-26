@@ -108,6 +108,7 @@ describe("edit_partial_payment carries the whole dialog through the resync", () 
     await withRollback(async (client) => {
       const fx = await scenario(client);
       const other = await seedContract(client, {
+        companyId: fx.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });
@@ -131,6 +132,7 @@ describe("edit_partial_payment carries the whole dialog through the resync", () 
     await withRollback(async (client) => {
       const fx = await scenario(client);
       const other = await seedContract(client, {
+        companyId: fx.companyId,
         startDate: "2026-01-01",
         endDate: "2026-12-31",
       });

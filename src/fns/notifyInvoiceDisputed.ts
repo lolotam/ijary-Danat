@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import {
   loadCompanyDefaults,
   loadContractCode,
@@ -14,7 +16,6 @@ import {
 import { requirePermission } from "@/fns/requirePermission";
 import { translatorFor } from "@/i18n/dictionary";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Tables } from "@/integrations/supabase/database.types";
 
 const WORKFLOW_KEY = "invoice-disputed";
@@ -56,7 +57,13 @@ export async function notifyInvoiceDisputedRecord(
   return notifyAdminEvent(WORKFLOW_KEY, {
     type: "invoice_disputed",
     load: async () =>
-      rowOrThrow(await supabaseAdmin.from("invoices").select("*").eq("id", invoiceId).single()),
+      rowOrThrow(
+        await companyClient(requireRequestCompany().id)
+          .from("invoices")
+          .select("*")
+          .eq("id", invoiceId)
+          .single(),
+      ),
     dedupeMatch: { invoice_id: invoiceId },
     build: buildDisputedMessage,
     // Mail failure must never reject a committed dispute flag.

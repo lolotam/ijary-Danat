@@ -1,12 +1,25 @@
 /**
  * مُحلّلات متغيرات القوالب حسب نوع الإشعار (متأخرات، تذكير استحقاق، إيصال، انتهاء عقد).
  */
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { LocaleCode, NotificationType } from "@/integrations/supabase/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import type {
+  Database,
+  LocaleCode,
+  NotificationType,
+} from "@/integrations/supabase/database.types";
 import { joinLocalizedList } from "@/lib/contractUnits";
 import { portalInvoicesUrl } from "@/lib/emailTemplates";
 import { TEMPLATE_VARIABLES } from "@/lib/templateVariables";
 import { formatKwd } from "@/lib/money";
+
+type ResolverDb = SupabaseClient<Database>;
+
+function resolverDb(): ResolverDb {
+  return companyClient(requireRequestCompany().id);
+}
 
 function daysBetween(dueDate: string, asOf: string): number {
   return Math.max(
@@ -28,9 +41,13 @@ function daysUntilEnd(endDate: string, asOf: string): number {
 /**
  * يحمّل رموز وأسماء الوحدات لعقود معيّنة ويضمّها بفاصل محلي.
  */
-async function unitLabelForContracts(contractIds: string[], locale: LocaleCode): Promise<string> {
+async function unitLabelForContracts(
+  db: ResolverDb,
+  contractIds: string[],
+  locale: LocaleCode,
+): Promise<string> {
   if (!contractIds.length) return "";
-  const cu = await supabaseAdmin
+  const cu = await db
     .from("contract_units")
     .select("contract_id, unit_id")
     .in("contract_id", contractIds)
@@ -38,7 +55,7 @@ async function unitLabelForContracts(contractIds: string[], locale: LocaleCode):
   if (cu.error) throw new Error(cu.error.message);
   const unitIds = [...new Set((cu.data ?? []).map((row) => row.unit_id))];
   if (!unitIds.length) return "";
-  const units = await supabaseAdmin.from("units").select("id, code, name").in("id", unitIds);
+  const units = await db.from("units").select("id, code, name").in("id", unitIds);
   if (units.error) throw new Error(units.error.message);
   const labels = (units.data ?? []).map((unit) => `${unit.code} — ${unit.name}`);
   return labels.length ? joinLocalizedList(labels, locale) : "—";
@@ -47,9 +64,9 @@ async function unitLabelForContracts(contractIds: string[], locale: LocaleCode):
 /**
  * يستبعد العقود المؤرشفة من مجموعة معرفات — القاعدة العامة في المنصة (migration 82).
  */
-async function liveContractIds(contractIds: string[]): Promise<Set<string>> {
+async function liveContractIds(db: ResolverDb, contractIds: string[]): Promise<Set<string>> {
   if (!contractIds.length) return new Set();
-  const result = await supabaseAdmin
+  const result = await db
     .from("contracts")
     .select("id")
     .in("id", contractIds)
@@ -59,20 +76,16 @@ async function liveContractIds(contractIds: string[]): Promise<Set<string>> {
 }
 
 /**
- * يحمّل صف القالب النشط بالرمز فقط — اللغة تُقرأ من أعمدة المحتوى.
- *
- * After the locale collapse a single row holds both languages. A type+locale or
- * -ar/-en swap would pick the wrong row, or hide an admin-created
- * `lease-renewal-ar`.
+ * يحلّ متغيّرات overdue_reminder عبر عميل الشركة.
  */
-
 export async function resolveOverdueVariables(
   tenantId: string,
   locale: LocaleCode,
   contractId: string | null | undefined,
   asOf: string,
 ): Promise<Record<string, string>> {
-  let query = supabaseAdmin
+  const db = resolverDb();
+  let query = db
     .from("invoices")
     .select("id, tenant_id, contract_id, balance, due_date, state, is_visible_to_tenant")
     .eq("tenant_id", tenantId)
@@ -84,7 +97,7 @@ export async function resolveOverdueVariables(
   if (invoices.error) throw new Error(invoices.error.message);
 
   const rows = invoices.data ?? [];
-  const live = await liveContractIds([
+  const live = await liveContractIds(db, [
     ...new Set(rows.map((row) => row.contract_id).filter(Boolean)),
   ]);
   const billable = rows.filter((row) => live.has(row.contract_id));
@@ -118,7 +131,8 @@ export async function resolveDueReminderVariables(
   locale: LocaleCode,
   contractId: string | null | undefined,
 ): Promise<Record<string, string>> {
-  let query = supabaseAdmin
+  const db = resolverDb();
+  let query = db
     .from("invoices")
     .select("id, contract_id, balance, due_date, state, is_visible_to_tenant")
     .eq("tenant_id", tenantId)
@@ -132,7 +146,7 @@ export async function resolveDueReminderVariables(
   if (invoices.error) throw new Error(invoices.error.message);
 
   const rows = invoices.data ?? [];
-  const live = await liveContractIds([
+  const live = await liveContractIds(db, [
     ...new Set(rows.map((row) => row.contract_id).filter(Boolean)),
   ]);
   const invoice = rows.find((row) => live.has(row.contract_id));
@@ -153,7 +167,8 @@ export async function resolveReceiptVariables(
   locale: LocaleCode,
   contractId: string | null | undefined,
 ): Promise<Record<string, string>> {
-  const payments = await supabaseAdmin
+  const db = resolverDb();
+  const payments = await db
     .from("payments")
     .select("id, amount, currency, status, payment_date, created_at, reference, code")
     .eq("tenant_id", tenantId)
@@ -167,17 +182,14 @@ export async function resolveReceiptVariables(
   if (contractId && payments.data?.length) {
     // Prefer a payment that allocated to the pinned contract.
     for (const candidate of payments.data) {
-      const allocations = await supabaseAdmin
+      const allocations = await db
         .from("payment_allocations")
         .select("invoice_id")
         .eq("payment_id", candidate.id);
       if (allocations.error) throw new Error(allocations.error.message);
       const invoiceIds = (allocations.data ?? []).map((row) => row.invoice_id);
       if (!invoiceIds.length) continue;
-      const inv = await supabaseAdmin
-        .from("invoices")
-        .select("id, contract_id")
-        .in("id", invoiceIds);
+      const inv = await db.from("invoices").select("id, contract_id").in("id", invoiceIds);
       if (inv.error) throw new Error(inv.error.message);
       if ((inv.data ?? []).some((row) => row.contract_id === contractId)) {
         payment = candidate;
@@ -207,7 +219,8 @@ export async function resolveContractExpiryVariables(
   contractId: string | null | undefined,
   asOf: string,
 ): Promise<Record<string, string>> {
-  let query = supabaseAdmin
+  const db = resolverDb();
+  let query = db
     .from("contracts")
     .select("id, code, end_date, state, start_date")
     .eq("tenant_id", tenantId)
@@ -215,7 +228,7 @@ export async function resolveContractExpiryVariables(
     .order("start_date", { ascending: false })
     .limit(20);
   if (contractId) {
-    query = supabaseAdmin
+    query = db
       .from("contracts")
       .select("id, code, end_date, state, start_date")
       .eq("id", contractId)
@@ -235,7 +248,7 @@ export async function resolveContractExpiryVariables(
       contract_code: "",
     };
   }
-  const unit = await unitLabelForContracts([contract.id], locale);
+  const unit = await unitLabelForContracts(db, [contract.id], locale);
   const endDate = contract.end_date ?? "";
   return {
     unit,

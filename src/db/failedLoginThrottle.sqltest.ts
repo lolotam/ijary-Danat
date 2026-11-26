@@ -1,9 +1,22 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { closePool, withRollback } from "@/db/testDb";
+import { closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
+
+/** ينشئ شركة اختبارية ويضبط سياقها لمحاولات تسجيل الدخول الفاشلة. */
+async function seedThrottleCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة تقييد ${tag}`, `Throttle Co ${tag}`],
+  );
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
+}
 
 interface AuditRow {
   action: string;
@@ -111,6 +124,7 @@ async function ipCounterAttempts(client: PoolClient, ip: string): Promise<number
 describe("failed-login audit throttle (migration 215)", () => {
   test("the first failure writes one auth.login failure row", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "throttle-first@example.test";
       await setClientIp(client, "203.0.113.7");
       await recordFailures(client, identifier, 1);
@@ -127,6 +141,7 @@ describe("failed-login audit throttle (migration 215)", () => {
 
   test("attempts 2, 3 and 4 write no further rows", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "throttle-quiet@example.test";
       await setClientIp(client, "203.0.113.7");
       await recordFailures(client, identifier, 4);
@@ -137,6 +152,7 @@ describe("failed-login audit throttle (migration 215)", () => {
 
   test("the fifth failure writes a second auth.login row", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "throttle-fifth@example.test";
       await setClientIp(client, "203.0.113.7");
       await recordFailures(client, identifier, 5);
@@ -149,6 +165,7 @@ describe("failed-login audit throttle (migration 215)", () => {
 
   test("the twenty-fifth failure writes one throttled summary carrying attempts = 25", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "throttle-summary@example.test";
       await setClientIp(client, "203.0.113.7");
       await recordFailures(client, identifier, 25);
@@ -170,6 +187,7 @@ describe("failed-login audit throttle (migration 215)", () => {
    */
   test("attempts 26 through 100 write nothing, and stop touching the identifier counter", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "throttle-flood@example.test";
       const ip = "203.0.113.7";
       await setClientIp(client, ip);
@@ -183,6 +201,7 @@ describe("failed-login audit throttle (migration 215)", () => {
 
   test("a different client IP starts its own window and its own count", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "throttle-other-ip@example.test";
       await setClientIp(client, "203.0.113.7");
       await recordFailures(client, identifier, 1);
@@ -217,6 +236,7 @@ describe("the per-IP budget survives a rotating identifier (migration 215)", () 
 
   test("a spray of 100 distinct identifiers does not buy 100 audit rows", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       await setClientIp(client, "203.0.113.55");
       await sprayDistinctIdentifiers(client, 100);
 
@@ -238,6 +258,7 @@ describe("the per-IP budget survives a rotating identifier (migration 215)", () 
 
   test("the IP's own ladder records the magnitude once it passes its budget", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       await setClientIp(client, "203.0.113.56");
       await sprayDistinctIdentifiers(client, 125);
 
@@ -259,6 +280,7 @@ describe("the per-IP budget survives a rotating identifier (migration 215)", () 
    */
   test("one identifier hammered 125 times records the 125 as well as the 25", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       const identifier = "ladder@example.test";
       await setClientIp(client, "203.0.113.57");
       // A single identifier means the IP counter tracks it exactly, so the IP
@@ -285,6 +307,7 @@ describe("the per-IP budget survives a rotating identifier (migration 215)", () 
 describe("the IP aggregate cannot collide with a submitted identifier", () => {
   test("an identifier of '*' counts separately from the IP aggregate", async () => {
     await withRollback(async (client) => {
+      await seedThrottleCompany(client);
       await setClientIp(client, "203.0.113.90");
       await recordFailures(client, "*", 3);
 

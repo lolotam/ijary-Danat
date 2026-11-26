@@ -3,7 +3,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, actAsSuperuser, closePool, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  closePool,
+  seedCompanyUser,
+  setCompanyClaimContext,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -14,37 +21,48 @@ afterAll(closePool);
  * and double someone's pay is worse than one that never runs.
  */
 
+/** ينشئ شركة اختبار ويعيد معرّفها مع تهيئة سياق الشركة. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
+  );
+  const companyId = rows[0].id;
+  await setCompanyClaimContext(client, companyId);
+  return companyId;
+}
+
+/** يزرع موظفاً ضمن الشركة المحددة ويعيد معرّفه. */
 async function seedEmployee(
   client: PoolClient,
+  companyId: string,
   overrides: { salary?: number; isActive?: boolean } = {},
 ) {
   const tag = randomUUID().slice(0, 8);
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.employees (name, salary, is_active)
-     values ($1, $2, $3) returning id`,
-    [`موظف ${tag}`, overrides.salary ?? 400, overrides.isActive ?? true],
+    `insert into public.employees (company_id, name, salary, is_active)
+     values ($1, $2, $3, $4) returning id`,
+    [companyId, `موظف ${tag}`, overrides.salary ?? 400, overrides.isActive ?? true],
   );
   return rows[0].id;
 }
 
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+/** ينشئ مستخدماً بدور محدد ضمن الشركة. */
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "emp");
 }
 
-async function salariesFor(client: PoolClient, year: number, month: number) {
+/** يعيد صفوف الرواتب المولّدة للشركة والسنة والشهر المحددين. */
+async function salariesFor(client: PoolClient, companyId: string, year: number, month: number) {
   const { rows } = await client.query<{ employee_id: string; amount: string }>(
-    `select employee_id, amount from public.salaries where year = $1 and month = $2`,
-    [year, month],
+    `select employee_id, amount from public.salaries
+      where company_id = $1 and year = $2 and month = $3`,
+    [companyId, year, month],
   );
   return rows;
 }
@@ -54,8 +72,9 @@ describe("monthly salary generation", () => {
     // The cron job's whole safety property. Without the unique constraint plus
     // `on conflict do nothing`, a retried tick pays everyone twice.
     await withRollback(async (client) => {
-      await seedEmployee(client);
-      await seedEmployee(client);
+      const companyId = await seedCompany(client);
+      await seedEmployee(client, companyId);
+      await seedEmployee(client, companyId);
 
       const first = await client.query(`select * from public.generate_salaries_for_month(2026, 5)`);
       expect(first.rows).toHaveLength(2);
@@ -65,18 +84,19 @@ describe("monthly salary generation", () => {
       );
       expect(second.rows).toHaveLength(0);
 
-      expect(await salariesFor(client, 2026, 5)).toHaveLength(2);
+      expect(await salariesFor(client, companyId, 2026, 5)).toHaveLength(2);
     });
   });
 
   test("inactive employees are skipped", async () => {
     await withRollback(async (client) => {
-      const active = await seedEmployee(client, { isActive: true });
-      await seedEmployee(client, { isActive: false });
+      const companyId = await seedCompany(client);
+      const active = await seedEmployee(client, companyId, { isActive: true });
+      await seedEmployee(client, companyId, { isActive: false });
 
       await client.query(`select * from public.generate_salaries_for_month(2026, 6)`);
 
-      const rows = await salariesFor(client, 2026, 6);
+      const rows = await salariesFor(client, companyId, 2026, 6);
       expect(rows).toHaveLength(1);
       expect(rows[0].employee_id).toBe(active);
     });
@@ -86,22 +106,26 @@ describe("monthly salary generation", () => {
     // A join at read time would silently restate months already delivered — the
     // payroll equivalent of recomputing a paid invoice.
     await withRollback(async (client) => {
-      const employee = await seedEmployee(client, { salary: 400 });
+      const companyId = await seedCompany(client);
+      const employee = await seedEmployee(client, companyId, { salary: 400 });
       await client.query(`select * from public.generate_salaries_for_month(2026, 7)`);
       await client.query(`update public.employees set salary = 900 where id = $1`, [employee]);
 
-      const rows = await salariesFor(client, 2026, 7);
+      const rows = await salariesFor(client, companyId, 2026, 7);
       expect(rows[0].amount).toBe("400.000");
     });
   });
 
   test("a duplicate salary row is rejected outright", async () => {
     await withRollback(async (client) => {
-      const employee = await seedEmployee(client);
-      const insert = `insert into public.salaries (employee_id, year, month, amount)
-                      values ($1, 2026, 8, 400)`;
-      await client.query(insert, [employee]);
-      await expect(client.query(insert, [employee])).rejects.toThrow(/duplicate key|unique/i);
+      const companyId = await seedCompany(client);
+      const employee = await seedEmployee(client, companyId);
+      const insert = `insert into public.salaries (company_id, employee_id, year, month, amount)
+                      values ($1, $2, 2026, 8, 400)`;
+      await client.query(insert, [companyId, employee]);
+      await expect(client.query(insert, [companyId, employee])).rejects.toThrow(
+        /duplicate key|unique/i,
+      );
     });
   });
 
@@ -119,21 +143,23 @@ describe("employee documents carry an expiry date", () => {
     // This column is why employee_documents is not simply tenant_documents
     // reused — tenant_documents has no expiry_date at all.
     await withRollback(async (client) => {
-      const employee = await seedEmployee(client);
+      const companyId = await seedCompany(client);
+      const employee = await seedEmployee(client, companyId);
       await client.query(
-        `insert into public.employee_documents (employee_id, storage_path, expiry_date)
-         values ($1, 'employee-documents/a.pdf', '2026-09-30')`,
-        [employee],
+        `insert into public.employee_documents (company_id, employee_id, storage_path, expiry_date)
+         values ($1, $2, 'employee-documents/a.pdf', '2026-09-30')`,
+        [companyId, employee],
       );
       await client.query(
-        `insert into public.employee_documents (employee_id, storage_path, expiry_date)
-         values ($1, 'employee-documents/b.pdf', null)`,
-        [employee],
+        `insert into public.employee_documents (company_id, employee_id, storage_path, expiry_date)
+         values ($1, $2, 'employee-documents/b.pdf', null)`,
+        [companyId, employee],
       );
 
       const { rows } = await client.query(
         `select id from public.employee_documents
-          where expiry_date between '2026-09-01' and '2026-10-31'`,
+          where company_id = $1 and expiry_date between '2026-09-01' and '2026-10-31'`,
+        [companyId],
       );
       expect(rows).toHaveLength(1);
     });
@@ -154,10 +180,12 @@ describe("RLS", () => {
   test("a signed-in non-staff user sees no employees and no salaries", async () => {
     // Salary figures must never reach a tenant portal user.
     await withRollback(async (client) => {
-      const employee = await seedEmployee(client);
+      const companyId = await seedCompany(client);
+      const employee = await seedEmployee(client, companyId);
       await client.query(
-        `insert into public.salaries (employee_id, year, month, amount) values ($1, 2026, 9, 400)`,
-        [employee],
+        `insert into public.salaries (company_id, employee_id, year, month, amount)
+         values ($1, $2, 2026, 9, 400)`,
+        [companyId, employee],
       );
 
       await actAs(client, "authenticated", randomUUID());
@@ -168,7 +196,8 @@ describe("RLS", () => {
 
   test("anon sees nothing", async () => {
     await withRollback(async (client) => {
-      await seedEmployee(client);
+      const companyId = await seedCompany(client);
+      await seedEmployee(client, companyId);
       await actAs(client, "anon");
       expect((await client.query(`select id from public.employees`)).rows).toHaveLength(0);
     });
@@ -176,7 +205,8 @@ describe("RLS", () => {
 
   test("an accountant may record but not delete", async () => {
     await withRollback(async (client) => {
-      const accountant = await seedUserWithRole(client, "accountant");
+      const companyId = await seedCompany(client);
+      const accountant = await seedUserWithRole(client, companyId, "accountant");
       await actAs(client, "authenticated", accountant);
 
       const created = await client.query<{ id: string }>(
@@ -200,13 +230,14 @@ describe("RLS", () => {
 
   test("an admin can delete an employee, cascading their documents", async () => {
     await withRollback(async (client) => {
-      const employee = await seedEmployee(client);
+      const companyId = await seedCompany(client);
+      const employee = await seedEmployee(client, companyId);
       await client.query(
-        `insert into public.employee_documents (employee_id, storage_path)
-         values ($1, 'employee-documents/a.pdf')`,
-        [employee],
+        `insert into public.employee_documents (company_id, employee_id, storage_path)
+         values ($1, $2, 'employee-documents/a.pdf')`,
+        [companyId, employee],
       );
-      const admin = await seedUserWithRole(client, "admin");
+      const admin = await seedUserWithRole(client, companyId, "admin");
 
       await actAs(client, "authenticated", admin);
       const deleted = await client.query(

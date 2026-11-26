@@ -1,9 +1,11 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { createBackupArchive, deleteBackupRecord, BACKUP_BUCKET } from "@/fns/backupCore";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
 
-// Mock the supabase boundaries
-vi.mock("@/integrations/supabase/client.server", () => {
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+
+// Mock the companyClient boundary
+vi.mock("@/company/companyClient.server", () => {
   const fromMock = vi.fn().mockReturnThis();
   const selectMock = vi.fn().mockReturnThis();
   const eqMock = vi.fn().mockReturnThis();
@@ -12,25 +14,32 @@ vi.mock("@/integrations/supabase/client.server", () => {
   const insertMock = vi.fn().mockReturnThis();
   const deleteMock = vi.fn().mockReturnThis();
 
-  return {
-    supabaseAdmin: {
-      from: fromMock,
-      select: selectMock,
-      eq: eqMock,
-      single: singleMock,
-      maybeSingle: maybeSingleMock,
-      insert: insertMock,
-      delete: deleteMock,
-      rpc: vi.fn(),
-      storage: {
-        from: vi.fn().mockReturnValue({
-          upload: vi.fn(),
-          remove: vi.fn(),
-        }),
-      },
+  const mockClient = {
+    from: fromMock,
+    select: selectMock,
+    eq: eqMock,
+    single: singleMock,
+    maybeSingle: maybeSingleMock,
+    insert: insertMock,
+    delete: deleteMock,
+    rpc: vi.fn(),
+    storage: {
+      from: vi.fn().mockReturnValue({
+        upload: vi.fn(),
+        remove: vi.fn(),
+      }),
     },
   };
+
+  return {
+    serverCompanyClient: () => ({
+      companyId: COMPANY_ID,
+      client: mockClient,
+    }),
+  };
 });
+
+const supabaseAdmin = serverCompanyClient().client;
 
 describe("backupCore", () => {
   beforeEach(() => {

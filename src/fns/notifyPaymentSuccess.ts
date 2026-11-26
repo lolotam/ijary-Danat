@@ -1,6 +1,9 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import {
@@ -12,7 +15,7 @@ import {
 import { templateAllowsChannel } from "@/fns/templateChannelPolicy";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/database.types";
 import {
   paymentAdminAlertTemplate,
   paymentReceiptTemplate,
@@ -31,27 +34,16 @@ import { stripMarkup } from "@/lib/templateRender";
 import { requirePermission } from "@/fns/requirePermission";
 
 /**
- * يحوّل قيمة سبب السداد اليدوي من قائمة الخيارات إلى تسميتها المعروضة للقارئ.
- *
- * Falls back to the raw value rather than dropping the row: a reason an admin
- * deleted from the catalog after using it is still the true reason that invoice
- * was settled, and a receipt that quietly omits it is worse than one showing a
- * slug. Never throws — this runs inside the notification path, which must not
- * be able to fail a payment.
+ * يحوّل قيمة سبب السداد اليدوي من قائمة الخيارات إلى تسميتها المعروضة للقارئ ضمن الشركة.
  */
 async function resolveManualPaymentReasonLabel(
+  db: SupabaseClient<Database>,
   value: string,
   locale: EmailLocale,
 ): Promise<string> {
   try {
-    // Since migration 159 the dialog records a payment method, so the value on
-    // the invoice may come from either catalog — and `bank_transfer` and `cheque`
-    // exist in BOTH. Querying them together returns two rows, `maybeSingle`
-    // treats that as an error, and the email falls back to the raw slug
-    // ("cheque" instead of "شيك"). So they are tried in order of authority
-    // instead: methods first, since that is what new settlements record.
     for (const code of ["payment_methods", "manual_payment_reasons"]) {
-      const item = await supabaseAdmin
+      const item = await db
         .from("option_list_items")
         .select("label_ar, label_en, option_lists!inner(code)")
         .eq("option_lists.code", code)
@@ -67,11 +59,7 @@ async function resolveManualPaymentReasonLabel(
 }
 
 /**
- * يُنشئ إشعارات الإدارة والمستأجر بالبريد وواتساب بعد تأكيد دفعة أو أكثر.
- *
- * After one or more confirmed payments (typically one row per invoice month),
- * notify admin + tenant by email/WhatsApp and write Notification Log rows.
- * Never throws into the payment path — failures are returned for logging.
+ * يُنشئ إشعارات الإدارة والمستأجر بالبريد وواتساب بعد تأكيد دفعة أو أكثر ضمن نطاق الشركة.
  */
 async function enqueuePaymentSuccess(
   paymentIds: string[],
@@ -83,7 +71,8 @@ async function enqueuePaymentSuccess(
   }
 
   try {
-    const paymentsResult = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+    const paymentsResult = await db
       .from("payments")
       .select("*")
       .in("id", uniqueIds)
@@ -91,18 +80,9 @@ async function enqueuePaymentSuccess(
     if (paymentsResult.error) throw new Error(paymentsResult.error.message);
     const payments = paymentsResult.data;
     if (!payments.length) {
-      // A declined transaction correctly produces no confirmed payment. This is
-      // the expected outcome, not a failure.
       return { ok: false as const, nothingToDo: true as const, error: "No confirmed payments." };
     }
 
-    // The same payments always give the same key, whichever settlement path
-    // calls first — that is what lets the database's unique index drop the
-    // second notification instead of the application racing itself.
-    // Hashed so the key has a fixed length however many months were paid: the
-    // ids themselves would grow the index entry past what a B-tree accepts.
-    // The key is built from the CONFIRMED payments, not from the ids the
-    // caller passed, so a named id that is not confirmed cannot change it.
     const sortedIds = payments
       .map((payment) => payment.id)
       .sort()
@@ -116,16 +96,12 @@ async function enqueuePaymentSuccess(
     ).join("");
 
     const tenantId = payments[0].tenant_id;
-    const tenantResult = await supabaseAdmin
-      .from("tenants")
-      .select("*")
-      .eq("id", tenantId)
-      .single();
+    const tenantResult = await db.from("tenants").select("*").eq("id", tenantId).single();
     if (tenantResult.error) throw new Error(tenantResult.error.message);
     const tenant = tenantResult.data;
     const locale = (tenant.preferred_language ?? "ar") as EmailLocale;
 
-    const allocations = await supabaseAdmin
+    const allocations = await db
       .from("payment_allocations")
       .select("payment_id, invoice_id, amount")
       .in("payment_id", uniqueIds);
@@ -133,7 +109,7 @@ async function enqueuePaymentSuccess(
 
     const invoiceIds = [...new Set(allocations.data.map((row) => row.invoice_id))];
     const invoices = invoiceIds.length
-      ? await supabaseAdmin
+      ? await db
           .from("invoices")
           .select(
             "id, code, period_month, period_year, total, balance, manual_payment_reason, contract_id",
@@ -142,27 +118,11 @@ async function enqueuePaymentSuccess(
       : { data: [], error: null };
     if (invoices.error) throw new Error(invoices.error.message);
 
-    // Suppression for tenant notifications: when ANY settled invoice belongs to a
-    // suppressed contract, the tenant gets no payment-success notification at all
-    // — no email, no WhatsApp, and no PDF rendered for them. This deliberately
-    // differs from the portal rule (which filters to the ordinary invoices and
-    // keeps the row when at least one remains): `renderPaymentReceiptPdfs`
-    // renders ONE document per PAYMENT covering all its allocations (see
-    // `src/lib/paymentReceiptPdf.ts:217-255`), so unlike the portal's per-invoice
-    // pages it cannot be filtered down. The only way to guarantee no roof receipt
-    // reaches the tenant is to drop the whole tenant notification for that payment.
-    // Admin and company notifications for the same payment are unaffected.
-    //
-    // Fail CLOSED on a lookup error — do not swallow a failed lookup into
-    // "allowed".
     let suppressedPaymentIds = new Set<string>();
     let suppressionResolved = true;
     try {
       suppressedPaymentIds = await getSuppressedPaymentIds(uniqueIds);
     } catch (error) {
-      // Fail closed, but say so. Silently suppressing means the tenant never
-      // learns their payment landed and nothing anywhere records why — the
-      // same reason `makeReceiptsVisibleToTenant` logs its own fail-closed path.
       console.error(
         "[notifyPaymentSuccess] failed to resolve suppressed contracts; suppressing the tenant notification",
         error instanceof Error ? error.message : String(error),
@@ -170,10 +130,6 @@ async function enqueuePaymentSuccess(
       suppressionResolved = false;
     }
 
-    // Per PAYMENT, not per batch. An all-contracts checkout creates one payment
-    // per invoice and notifies for all of them at once, so a single suppressed
-    // payment must not cost the tenant the notification for the ordinary ones.
-    // When the lookup failed we cannot tell them apart, so none qualify.
     const tenantReceiptPayments = suppressionResolved
       ? payments.filter((payment) => !suppressedPaymentIds.has(payment.id))
       : [];
@@ -182,34 +138,23 @@ async function enqueuePaymentSuccess(
     const periods = (invoices.data ?? [])
       .map((invoice) => formatMonthYear(invoice.period_month, invoice.period_year, locale))
       .join(", ");
-    // The reason is a catalog `value`; the email must show the admin-facing
-    // label in the reader's language, not the slug. A settlement covering
-    // several invoices carries whatever reason they agree on — they were all
-    // marked in one action — so the first non-null is the reason for all of it.
     const reasonValue =
       (invoices.data ?? []).map((invoice) => invoice.manual_payment_reason).find(Boolean) ?? null;
     const manualPaymentReason = reasonValue
-      ? await resolveManualPaymentReasonLabel(reasonValue, locale)
+      ? await resolveManualPaymentReasonLabel(db, reasonValue, locale)
       : null;
 
     const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
     const amountLabel = formatKwd(totalAmount, locale);
     const paymentCodes = payments.map((payment) => payment.code).join(", ");
-    // Same label as the method column on /admin/payments, so the alert and the
-    // ledger read alike. A multi-invoice checkout is one method repeated, hence
-    // the de-duplication; mixed methods are listed rather than picking one.
     const translate = translatorFor(locale);
     const paymentMethod = [
       ...new Set(payments.map((payment) => formatPaymentMethod(payment.method, translate))),
     ].join(", ");
     const reference = payments.map((payment) => payment.reference ?? payment.code).join(", ");
 
-    // Idempotency: any prior non-cancelled notify for this payment id set (any type).
-    // Scoped to this tenant and to rows whose payload already carries every id we
-    // are about to notify for — a global "most recent N" scan would stop matching
-    // once newer receipts push an earlier one out of the window, resending it.
     const primaryId = payments[0].id;
-    const existing = await supabaseAdmin
+    const existing = await db
       .from("notifications")
       .select("id, payload")
       .in("type", ["receipt", "payment_admin_alert"])

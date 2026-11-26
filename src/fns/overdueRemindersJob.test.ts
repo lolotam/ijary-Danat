@@ -8,43 +8,54 @@ const existingNotifications = vi.fn();
 const rpc = vi.fn();
 const enqueue = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: (table: string) => {
-      if (table === "invoices") {
-        // `.select(…).eq("state", "overdue").gt("balance", 0)`.
-        return { select: () => ({ eq: () => ({ gt: overdueInvoices }) }) };
-      }
-      if (table === "contracts") {
-        // `.select("id").in("id", […]).is("archived_at", null)`.
-        return {
-          select: () => ({
-            in: () => ({
-              is: liveContracts,
-            }),
+const dbClient = {
+  from: (table: string) => {
+    if (table === "invoices") {
+      // `.select(…).eq("state", "overdue").gt("balance", 0)`.
+      return { select: () => ({ eq: () => ({ gt: overdueInvoices }) }) };
+    }
+    if (table === "contracts") {
+      // `.select("id").in("id", […]).is("archived_at", null)`.
+      return {
+        select: () => ({
+          in: () => ({
+            is: liveContracts,
           }),
-        };
-      }
-      if (table === "tenants") {
-        return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
-      }
-      if (table === "notifications") {
-        // `.eq("tenant_id").eq("type").contains("payload").neq("state").limit(1)`.
-        return {
-          select: () => ({
+        }),
+      };
+    }
+    if (table === "tenants") {
+      return { select: () => ({ eq: () => ({ single: tenantRow }) }) };
+    }
+    if (table === "notifications") {
+      // `.eq("tenant_id").eq("type").contains("payload").neq("state").limit(1)`.
+      return {
+        select: () => ({
+          eq: () => ({
             eq: () => ({
-              eq: () => ({
-                contains: () => ({ neq: () => ({ limit: existingNotifications }) }),
-              }),
+              contains: () => ({ neq: () => ({ limit: existingNotifications }) }),
             }),
           }),
-        };
-      }
-      // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
-      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
-    },
-    rpc: (...args: unknown[]) => rpc(...args),
+        }),
+      };
+    }
+    // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
+    return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
   },
+  rpc: (...args: unknown[]) => rpc(...args),
+};
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => dbClient,
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
 }));
 
 vi.mock("@/fns/enqueueNotification", () => ({

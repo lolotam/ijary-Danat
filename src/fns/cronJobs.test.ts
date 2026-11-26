@@ -3,6 +3,14 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const maybeSingle = vi.fn();
 const rpc = vi.fn();
 const claimed = vi.fn();
+const listActiveCompanies = vi.fn();
+
+const COMPANY_A = {
+  id: "11111111-1111-4111-8111-111111111111",
+  slug: "danat",
+  status: "active" as const,
+  host: "danat.localhost",
+};
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
@@ -13,6 +21,21 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     }),
     rpc: (...args: unknown[]) => rpc(...args),
   },
+}));
+
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle }),
+      }),
+    }),
+    rpc: (...args: unknown[]) => rpc(...args),
+  }),
+}));
+
+vi.mock("@/company/hostCompany.server", () => ({
+  listActiveCompanies: (...args: unknown[]) => listActiveCompanies(...args),
 }));
 
 const overdue = vi.fn();
@@ -46,6 +69,7 @@ function cronRequest(job: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.CRON_SECRET = "secret";
+  listActiveCompanies.mockResolvedValue([COMPANY_A]);
   maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
   claimed.mockResolvedValue({ data: true, error: null });
   rpc.mockImplementation((fn: string) =>
@@ -256,5 +280,32 @@ describe("payment-reconcile job", () => {
 
     expect(response.status).toBe(200);
     expect(reconcile).toHaveBeenCalled();
+  });
+});
+
+describe("multi-company cron fan-out (T049)", () => {
+  test("runs once per active company and isolates a company failure from the rest", async () => {
+    const companyB = {
+      id: "22222222-2222-4222-8222-222222222222",
+      slug: "other",
+      status: "active" as const,
+      host: "other.localhost",
+    };
+    listActiveCompanies.mockResolvedValueOnce([COMPANY_A, companyB]);
+    overdue
+      .mockRejectedValueOnce(new Error("company A failed"))
+      .mockResolvedValueOnce({ updated: 2 });
+
+    const response = await respondToCronRequest(cronRequest("overdue"));
+
+    expect(response.status).toBe(200);
+    expect(overdue).toHaveBeenCalledTimes(2);
+    const body = (await response.json()) as {
+      companies: Array<{ companyId: string; ok: boolean; error?: string }>;
+    };
+    expect(body.companies).toEqual([
+      expect.objectContaining({ companyId: COMPANY_A.id, ok: false, error: "company A failed" }),
+      expect.objectContaining({ companyId: companyB.id, ok: true }),
+    ]);
   });
 });

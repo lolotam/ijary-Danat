@@ -8,6 +8,7 @@ import {
   actAsSuperuser,
   captureRaise,
   closePool,
+  seedCompanyUser,
   seedContract,
   withRollback,
 } from "@/db/testDb";
@@ -21,24 +22,19 @@ afterAll(closePool);
  * It is NOT lease reactivation and must never regenerate invoices.
  */
 
-async function seedAdmin(client: PoolClient): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار جديدة ويعيد معرّفها. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, 'admin'::public.app_role)`,
-    [userId],
-  );
-  await client.query(
-    `insert into public.profiles (id, email, display_name, is_active)
-     values ($1, $2, 'Restore Admin', true)
-     on conflict (id) do nothing`,
-    [userId, `${userId}@example.test`],
-  );
-  return userId;
+  return rows[0].id;
+}
+
+/** ينشئ مستخدماً إدارياً ضمن الشركة المحددة. */
+async function seedAdmin(client: PoolClient, companyId: string): Promise<string> {
+  return seedCompanyUser(client, companyId, "admin", "restore-admin");
 }
 
 async function seedInsurance(
@@ -53,11 +49,17 @@ async function seedInsurance(
   );
 }
 
-async function asAdmin<T>(client: PoolClient, fn: (adminId: string) => Promise<T>): Promise<T> {
-  const adminId = await seedAdmin(client);
+/** ينفّذ الدالة بصلاحية مدير ضمن شركة محددة ثم يعيد صلاحية المشرف. */
+async function asAdmin<T>(
+  client: PoolClient,
+  fn: (adminId: string, companyId: string) => Promise<T>,
+  existingCompanyId?: string,
+): Promise<T> {
+  const companyId = existingCompanyId ?? (await seedCompany(client));
+  const adminId = await seedAdmin(client, companyId);
   await actAs(client, "authenticated", adminId);
   try {
-    return await fn(adminId);
+    return await fn(adminId, companyId);
   } finally {
     await actAsSuperuser(client);
   }
@@ -78,8 +80,9 @@ async function archiveViaCloseOut(client: PoolClient, contractId: string) {
 describe("restore_contract", () => {
   test("26. restore un-archives, sets target state, re-occupies unit via trigger", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -172,43 +175,48 @@ describe("restore_contract", () => {
         amount: 80,
       });
 
-      await asAdmin(client, async () => {
-        await archiveViaCloseOut(client, fx.contractId);
+      await asAdmin(
+        client,
+        async () => {
+          await archiveViaCloseOut(client, fx.contractId);
 
-        const mid = await client.query<{ tenant_portal_enabled: boolean }>(
-          `select tenant_portal_enabled from public.tenants where id = $1`,
-          [fx.tenantId],
-        );
-        expect(mid.rows[0].tenant_portal_enabled).toBe(false);
+          const mid = await client.query<{ tenant_portal_enabled: boolean }>(
+            `select tenant_portal_enabled from public.tenants where id = $1`,
+            [fx.tenantId],
+          );
+          expect(mid.rows[0].tenant_portal_enabled).toBe(false);
 
-        await client.query(
-          `select public.restore_contract($1, 'terminated', true, 'restore portal access')`,
-          [fx.contractId],
-        );
+          await client.query(
+            `select public.restore_contract($1, 'terminated', true, 'restore portal access')`,
+            [fx.contractId],
+          );
 
-        const after = await client.query<{ tenant_portal_enabled: boolean }>(
-          `select tenant_portal_enabled from public.tenants where id = $1`,
-          [fx.tenantId],
-        );
-        expect(after.rows[0].tenant_portal_enabled).toBe(true);
+          const after = await client.query<{ tenant_portal_enabled: boolean }>(
+            `select tenant_portal_enabled from public.tenants where id = $1`,
+            [fx.tenantId],
+          );
+          expect(after.rows[0].tenant_portal_enabled).toBe(true);
 
-        // Still off. This is the deactivation an admin made on purpose, and
-        // migration 142 exists to stop restore_contract silently undoing it —
-        // which would also desync the flag from GoTrue's `banned_until`, so the
-        // Users table would read "active" while the login stayed refused.
-        const account = await client.query<{ is_active: boolean }>(
-          `select is_active from public.profiles where id = $1`,
-          [portalUser],
-        );
-        expect(account.rows[0].is_active).toBe(false);
-      });
+          // Still off. This is the deactivation an admin made on purpose, and
+          // migration 142 exists to stop restore_contract silently undoing it —
+          // which would also desync the flag from GoTrue's `banned_until`, so the
+          // Users table would read "active" while the login stayed refused.
+          const account = await client.query<{ is_active: boolean }>(
+            `select is_active from public.profiles where id = $1`,
+            [portalUser],
+          );
+          expect(account.rows[0].is_active).toBe(false);
+        },
+        fx.companyId,
+      );
     });
   });
 
   test("28. restore raises when another live contract holds the unit", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -230,19 +238,19 @@ describe("restore_contract", () => {
         );
         const conflicting = await client.query<{ id: string }>(
           `insert into public.contracts
-             (code, tenant_id, start_date, end_date, monthly_amount, state)
-           values ($1, $2, '2026-07-01', '2027-06-30', 400, 'active')
+             (company_id, code, tenant_id, start_date, end_date, monthly_amount, state)
+           values ($1, $2, $3, '2026-07-01', '2027-06-30', 400, 'active')
            returning id`,
-          [`C2-${tag}`, tenant.rows[0].id],
+          [fx.companyId, `C2-${tag}`, tenant.rows[0].id],
         );
         // Migration 114: close-out/restore now read contract_units, not
         // contracts.unit_id — a contract inserted only with the raw column
         // (as above) would otherwise have no units at all as far as
         // restore_contract's pre-flight is concerned.
         await client.query(
-          `insert into public.contract_units (contract_id, unit_id, monthly_amount, line_order)
-           values ($1, $2, 400, 1)`,
-          [conflicting.rows[0].id, fx.unitId],
+          `insert into public.contract_units (company_id, contract_id, unit_id, monthly_amount, line_order)
+           values ($1, $2, $3, 400, 1)`,
+          [fx.companyId, conflicting.rows[0].id, fx.unitId],
         );
 
         expect(
@@ -258,8 +266,9 @@ describe("restore_contract", () => {
 
   test("29. restore with blank reason raises", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -285,8 +294,9 @@ describe("restore_contract", () => {
 
   test("30. restore creates NO invoice", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });
@@ -320,8 +330,9 @@ describe("restore_contract", () => {
 
   test("31. restore preserves the close-out row and its child rows", async () => {
     await withRollback(async (client) => {
-      await asAdmin(client, async () => {
+      await asAdmin(client, async (_adminId, companyId) => {
         const fx = await seedContract(client, {
+          companyId,
           startDate: "2026-01-01",
           endDate: "2026-12-31",
         });

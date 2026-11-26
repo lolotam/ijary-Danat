@@ -1,10 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { buildFinalMessage } from "@/fns/resolveTemplateVariables";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/database.types";
 import { isTemplateOfferable } from "@/lib/templateEligibility";
 import { requirePermission } from "@/fns/requirePermission";
@@ -47,18 +48,17 @@ export const sendNotification = createServerFn({ method: "POST" })
       refusal: "You do not have permission to send notifications.",
     });
 
-    const tenantResult = await supabaseAdmin
-      .from("tenants")
-      .select("*")
-      .eq("id", data.tenantId)
-      .single();
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const tenantResult = await db.from("tenants").select("*").eq("id", data.tenantId).single();
     if (tenantResult.error) throw new Error(tenantResult.error.message);
     const tenant = tenantResult.data;
 
     // Channel check against the requested template code. Eligibility is
     // enforced here — a filtered dropdown is presentation, not a control.
     if (data.templateCode) {
-      const templateResult = await supabaseAdmin
+      const templateResult = await db
         .from("notification_templates")
         .select("*")
         .eq("code", data.templateCode)
@@ -69,7 +69,7 @@ export const sendNotification = createServerFn({ method: "POST" })
       if (template.channel !== "both" && template.channel !== data.channel) {
         throw new Error("Template channel does not match the selected channel.");
       }
-      const jobs = await supabaseAdmin.from("cron_jobs").select("key, recipient_targets");
+      const jobs = await db.from("cron_jobs").select("key, recipient_targets");
       if (jobs.error) throw new Error(jobs.error.message);
       if (!isTemplateOfferable(template.type, jobs.data ?? [])) {
         throw new Error("Template is not available for manual sending.");
@@ -88,16 +88,8 @@ export const sendNotification = createServerFn({ method: "POST" })
       variables: data.variables,
     });
     if (final.unavailableReason) {
-      // `throw new Response(...)` RESOLVES client-side via TanStack's x-tss-raw
-      // path instead of rejecting, so the dialog's catch never ran and the admin
-      // got a success toast for a message that was never sent. An Error rejects.
       throw new Error(final.unavailableReason);
     }
-    // Refuse rather than mail blank placeholders (user decision M10,
-    // 2026-09-23). `resolveTypeVariables` resolves live data for only four
-    // types, so a manual send of any other template — a dispute, a close-out —
-    // went out as "نزاع على فاتورة - " with the amount empty. The preview's
-    // amber `missing` list was advisory; this makes it binding.
     if (final.missing.length) {
       throw new Error(
         `Cannot send: these variables have no value — ${final.missing
@@ -134,10 +126,11 @@ export const sendNotification = createServerFn({ method: "POST" })
     };
 
     // Persist the builder output verbatim — the parity test asserts this.
-    const insertResult = await supabaseAdmin
+    const insertResult = await db
       .from("notifications")
       .insert({
         audience: "tenant",
+        company_id: company.id,
         tenant_id: tenant.id,
         type: data.type,
         channel: data.channel,

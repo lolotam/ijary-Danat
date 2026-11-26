@@ -17,7 +17,7 @@ update public.deposits d
      d.company_id,
      (select c.company_id from public.contracts c where c.id = d.contract_id),
      (select i.company_id from public.invoices i where i.id = d.invoice_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where d.company_id is null;
 
@@ -86,7 +86,7 @@ update public.partial_payments pp
      (select c.company_id from public.contracts c where c.id = pp.contract_id),
      (select t.company_id from public.tenants t where t.id = pp.tenant_id),
      (select i.company_id from public.invoices i where i.id = pp.invoice_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where pp.company_id is null;
 
@@ -185,7 +185,7 @@ update public.insurance_payments ip
      ip.company_id,
      (select c.company_id from public.contracts c where c.id = ip.contract_id),
      (select t.company_id from public.tenants t where t.id = ip.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where ip.company_id is null;
 
@@ -260,7 +260,7 @@ update public.refunds r
      r.company_id,
      (select c.company_id from public.contracts c where c.id = r.contract_id),
      (select t.company_id from public.tenants t where t.id = r.tenant_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where r.company_id is null;
 
@@ -347,7 +347,7 @@ update public.expenses e
      (select b.company_id from public.buildings b where b.id = e.building_id),
      (select u.company_id from public.units u where u.id = e.unit_id),
      (select ec.company_id from public.expense_categories ec where ec.id = e.category_id),
-     (select co.id from public.companies co order by co.created_at asc limit 1)
+     public._legacy_single_company_id()
    )
  where e.company_id is null;
 

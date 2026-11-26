@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { attachmentPayload, renderAndStorePdf } from "@/lib/reportPdfAttachment";
 import { requirePermission } from "@/fns/requirePermission";
 
@@ -18,7 +19,10 @@ export const resendGeneratedReport = createServerFn({ method: "POST" })
       attempted: "report.resend",
       refusal: "You do not have permission to read reports.",
     });
-    const reportResult = await supabaseAdmin
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const reportResult = await db
       .from("generated_reports")
       .select("*")
       .eq("id", data.reportId)
@@ -28,7 +32,7 @@ export const resendGeneratedReport = createServerFn({ method: "POST" })
     if (!report.schedule_id || !report.html_content) {
       throw new Error("The generated report has no schedule or HTML artifact.");
     }
-    const scheduleResult = await supabaseAdmin
+    const scheduleResult = await db
       .from("report_schedules")
       .select("*")
       .eq("id", report.schedule_id)
@@ -54,9 +58,10 @@ export const resendGeneratedReport = createServerFn({ method: "POST" })
       prefix: "scheduled-reports",
     });
 
-    const notificationResult = await supabaseAdmin
+    const notificationResult = await db
       .from("notifications")
       .insert({
+        company_id: company.id,
         report_schedule_id: schedule.id,
         type: "scheduled_report",
         audience: "admin",
@@ -80,7 +85,7 @@ export const resendGeneratedReport = createServerFn({ method: "POST" })
     if (notificationResult.error) throw new Error(notificationResult.error.message);
     const dispatched = await dispatchNotificationRecord(notificationResult.data.id);
     const sent = dispatched.state === "sent";
-    const reportUpdate = await supabaseAdmin
+    const reportUpdate = await db
       .from("generated_reports")
       .update({ sent, sent_at: sent ? new Date().toISOString() : null })
       .eq("id", report.id);

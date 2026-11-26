@@ -2,9 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requirePermission } from "@/fns/requirePermission";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 
 import {
@@ -275,12 +276,15 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(inputSchema)
   .handler(async ({ data: requestInput, context }): Promise<ConfirmGatewayPaymentResult> => {
+    const company = requireRequestCompany();
+    // Settlement path is explicitly allowed to complete in-flight charges even if suspended.
+    const db = companyClient(company.id, { allowSuspended: true });
     const config = gatewayConfigFromEnv();
 
     // Optional PREQ-… from our redirect URL — survives PaymentId float corruption.
     let preqInvoiceId: string | null = null;
     if (requestInput.paymentRequestCode) {
-      const preqQuery = await supabaseAdmin
+      const preqQuery = await db
         .from("payment_requests")
         .select("tenant_id, provider_invoice_id, code")
         .eq("code", requestInput.paymentRequestCode.toUpperCase())
@@ -317,12 +321,12 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
     }
 
     const requestQuery = status.invoiceId
-      ? await supabaseAdmin
+      ? await db
           .from("payment_requests")
           .select("tenant_id")
           .eq("provider_invoice_id", status.invoiceId)
           .maybeSingle()
-      : await supabaseAdmin
+      : await db
           .from("payment_requests")
           .select("tenant_id")
           .eq("provider_payment_id", status.providerPaymentId)

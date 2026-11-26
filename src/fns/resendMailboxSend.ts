@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { plainTextFrom } from "@/fns/gmailSend";
 import { emailLogoFor, readPublicBranding } from "@/fns/publicBranding";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -71,8 +73,8 @@ export type ResendMailboxSendInput = z.infer<typeof resendMailboxSendSchema>;
  * approved, on a domain they may not even own.
  */
 async function allowedSenders(): Promise<string[]> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const list = await supabaseAdmin
+  const db = companyClient(requireRequestCompany().id);
+  const list = await db
     .from("option_lists")
     .select("id")
     .eq("code", RESEND_SENDER_LIST_CODE)
@@ -80,7 +82,7 @@ async function allowedSenders(): Promise<string[]> {
   if (list.error) throw new Error(list.error.message);
   if (!list.data) return [];
 
-  const items = await supabaseAdmin
+  const items = await db
     .from("option_list_items")
     .select("value")
     .eq("list_id", list.data.id)
@@ -98,8 +100,8 @@ async function allowedSenders(): Promise<string[]> {
  * Settings has turned it off here too.
  */
 async function resendProviderConfig(): Promise<Json> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin
+  const db = companyClient(requireRequestCompany().id);
+  const { data, error } = await db
     .from("provider_configs")
     .select("config, is_enabled")
     .eq("provider", "resend")

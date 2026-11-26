@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { NotificationChannel } from "@/integrations/supabase/database.types";
 
 /**
@@ -37,7 +38,7 @@ export function templateAllowsChannel(
  * A transient database fault must not silently suppress a notification.
  */
 export async function loadTemplateChannel(code: string): Promise<NotificationChannel | null> {
-  const result = await supabaseAdmin
+  const result = await companyClient(requireRequestCompany().id)
     .from("notification_templates")
     .select("channel")
     .eq("code", code)

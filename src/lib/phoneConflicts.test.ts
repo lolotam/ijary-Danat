@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { rpc: mocks.rpc },
+vi.mock("@/company/companyClient.server", () => ({
+  serverCompanyClient: () => ({
+    companyId: "11111111-1111-4111-8111-111111111111",
+    client: { rpc: mocks.rpc },
+  }),
 }));
 
 import { normalisePhoneForSave } from "./phoneConflicts.server";

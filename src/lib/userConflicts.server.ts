@@ -1,6 +1,6 @@
 import type { AuthError } from "@supabase/supabase-js";
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverCompanyClient } from "@/company/companyClient.server";
 import { userConflictMessage } from "@/lib/userConflicts";
 
 /**
@@ -47,8 +47,14 @@ export function usernameTakenError(username: string, owner?: string | null): Err
 export async function assertUsernameAvailable(
   username: string,
   excludeProfileId: string | null,
+  explicitCompanyId?: string,
 ): Promise<void> {
-  let query = supabaseAdmin.from("profiles").select("id, display_name").eq("username", username);
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
+  let query = client
+    .from("profiles")
+    .select("id, display_name")
+    .eq("company_id", companyId)
+    .eq("username", username);
   if (excludeProfileId) query = query.neq("id", excludeProfileId);
 
   const { data, error } = await query.limit(1);
@@ -75,10 +81,12 @@ export function isEmailTaken(error: Pick<AuthError, "message" | "code">): boolea
  * is best-effort: a failed or empty read still yields the conflict, just
  * without a name.
  */
-export async function emailTakenError(email: string): Promise<Error> {
-  const { data } = await supabaseAdmin
+export async function emailTakenError(email: string, explicitCompanyId?: string): Promise<Error> {
+  const { companyId, client } = serverCompanyClient(explicitCompanyId);
+  const { data } = await client
     .from("profiles")
     .select("display_name")
+    .eq("company_id", companyId)
     .eq("email", email)
     .limit(1);
   const owner = data?.[0]?.display_name ?? null;

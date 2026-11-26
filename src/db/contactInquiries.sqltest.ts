@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { actAs, actAsSuperuser, closePool, withRollback } from "@/db/testDb";
+import { actAs, actAsSuperuser, closePool, seedCompanyUser, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -15,25 +15,22 @@ afterAll(closePool);
  * leasing lead — a different table, with a status column — notified normally.
  */
 
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار جديدة ويعيد معرّفها. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة اختبار ${tag}`, `Test Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+  return rows[0].id;
 }
 
-async function seedInquiry(client: PoolClient): Promise<string> {
+/** ينشئ رسالة زائر جديدة ضمن الشركة ويعيد معرّفها. */
+async function seedInquiry(client: PoolClient, companyId: string): Promise<string> {
   const { rows } = await client.query(
-    `insert into public.contact_inquiries (name, email, message)
-     values ('Visitor', $1, 'Testing the contact form') returning id, status`,
-    [`${randomUUID()}@example.test`],
+    `insert into public.contact_inquiries (company_id, name, email, message)
+     values ($1, 'Visitor', $2, 'Testing the contact form') returning id, status`,
+    [companyId, `${randomUUID()}@example.test`],
   );
   // The default is what makes a new submission light up the bell.
   expect(rows[0].status).toBe("new");
@@ -53,8 +50,9 @@ describe("visitor messages carry unread state", () => {
      * staff role, and the one an admin-only policy would exclude.
      */
     await withRollback(async (client) => {
-      const inquiry = await seedInquiry(client);
-      const collector = await seedUserWithRole(client, "collector");
+      const companyId = await seedCompany(client);
+      const inquiry = await seedInquiry(client, companyId);
+      const collector = await seedCompanyUser(client, companyId, "collector", "inq-collector");
 
       await actAs(client, "authenticated", collector);
       await client.query(`update public.contact_inquiries set status = 'read' where id = $1`, [
@@ -74,7 +72,8 @@ describe("visitor messages carry unread state", () => {
     // The bell filters on exactly 'new'. A typo'd status elsewhere in the app
     // would silently drop the row out of the unread count instead of failing.
     await withRollback(async (client) => {
-      const inquiry = await seedInquiry(client);
+      const companyId = await seedCompany(client);
+      const inquiry = await seedInquiry(client, companyId);
       await expect(
         client.query(`update public.contact_inquiries set status = 'unread' where id = $1`, [
           inquiry,

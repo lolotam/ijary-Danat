@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { closePool, withRollback } from "@/db/testDb";
+import { closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -113,18 +113,31 @@ describe("migration 89 - close-out workflows and templates", () => {
 
   test("re-running 89 does not flip is_active", async () => {
     await withRollback(async (client) => {
+      const { rows: target } = await client.query<{ company_id: string }>(
+        `select company_id from public.cron_jobs where key = 'contract-closeout-completed' limit 1`,
+      );
+      const companyId = target[0].company_id;
+      await setCompanyClaimContext(client, companyId);
+
       await client.query(
-        `update public.cron_jobs set is_active = false where key = 'contract-closeout-completed'`,
+        `update public.cron_jobs set is_active = false where company_id = $1 and key = 'contract-closeout-completed'`,
+        [companyId],
       );
 
       const seed = readFileSync(
         resolve(process.cwd(), "db/migrations/89_closeout_workflows_and_templates.sql"),
         "utf8",
       );
-      await client.query(cronJobsPrefix(seed));
+      await client.query(
+        cronJobsPrefix(seed).replace(
+          /\bon conflict\s*\(\s*key\s*\)/i,
+          "on conflict (company_id, key)",
+        ),
+      );
 
       const { rows } = await client.query<{ is_active: boolean }>(
-        `select is_active from public.cron_jobs where key = 'contract-closeout-completed'`,
+        `select is_active from public.cron_jobs where company_id = $1 and key = 'contract-closeout-completed'`,
+        [companyId],
       );
       expect(rows[0].is_active).toBe(false);
     });
@@ -212,18 +225,31 @@ describe("migration 92/93 - invoice write-off and dispute notifications", () => 
 
   test("re-running 93 does not flip is_active", async () => {
     await withRollback(async (client) => {
+      const { rows: target } = await client.query<{ company_id: string }>(
+        `select company_id from public.cron_jobs where key = 'invoice-written-off' limit 1`,
+      );
+      const companyId = target[0].company_id;
+      await setCompanyClaimContext(client, companyId);
+
       await client.query(
-        `update public.cron_jobs set is_active = false where key = 'invoice-written-off'`,
+        `update public.cron_jobs set is_active = false where company_id = $1 and key = 'invoice-written-off'`,
+        [companyId],
       );
 
       const seed = readFileSync(
         resolve(process.cwd(), "db/migrations/93_invoice_event_workflows.sql"),
         "utf8",
       );
-      await client.query(cronJobsPrefix(seed));
+      await client.query(
+        cronJobsPrefix(seed).replace(
+          /\bon conflict\s*\(\s*key\s*\)/i,
+          "on conflict (company_id, key)",
+        ),
+      );
 
       const { rows } = await client.query<{ is_active: boolean }>(
-        `select is_active from public.cron_jobs where key = 'invoice-written-off'`,
+        `select is_active from public.cron_jobs where company_id = $1 and key = 'invoice-written-off'`,
+        [companyId],
       );
       expect(rows[0].is_active).toBe(false);
     });

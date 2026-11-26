@@ -1,7 +1,14 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { GatewayPaymentMethod, Tables } from "@/integrations/supabase/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import type {
+  Database,
+  GatewayPaymentMethod,
+  Tables,
+} from "@/integrations/supabase/database.types";
 import type { BlockingPayment } from "@/lib/gatewayReconciliation";
 import { roundToFils } from "@/lib/fils";
+
+export type SettlementDb = SupabaseClient<Database>;
 
 /*
  * قراءات تسوية البوابة: طلب الدفع وفواتيره ودفعاته الموجودة.
@@ -26,9 +33,13 @@ export interface EventDetails {
  * Deliberately no status filter: a `superseded` request's link is still
  * payable, and its charge must find its row (migration 223).
  */
-export async function findPaymentRequest(invoiceId: string | null, paymentId: string | null) {
+export async function findPaymentRequest(
+  db: SettlementDb,
+  invoiceId: string | null,
+  paymentId: string | null,
+) {
   if (invoiceId) {
-    const result = await supabaseAdmin
+    const result = await db
       .from("payment_requests")
       .select("*")
       .eq("provider_invoice_id", invoiceId)
@@ -37,7 +48,7 @@ export async function findPaymentRequest(invoiceId: string | null, paymentId: st
     if (result.data) return result.data;
   }
   if (paymentId) {
-    const result = await supabaseAdmin
+    const result = await db
       .from("payment_requests")
       .select("*")
       .eq("provider_payment_id", paymentId)
@@ -57,8 +68,11 @@ export async function findPaymentRequest(invoiceId: string | null, paymentId: st
  * recorded nowhere; the caller books what survives and records the rest as
  * excess.
  */
-export async function orderedRequestInvoices(paymentRequest: Tables<"payment_requests">) {
-  const invoiceQuery = await supabaseAdmin
+export async function orderedRequestInvoices(
+  db: SettlementDb,
+  paymentRequest: Tables<"payment_requests">,
+) {
+  const invoiceQuery = await db
     .from("invoices")
     .select("*")
     .in("id", paymentRequest.requested_invoice_ids);
@@ -90,10 +104,10 @@ export function invoicePaymentReference(prefix: string, invoiceCode: string) {
  * amount travels with the id because a resumed run must count what an earlier
  * run already booked against the captured charge.
  */
-export async function existingPaymentsByReference(references: string[]) {
+export async function existingPaymentsByReference(db: SettlementDb, references: string[]) {
   const found = new Map<string, { id: string; amount: number }>();
   if (!references.length) return found;
-  const paymentQuery = await supabaseAdmin
+  const paymentQuery = await db
     .from("payments")
     .select("id,reference,amount")
     .in("reference", references);
@@ -110,8 +124,8 @@ export async function existingPaymentsByReference(references: string[]) {
 /**
  * هل خُصّصت الدفعة لهذه الفاتورة من قبل؟
  * True when the payment already carries its single invoice allocation. */
-export async function paymentIsAllocated(paymentId: string, invoiceId: string) {
-  const allocationQuery = await supabaseAdmin
+export async function paymentIsAllocated(db: SettlementDb, paymentId: string, invoiceId: string) {
+  const allocationQuery = await db
     .from("payment_allocations")
     .select("invoice_id")
     .eq("payment_id", paymentId);
@@ -137,13 +151,14 @@ export function asMoney(value: unknown): number {
  * down, so they neither block a settlement nor stand in for one.
  */
 export async function blockingPaymentsForInvoices(
+  db: SettlementDb,
   invoices: Tables<"invoices">[],
 ): Promise<BlockingPayment[]> {
   // Reachable since every requested invoice can be gone; an empty `in` list
   // is not a query worth sending to PostgREST.
   if (!invoices.length) return [];
   const invoiceCodeById = new Map(invoices.map((invoice) => [invoice.id, invoice.code]));
-  const allocationQuery = await supabaseAdmin
+  const allocationQuery = await db
     .from("payment_allocations")
     .select("invoice_id, payment_id, payments(id, code, method, reference, status)")
     .in(
@@ -178,12 +193,8 @@ export async function blockingPaymentsForInvoices(
 }
 
 /** شركة المستأجر الذي أنشأ طلب الدفع، لتُكتب على الدفعات الجديدة. */
-export async function tenantCompanyId(tenantId: string): Promise<string | null> {
-  const tenantQuery = await supabaseAdmin
-    .from("tenants")
-    .select("company_id")
-    .eq("id", tenantId)
-    .single();
+export async function tenantCompanyId(db: SettlementDb, tenantId: string): Promise<string | null> {
+  const tenantQuery = await db.from("tenants").select("company_id").eq("id", tenantId).single();
   if (tenantQuery.error) throw new Error(tenantQuery.error.message);
   return tenantQuery.data.company_id;
 }
@@ -196,8 +207,12 @@ export async function tenantCompanyId(tenantId: string): Promise<string | null> 
  * the table rather than from the current run so a resumed or replayed callback
  * sees what an earlier, interrupted run wrote.
  */
-export async function bookedForRequest(requestId: string, excessReference: string) {
-  const paymentQuery = await supabaseAdmin
+export async function bookedForRequest(
+  db: SettlementDb,
+  requestId: string,
+  excessReference: string,
+) {
+  const paymentQuery = await db
     .from("payments")
     .select("amount,reference")
     .eq("payment_request_id", requestId);

@@ -71,7 +71,7 @@ update public.email_signatures es
    and p.company_id is not null;
 
 update public.email_signatures
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.email_signatures
@@ -106,7 +106,7 @@ alter table public.evolution_connections
   add column if not exists company_id uuid references public.companies(id);
 
 update public.evolution_connections
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.evolution_connections
@@ -132,7 +132,7 @@ alter table public.whatsapp_chats
   add column if not exists company_id uuid references public.companies(id);
 
 update public.whatsapp_chats
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.whatsapp_chats
@@ -170,7 +170,7 @@ update public.whatsapp_contacts wc
    and wc.company_id is null;
 
 update public.whatsapp_contacts
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.whatsapp_contacts
@@ -229,7 +229,7 @@ update public.whatsapp_messages wm
    and wm.company_id is null;
 
 update public.whatsapp_messages
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.whatsapp_messages
@@ -285,7 +285,7 @@ update public.whatsapp_contact_contracts wcc
    and wcc.company_id is null;
 
 update public.whatsapp_contact_contracts
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.whatsapp_contact_contracts
@@ -348,7 +348,7 @@ update public.tenant_messages tm
    and tm.company_id is null;
 
 update public.tenant_messages
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.tenant_messages
@@ -420,7 +420,7 @@ alter table public.contact_inquiries
   add column if not exists company_id uuid references public.companies(id);
 
 update public.contact_inquiries
-   set company_id = (select id from public.companies order by created_at asc limit 1)
+   set company_id = public._legacy_single_company_id()
  where company_id is null;
 
 alter table public.contact_inquiries

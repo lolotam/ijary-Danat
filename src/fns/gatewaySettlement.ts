@@ -1,5 +1,10 @@
+import { companyClient } from "@/company/companyClient.server";
+import {
+  getRequestCompany,
+  requireRequestCompany,
+  runWithRequestCompany,
+} from "@/company/requestCompany.server";
 import { notifyPaymentSuccess } from "@/fns/notifyPaymentSuccess";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json, Tables } from "@/integrations/supabase/database.types";
 import { classifyBlockingPayments } from "@/lib/gatewayReconciliation";
 
@@ -13,6 +18,7 @@ import {
   invoicePaymentReference,
   orderedRequestInvoices,
   paymentIsAllocated,
+  type SettlementDb,
   tenantCompanyId,
 } from "./gatewaySettlementReads";
 import {
@@ -47,19 +53,22 @@ export { invoicePaymentReference, type EventDetails };
  * Adopts admin placeholders when that is what is holding the balance down, and
  * reports which ids it adopted so the caller can owe them a receipt.
  */
-async function resolvePaymentToAttach(input: {
-  details: EventDetails;
-  existingPaymentIds: string[];
-  invoices: Tables<"invoices">[];
-  invoicesMissing: boolean;
-  paymentRequest: Tables<"payment_requests">;
-  referencePrefix: string;
-}): Promise<{ adoptedIds: string[]; conflict: boolean; paymentId: string | null }> {
+async function resolvePaymentToAttach(
+  db: SettlementDb,
+  input: {
+    details: EventDetails;
+    existingPaymentIds: string[];
+    invoices: Tables<"invoices">[];
+    invoicesMissing: boolean;
+    paymentRequest: Tables<"payment_requests">;
+    referencePrefix: string;
+  },
+): Promise<{ adoptedIds: string[]; conflict: boolean; paymentId: string | null }> {
   const alreadyAttached =
     input.existingPaymentIds[0] ?? input.paymentRequest.resulting_payment_id ?? null;
   if (alreadyAttached) return { adoptedIds: [], conflict: false, paymentId: alreadyAttached };
 
-  const decision = classifyBlockingPayments(await blockingPaymentsForInvoices(input.invoices));
+  const decision = classifyBlockingPayments(await blockingPaymentsForInvoices(db, input.invoices));
   if (decision.kind === "none") {
     // Invoices deleted after the link was issued leave nothing to attach to,
     // and the charge is real: it goes to excess like a conflict does.
@@ -87,6 +96,7 @@ async function resolvePaymentToAttach(input: {
   }
 
   const adoptedIds = await adoptPlaceholderPayments(
+    db,
     decision.payments,
     input.details.method ?? "card",
     input.referencePrefix,
@@ -105,30 +115,34 @@ async function resolvePaymentToAttach(input: {
  * second needs the gateway's own method written back over the placeholder's
  * `cash`, and only the second owes anyone a receipt.
  */
-async function settleAlreadyPaidRequest(input: {
-  details: EventDetails;
-  existingPaymentIds: string[];
-  invoices: Tables<"invoices">[];
-  invoicesMissing: boolean;
-  payload: Json;
-  paymentRequest: Tables<"payment_requests">;
-  referencePrefix: string;
-}) {
-  const { adoptedIds, conflict, paymentId } = await resolvePaymentToAttach(input);
+async function settleAlreadyPaidRequest(
+  db: SettlementDb,
+  input: {
+    details: EventDetails;
+    existingPaymentIds: string[];
+    invoices: Tables<"invoices">[];
+    invoicesMissing: boolean;
+    payload: Json;
+    paymentRequest: Tables<"payment_requests">;
+    referencePrefix: string;
+  },
+) {
+  const { adoptedIds, conflict, paymentId } = await resolvePaymentToAttach(db, input);
 
   // Adopted placeholders now carry this request's id, so they count as booked;
   // a conflicting payment does not, so its whole charge is recorded as excess.
-  const excessId = await recordGatewayExcess({
+  const excessId = await recordGatewayExcess(db, {
     booked: await bookedForRequest(
+      db,
       input.paymentRequest.id,
       excessPaymentReference(input.referencePrefix),
     ),
-    companyId: await tenantCompanyId(input.paymentRequest.tenant_id),
+    companyId: await tenantCompanyId(db, input.paymentRequest.tenant_id),
     details: input.details,
     paymentRequest: input.paymentRequest,
     referencePrefix: input.referencePrefix,
   });
-  if (excessId) await makeReceiptsVisibleToTenant([excessId]);
+  if (excessId) await makeReceiptsVisibleToTenant(db, [excessId]);
   // The request's money went to the excess payment, not to the payment it
   // collided with, so point the request at what it actually produced.
   const resultingPaymentId = conflict ? (excessId ?? paymentId) : paymentId;
@@ -136,7 +150,7 @@ async function settleAlreadyPaidRequest(input: {
     throw new Error(`Settlement produced no payments for ${input.paymentRequest.code}.`);
   }
 
-  await finalizePaymentRequest({
+  await finalizePaymentRequest(db, {
     details: input.details,
     paymentId: resultingPaymentId,
     paymentRequest: input.paymentRequest,
@@ -146,7 +160,7 @@ async function settleAlreadyPaidRequest(input: {
   // Adoption is the first moment this settlement is recorded as a gateway
   // payment, so it is also the first moment a receipt is owed.
   if (adoptedIds.length) {
-    await makeReceiptsVisibleToTenant(adoptedIds);
+    await makeReceiptsVisibleToTenant(db, adoptedIds);
     const notifyResult = await notifyPaymentSuccess(adoptedIds);
     if (!notifyResult.ok) {
       console.error("Payment notifications failed:", notifyResult.error);
@@ -154,8 +168,12 @@ async function settleAlreadyPaidRequest(input: {
   }
 }
 
-/** يسوّي دفعة البوابة الموثّقة: دفعات مؤكدة مخصّصة للفواتير. */
-export async function settleGatewayPayment(details: EventDetails, payload: Json) {
+/** ينفّذ خطوات تسوية دفعة البوابة ضمن عميل الشركة المقيّد. */
+async function runSettlement(
+  db: SettlementDb,
+  details: EventDetails,
+  payload: Json,
+): Promise<boolean> {
   // Successful gateway charges always settle as some method; default to card so a
   // missing PaymentGateway label cannot leave a paid MyFatoorah invoice orphaned.
   const settledDetails: EventDetails = {
@@ -163,13 +181,14 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
     method: details.method ?? "card",
   };
   const paymentRequest = await findPaymentRequest(
+    db,
     settledDetails.invoiceId,
     settledDetails.paymentId,
   );
   if (!paymentRequest) throw new Error("No payment request matches this webhook.");
   if (paymentRequest.status === "completed") return true;
   const referencePrefix = `MF:${settledDetails.paymentId ?? settledDetails.invoiceId ?? paymentRequest.code}`;
-  const { invoices, missingInvoiceIds } = await orderedRequestInvoices(paymentRequest);
+  const { invoices, missingInvoiceIds } = await orderedRequestInvoices(db, paymentRequest);
   if (missingInvoiceIds.length) {
     console.error(
       "[settleGatewayPayment] requested invoices no longer exist; their share becomes excess",
@@ -183,7 +202,7 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
   const references = invoices.map((invoice) =>
     invoicePaymentReference(referencePrefix, invoice.code),
   );
-  const existingPayments = await existingPaymentsByReference(references);
+  const existingPayments = await existingPaymentsByReference(db, references);
 
   // Work items: resume orphan payments (created but not allocated) and settle
   // months that still have a balance. Skip invoices already paid outside this
@@ -207,7 +226,7 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
   }
 
   if (work.length === 0) {
-    await settleAlreadyPaidRequest({
+    await settleAlreadyPaidRequest(db, {
       details: settledDetails,
       existingPaymentIds: [...existingPayments.values()].map((payment) => payment.id),
       invoices,
@@ -229,7 +248,7 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
   let bookedSoFar = asMoney(
     work.reduce((sum, item) => sum + (existingPayments.get(item.reference)?.amount ?? 0), 0),
   );
-  const companyId = await tenantCompanyId(paymentRequest.tenant_id);
+  const companyId = await tenantCompanyId(db, paymentRequest.tenant_id);
 
   const paymentIds: string[] = [];
   for (const item of work) {
@@ -237,7 +256,7 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
     let paymentAmount = existingPayments.get(item.reference)?.amount ?? 0;
     if (!paymentId) {
       // Re-read so we never create a zero-amount row after a concurrent settle.
-      const freshForCreate = await supabaseAdmin
+      const freshForCreate = await db
         .from("invoices")
         .select("*")
         .eq("id", item.invoice.id)
@@ -247,7 +266,7 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
         Math.min(asMoney(freshForCreate.data.balance), captured - bookedSoFar),
       );
       if (paymentAmount <= 0) continue;
-      paymentId = await createConfirmedPaymentForInvoice({
+      paymentId = await createConfirmedPaymentForInvoice(db, {
         amount: paymentAmount,
         companyId,
         details: settledDetails,
@@ -258,20 +277,16 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
       bookedSoFar = asMoney(bookedSoFar + paymentAmount);
     }
     // Re-read balance; if a concurrent allocation already zeroed it, skip.
-    if (!(await paymentIsAllocated(paymentId, item.invoice.id))) {
-      const fresh = await supabaseAdmin
-        .from("invoices")
-        .select("*")
-        .eq("id", item.invoice.id)
-        .single();
+    if (!(await paymentIsAllocated(db, paymentId, item.invoice.id))) {
+      const fresh = await db.from("invoices").select("*").eq("id", item.invoice.id).single();
       if (fresh.error) throw new Error(fresh.error.message);
       const allocation = asMoney(Math.min(paymentAmount, asMoney(fresh.data.balance)));
       if (allocation > 0) {
         try {
-          await allocatePaymentToInvoice(paymentId, fresh.data, allocation);
+          await allocatePaymentToInvoice(db, paymentId, fresh.data, allocation);
         } catch (allocateError) {
           // Idempotent resume: a concurrent worker may have allocated already.
-          if (!(await paymentIsAllocated(paymentId, item.invoice.id))) {
+          if (!(await paymentIsAllocated(db, paymentId, item.invoice.id))) {
             throw allocateError;
           }
         }
@@ -280,8 +295,8 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
     paymentIds.push(paymentId);
   }
 
-  const excessId = await recordGatewayExcess({
-    booked: await bookedForRequest(paymentRequest.id, excessPaymentReference(referencePrefix)),
+  const excessId = await recordGatewayExcess(db, {
+    booked: await bookedForRequest(db, paymentRequest.id, excessPaymentReference(referencePrefix)),
     companyId,
     details: settledDetails,
     paymentRequest,
@@ -297,12 +312,12 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
 
   // payment_requests carries a single resulting payment; the first month's
   // payment represents the settlement and owns the receipt lookup.
-  await linkPaymentRequest(paymentRequest, settledDetails, primaryPaymentId);
+  await linkPaymentRequest(db, paymentRequest, settledDetails, primaryPaymentId);
   // The excess payment's receipt is shown like the others, but it is left out
   // of the "payment received" notification below: that message names the
   // invoices a payment settled, and this one settled none.
-  await makeReceiptsVisibleToTenant(excessId ? [...paymentIds, excessId] : paymentIds);
-  await finalizePaymentRequest({
+  await makeReceiptsVisibleToTenant(db, excessId ? [...paymentIds, excessId] : paymentIds);
+  await finalizePaymentRequest(db, {
     details: settledDetails,
     paymentId: primaryPaymentId,
     paymentRequest,
@@ -318,4 +333,30 @@ export async function settleGatewayPayment(details: EventDetails, payload: Json)
   }
 
   return false;
+}
+
+/**
+ * يسوّي دفعة البوابة الموثّقة ضمن شركة الطلب مع السماح بإتمام الدفعات للشركة الموقوفة.
+ */
+export async function settleGatewayPayment(
+  details: EventDetails,
+  payload: Json,
+  opts?: { companyId?: string },
+) {
+  const activeCompany = getRequestCompany();
+  const companyId = opts?.companyId ?? requireRequestCompany().id;
+  // Payment settlement is the sole path authorized to pass allowSuspended.
+  const db = companyClient(companyId, { allowSuspended: true });
+  if (activeCompany?.id === companyId) {
+    return runSettlement(db, details, payload);
+  }
+  return runWithRequestCompany(
+    {
+      id: companyId,
+      slug: activeCompany?.slug ?? "",
+      status: "active",
+      host: activeCompany?.host ?? "",
+    },
+    () => runSettlement(db, details, payload),
+  );
 }

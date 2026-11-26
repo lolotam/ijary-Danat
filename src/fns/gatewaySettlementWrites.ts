@@ -1,9 +1,13 @@
 import type { Json, PaymentMethod, Tables } from "@/integrations/supabase/database.types";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { BlockingPayment } from "@/lib/gatewayReconciliation";
 import { getSuppressedPaymentIds } from "@/lib/suppressedPayments";
 
-import { asMoney, type EventDetails, invoicePaymentReference } from "./gatewaySettlementReads";
+import {
+  asMoney,
+  type EventDetails,
+  invoicePaymentReference,
+  type SettlementDb,
+} from "./gatewaySettlementReads";
 
 /*
  * كتابات تسوية البوابة: الدفعات والتخصيص والإيصالات وإكمال الطلب.
@@ -23,20 +27,23 @@ import { asMoney, type EventDetails, invoicePaymentReference } from "./gatewaySe
  * that grew after the link was issued is never booked beyond the money that
  * actually arrived (Phase 2C).
  */
-export async function createConfirmedPaymentForInvoice(input: {
-  amount: number;
-  companyId: string | null;
-  details: EventDetails;
-  invoice: Tables<"invoices">;
-  paymentReference: string;
-  paymentRequest: Tables<"payment_requests">;
-}) {
+export async function createConfirmedPaymentForInvoice(
+  db: SettlementDb,
+  input: {
+    amount: number;
+    companyId: string | null;
+    details: EventDetails;
+    invoice: Tables<"invoices">;
+    paymentReference: string;
+    paymentRequest: Tables<"payment_requests">;
+  },
+) {
   const method: PaymentMethod = input.details.method ?? "card";
   const amount = asMoney(input.amount);
   if (amount <= 0) {
     throw new Error(`Invoice ${input.invoice.code} has no remaining balance to settle.`);
   }
-  const paymentQuery = await supabaseAdmin
+  const paymentQuery = await db
     .from("payments")
     .insert({
       company_id: input.companyId,
@@ -57,7 +64,7 @@ export async function createConfirmedPaymentForInvoice(input: {
     .single();
   if (!paymentQuery.error) return paymentQuery.data.id;
   if (paymentQuery.error.code !== "23505") throw new Error(paymentQuery.error.message);
-  const concurrentQuery = await supabaseAdmin
+  const concurrentQuery = await db
     .from("payments")
     .select("id")
     .eq("reference", input.paymentReference)
@@ -68,11 +75,12 @@ export async function createConfirmedPaymentForInvoice(input: {
 
 /** يربط الدفعة بطلب الدفع الذي جاءت منه. */
 export async function linkPaymentRequest(
+  db: SettlementDb,
   paymentRequest: Tables<"payment_requests">,
   details: EventDetails,
   paymentId: string,
 ) {
-  const linkQuery = await supabaseAdmin
+  const linkQuery = await db
     .from("payment_requests")
     .update({
       provider_payment_id: details.paymentId ?? paymentRequest.provider_payment_id,
@@ -96,6 +104,7 @@ export async function linkPaymentRequest(
  * settlement "manual" for good.
  */
 export async function adoptPlaceholderPayments(
+  db: SettlementDb,
   payments: BlockingPayment[],
   method: PaymentMethod,
   referencePrefix: string,
@@ -104,13 +113,13 @@ export async function adoptPlaceholderPayments(
   const adopted: string[] = [];
   for (const payment of payments) {
     const nextReference = invoicePaymentReference(referencePrefix, payment.invoiceCode);
-    const update = await supabaseAdmin
+    const update = await db
       .from("payments")
       .update({ method, reference: nextReference, payment_request_id: paymentRequestId })
       .eq("id", payment.id);
     if (update.error) throw new Error(update.error.message);
 
-    const audit = await supabaseAdmin.rpc("write_audit", {
+    const audit = await db.rpc("write_audit", {
       p_action: "payment.gateway_reconciled",
       p_entity_type: "payment",
       p_entity_id: payment.id,
@@ -127,11 +136,12 @@ export async function adoptPlaceholderPayments(
 
 /** يخصّص الدفعة للفاتورة. */
 export async function allocatePaymentToInvoice(
+  db: SettlementDb,
   paymentId: string,
   invoice: Tables<"invoices">,
   amount: number,
 ) {
-  const allocationQuery = await supabaseAdmin.rpc("apply_payment_allocation", {
+  const allocationQuery = await db.rpc("apply_payment_allocation", {
     p_payment_id: paymentId,
     p_allocations: [{ invoice_id: invoice.id, amount }],
   });
@@ -159,19 +169,22 @@ export function excessPaymentReference(referencePrefix: string) {
  * a replayed or resumed callback finds the payment it wrote before and does not
  * audit it twice. Returns the excess payment's id, or null when nothing is over.
  */
-export async function recordGatewayExcess(input: {
-  booked: number;
-  companyId: string | null;
-  details: EventDetails;
-  paymentRequest: Tables<"payment_requests">;
-  referencePrefix: string;
-}): Promise<string | null> {
+export async function recordGatewayExcess(
+  db: SettlementDb,
+  input: {
+    booked: number;
+    companyId: string | null;
+    details: EventDetails;
+    paymentRequest: Tables<"payment_requests">;
+    referencePrefix: string;
+  },
+): Promise<string | null> {
   const captured = asMoney(input.paymentRequest.amount);
   const excess = asMoney(captured - input.booked);
   if (excess <= 0) return null;
   const reference = excessPaymentReference(input.referencePrefix);
 
-  const insert = await supabaseAdmin
+  const insert = await db
     .from("payments")
     .insert({
       company_id: input.companyId,
@@ -191,11 +204,7 @@ export async function recordGatewayExcess(input: {
     .single();
   if (insert.error) {
     if (insert.error.code !== "23505") throw new Error(insert.error.message);
-    const existing = await supabaseAdmin
-      .from("payments")
-      .select("id")
-      .eq("reference", reference)
-      .single();
+    const existing = await db.from("payments").select("id").eq("reference", reference).single();
     if (existing.error) throw new Error(existing.error.message);
     return existing.data.id;
   }
@@ -211,7 +220,7 @@ export async function recordGatewayExcess(input: {
     "[settleGatewayPayment] gateway captured more than it booked",
     JSON.stringify(record),
   );
-  const audit = await supabaseAdmin.rpc("write_audit", {
+  const audit = await db.rpc("write_audit", {
     p_action: "payment.gateway_excess",
     p_entity_type: "payment_request",
     p_entity_id: input.paymentRequest.id,
@@ -238,7 +247,7 @@ export async function recordGatewayExcess(input: {
  * `src/fns/notifyPaymentSuccess.ts`, which also uses ANY (not ALL) because the
  * receipt document cannot be filtered per-invoice.
  */
-export async function makeReceiptsVisibleToTenant(paymentIds: string[]) {
+export async function makeReceiptsVisibleToTenant(db: SettlementDb, paymentIds: string[]) {
   if (!paymentIds.length) return;
   let visibleIds: string[];
   try {
@@ -259,7 +268,7 @@ export async function makeReceiptsVisibleToTenant(paymentIds: string[]) {
     return;
   }
   if (!visibleIds.length) return;
-  const update = await supabaseAdmin
+  const update = await db
     .from("receipts")
     .update({ visible_to_tenant: true })
     .in("payment_id", visibleIds);
@@ -267,19 +276,22 @@ export async function makeReceiptsVisibleToTenant(paymentIds: string[]) {
 }
 
 /** يعلّم طلب الدفع مكتملاً ويسجّله في التدقيق مع دفعته وإيصالها. */
-export async function finalizePaymentRequest(input: {
-  details: EventDetails;
-  paymentId: string;
-  paymentRequest: Tables<"payment_requests">;
-  payload: Json;
-}) {
-  const receiptQuery = await supabaseAdmin
+export async function finalizePaymentRequest(
+  db: SettlementDb,
+  input: {
+    details: EventDetails;
+    paymentId: string;
+    paymentRequest: Tables<"payment_requests">;
+    payload: Json;
+  },
+) {
+  const receiptQuery = await db
     .from("receipts")
     .select("id")
     .eq("payment_id", input.paymentId)
     .single();
   if (receiptQuery.error) throw new Error(receiptQuery.error.message);
-  const auditQuery = await supabaseAdmin.rpc("write_audit", {
+  const auditQuery = await db.rpc("write_audit", {
     p_action: "payment_request.complete",
     p_entity_type: "payment_request",
     p_entity_id: input.paymentRequest.id,
@@ -289,7 +301,7 @@ export async function finalizePaymentRequest(input: {
     p_error_code: null,
   });
   if (auditQuery.error) throw new Error(`Audit log write failed: ${auditQuery.error.message}`);
-  const completeQuery = await supabaseAdmin
+  const completeQuery = await db
     .from("payment_requests")
     .update({
       status: "completed",

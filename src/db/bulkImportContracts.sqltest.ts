@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { closePool, withRollback } from "@/db/testDb";
+import { closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -32,21 +32,23 @@ async function seedLocation(client: PoolClient): Promise<Fixture> {
     `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
     [`شركة ${tag}`, `Co ${tag}`],
   );
+  const companyId = company.rows[0].id;
+  await setCompanyClaimContext(client, companyId);
   const property = await client.query<{ id: string }>(
     `insert into public.properties (code, company_id, name_ar, name_en)
      values ($1, $2, $3, $4) returning id`,
-    [`P-${tag}`, company.rows[0].id, `عقار ${tag}`, `Property ${tag}`],
+    [`P-${tag}`, companyId, `عقار ${tag}`, `Property ${tag}`],
   );
   const unit = await client.query<{ id: string }>(
-    `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-    [`U-${tag}`, property.rows[0].id, `Unit ${tag}`],
+    `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+    [companyId, `U-${tag}`, property.rows[0].id, `Unit ${tag}`],
   );
   const tenant = await client.query<{ id: string }>(
     `insert into public.tenants (code, company_id, name) values ($1, $2, $3) returning id`,
-    [`T-${tag}`, company.rows[0].id, `مستأجر ${tag}`],
+    [`T-${tag}`, companyId, `مستأجر ${tag}`],
   );
   return {
-    companyId: company.rows[0].id,
+    companyId,
     propertyId: property.rows[0].id,
     tenantId: tenant.rows[0].id,
     unitId: unit.rows[0].id,
@@ -73,10 +75,10 @@ describe("bulk_import_phase6('contracts')", () => {
     // contracts where only one carries a deposit is the case that tells the
     // two numbers apart — a wrong implementation returns 1.
     await withRollback(async (client) => {
-      const { tenantId, unitId, propertyId, tag } = await seedLocation(client);
+      const { companyId, tenantId, unitId, propertyId, tag } = await seedLocation(client);
       const second = await client.query<{ id: string }>(
-        `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-        [`U2-${tag}`, propertyId, `Unit two ${tag}`],
+        `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+        [companyId, `U2-${tag}`, propertyId, `Unit two ${tag}`],
       );
 
       const inserted = await importContracts(client, [
@@ -104,10 +106,10 @@ describe("bulk_import_phase6('contracts')", () => {
 
   test("generates a code when the column is blank and honours one that is given", async () => {
     await withRollback(async (client) => {
-      const { tenantId, unitId, propertyId, tag } = await seedLocation(client);
+      const { companyId, tenantId, unitId, propertyId, tag } = await seedLocation(client);
       const second = await client.query<{ id: string }>(
-        `insert into public.units (code, property_id, name) values ($1, $2, $3) returning id`,
-        [`U2-${tag}`, propertyId, `Unit two ${tag}`],
+        `insert into public.units (company_id, code, property_id, name) values ($1, $2, $3, $4) returning id`,
+        [companyId, `U2-${tag}`, propertyId, `Unit two ${tag}`],
       );
 
       await importContracts(client, [

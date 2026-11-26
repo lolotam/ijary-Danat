@@ -28,6 +28,8 @@ export interface OAuthStatePayload {
   expiresAt: number;
   /** Who started the flow, so the callback can attribute the connection. */
   userId: string;
+  /** الشركة التي بدأ منها الربط حتى تُحفظ بيانات Gmail ضمن نطاقها عند العودة. */
+  companyId?: string;
 }
 
 function base64UrlEncode(value: string): string {
@@ -47,11 +49,17 @@ function sign(encodedPayload: string, secret: string): string {
 }
 
 /** Builds a signed state for a consent redirect. */
-export function createOAuthState(userId: string, secret: string, now: number = Date.now()): string {
+export function createOAuthState(
+  userId: string,
+  secret: string,
+  now: number = Date.now(),
+  companyId?: string,
+): string {
   const payload: OAuthStatePayload = {
     nonce: randomUUID(),
     expiresAt: now + STATE_TTL_MS,
     userId,
+    ...(companyId ? { companyId } : {}),
   };
   const encoded = base64UrlEncode(JSON.stringify(payload));
   return `${encoded}.${sign(encoded, secret)}`;

@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/database.types";
 import { BACKUP_BUCKET, createBackupArchive } from "@/fns/backupCore";
 import { readArchive, sha256Hex } from "@/lib/backupArchive";
@@ -31,7 +32,9 @@ export const backupRestorePreflight = createServerFn({ method: "POST" })
       refusal: "Forbidden: Only administrators can restore backups.",
     });
 
-    const { data: backup, error: fetchError } = await supabaseAdmin
+    const db = companyClient(requireRequestCompany().id);
+
+    const { data: backup, error: fetchError } = await db
       .from("backups")
       .select("storage_path, table_count, row_count, created_at, file_name, size_bytes")
       .eq("id", data.id)
@@ -39,7 +42,7 @@ export const backupRestorePreflight = createServerFn({ method: "POST" })
 
     if (fetchError || !backup) throw new Error("Backup not found");
 
-    const { data: download, error: dlError } = await supabaseAdmin.storage
+    const { data: download, error: dlError } = await db.storage
       .from(BACKUP_BUCKET)
       .download(backup.storage_path);
 
@@ -58,9 +61,7 @@ export const backupRestorePreflight = createServerFn({ method: "POST" })
     // their password and lose their access. (An earlier draft queried a table
     // named `app_users`, which does not exist in this schema — the preflight
     // would have thrown on every call.)
-    const { data: currentProfiles, error: profilesError } = await supabaseAdmin
-      .from("profiles")
-      .select("id");
+    const { data: currentProfiles, error: profilesError } = await db.from("profiles").select("id");
 
     if (profilesError) {
       throw new Error(`Could not read current profiles: ${profilesError.message}`);
@@ -89,7 +90,7 @@ export const backupRestorePreflight = createServerFn({ method: "POST" })
     // drift, and the dialog would then claim "the schema has changed since this
     // backup was taken" — specific, wrong and unactionable. Not knowing and
     // knowing-it-changed are different answers and deserve different words.
-    const { data: currentFingerprint, error: fingerprintError } = await supabaseAdmin.rpc(
+    const { data: currentFingerprint, error: fingerprintError } = await db.rpc(
       "backup_schema_fingerprint",
     );
     if (fingerprintError || !currentFingerprint) {
@@ -130,7 +131,9 @@ export const restoreBackup = createServerFn({ method: "POST" })
       refusal: "Forbidden: Only administrators can restore backups.",
     });
 
-    const { error: requestAuditError } = await supabaseAdmin.rpc("write_audit", {
+    const db = companyClient(requireRequestCompany().id);
+
+    const { error: requestAuditError } = await db.rpc("write_audit", {
       p_action: "backup.restore.requested",
       p_entity_type: "backup",
       p_entity_id: data.id,
@@ -147,7 +150,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
     }
 
     async function auditRestoreFailure(errorMsg: string, errorCode: string) {
-      const { error } = await supabaseAdmin.rpc("write_audit", {
+      const { error } = await db.rpc("write_audit", {
         p_action: "backup.restore",
         p_entity_type: "backup",
         p_entity_id: data.id,
@@ -161,7 +164,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: backup, error: fetchError } = await supabaseAdmin
+    const { data: backup, error: fetchError } = await db
       .from("backups")
       .select("storage_path, sha256")
       .eq("id", data.id)
@@ -172,7 +175,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
       throw new Error("Backup not found");
     }
 
-    const { data: download, error: dlError } = await supabaseAdmin.storage
+    const { data: download, error: dlError } = await db.storage
       .from(BACKUP_BUCKET)
       .download(backup.storage_path);
 
@@ -225,7 +228,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
       tables: tables.map((t) => ({ name: t.name, rows: t.rows })),
     } as unknown as Json;
 
-    const { data: report, error: restoreError } = await supabaseAdmin.rpc("backup_restore", {
+    const { data: report, error: restoreError } = await db.rpc("backup_restore", {
       _payload: payload,
       _actor: context.userId,
     });
@@ -238,7 +241,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
     // destructive restore with no record of it. Writing one in both places
     // would simply produce two rows for one restore.
     if (restoreError) {
-      const { error: auditError } = await supabaseAdmin.rpc("write_audit", {
+      const { error: auditError } = await db.rpc("write_audit", {
         p_action: "backup.restore",
         p_entity_type: "backup",
         p_entity_id: data.id,

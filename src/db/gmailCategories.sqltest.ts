@@ -1,29 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { actAs, actAsSuperuser, closePool, withRollback } from "@/db/testDb";
+import { actAs, actAsSuperuser, closePool, seedCompanyUser, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
 /**
  * Migration 62 — app-local categories on synced Gmail messages.
  */
-
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
-  );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
-}
 
 describe("gmail categories", () => {
   test("the starter vocabulary actually seeded", async () => {
@@ -76,7 +61,7 @@ describe("gmail categories", () => {
          returning id`,
         [company.rows[0].id, `<${randomUUID()}@example.test>`],
       );
-      const collector = await seedUserWithRole(client, "collector");
+      const collector = await seedCompanyUser(client, company.rows[0].id, "collector");
 
       await actAs(client, "authenticated", collector);
       await client.query(`update public.gmail_messages set category = 'complaint' where id = $1`, [

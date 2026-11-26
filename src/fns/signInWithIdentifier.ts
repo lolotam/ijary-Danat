@@ -1,8 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
+import type { Database } from "@/integrations/supabase/database.types";
 import {
   classifyIdentifier,
   loginIdentifierToEmail,
@@ -83,7 +85,10 @@ type ResolvedAccount = { id: string; email: string; isActive: boolean };
  * password against an account the person may not own, and a correct password
  * for the wrong row would log them into someone else's portal.
  */
-async function findAccountEmail(identifier: string): Promise<ResolvedAccount | null> {
+async function findAccountEmail(
+  db: SupabaseClient<Database>,
+  identifier: string,
+): Promise<ResolvedAccount | null> {
   const kind = classifyIdentifier(identifier);
   const value = identifier.trim();
 
@@ -91,7 +96,7 @@ async function findAccountEmail(identifier: string): Promise<ResolvedAccount | n
     // `username` and `email` are both citext, so this is case-insensitive in
     // the database rather than by lowercasing here.
     const column = kind === "email" ? "email" : "username";
-    const { data } = await supabaseAdmin
+    const { data } = await db
       .from("profiles")
       .select("id, email, is_active")
       .eq(column, value)
@@ -108,7 +113,7 @@ async function findAccountEmail(identifier: string): Promise<ResolvedAccount | n
   // `phone` is free text, so the suffix comparison happens in SQL over a
   // digits-only projection — an equality match would miss every number stored
   // in a different format from the one typed.
-  const { data } = await supabaseAdmin.rpc("find_profiles_by_phone_digits", {
+  const { data } = await db.rpc("find_profiles_by_phone_digits", {
     _digits: digits,
   });
   const matches = (data ?? []) as Array<{ id: string; email: string | null }>;
@@ -117,7 +122,7 @@ async function findAccountEmail(identifier: string): Promise<ResolvedAccount | n
 
   // The phone RPC projects only `id` and `email`; the account flag needs its
   // own read, keyed by the id the RPC already proved unambiguous.
-  const { data: profile } = await supabaseAdmin
+  const { data: profile } = await db
     .from("profiles")
     .select("is_active")
     .eq("id", matches[0].id)
@@ -129,6 +134,9 @@ async function findAccountEmail(identifier: string): Promise<ResolvedAccount | n
 export const signInWithIdentifier = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => schema.parse(data))
   .handler(async ({ data }) => {
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
     /*
      * A failed lookup falls through to the legacy mapping rather than returning
      * early, for two reasons. It keeps every login that works today working —
@@ -137,7 +145,7 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
      * "no such account" and "wrong password" take the same path and are not
      * distinguishable from the outside.
      */
-    const resolved = await findAccountEmail(data.identifier);
+    const resolved = await findAccountEmail(db, data.identifier);
     const email = resolved?.email ?? loginIdentifierToEmail(data.identifier);
 
     const { data: session, error } = await anonClient().auth.signInWithPassword({

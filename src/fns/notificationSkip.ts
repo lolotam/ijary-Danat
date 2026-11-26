@@ -1,4 +1,5 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 
 type NotificationType = Database["public"]["Tables"]["notifications"]["Row"]["type"];
@@ -25,7 +26,7 @@ export async function alreadyNotified(
   type: NotificationType,
   payloadMatch: Record<string, Json>,
 ): Promise<boolean> {
-  const existing = await supabaseAdmin
+  const existing = await companyClient(requireRequestCompany().id)
     .from("notifications")
     .select("id")
     .eq("type", type)

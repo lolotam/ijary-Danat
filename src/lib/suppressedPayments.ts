@@ -1,4 +1,7 @@
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { serverCompanyClient } from "@/company/companyClient.server";
+import type { Database } from "@/integrations/supabase/database.types";
 
 /**
  * الدفعات التي تلمس عقدًا مكبوتًا أو مخفيًا عن البوابة — استعلام خادم واحد يخدم مسارين.
@@ -26,10 +29,11 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * `requested_invoice_ids` names those invoices.
  */
 async function requestedInvoiceLinks(
+  client: SupabaseClient<Database>,
   paymentIds: readonly string[],
 ): Promise<Array<{ payment_id: string; invoice_id: string }>> {
   if (!paymentIds.length) return [];
-  const paymentsResult = await supabaseAdmin
+  const paymentsResult = await client
     .from("payments")
     .select("id, payment_request_id")
     .in("id", [...paymentIds]);
@@ -41,7 +45,7 @@ async function requestedInvoiceLinks(
   );
   if (!requestIdByPayment.size) return [];
 
-  const requestsResult = await supabaseAdmin
+  const requestsResult = await client
     .from("payment_requests")
     .select("id, requested_invoice_ids")
     .in("id", [...new Set(requestIdByPayment.values())]);
@@ -59,10 +63,17 @@ async function requestedInvoiceLinks(
   );
 }
 
-export async function getSuppressedPaymentIds(paymentIds: readonly string[]): Promise<Set<string>> {
+/**
+ * يعيد معرّفات الدفعات المرتبطة بعقود مخفية أو مكبوتة مستنداتها داخل الشركة الحالية.
+ */
+export async function getSuppressedPaymentIds(
+  paymentIds: readonly string[],
+  explicitCompanyId?: string,
+): Promise<Set<string>> {
   if (!paymentIds.length) return new Set();
 
-  const allocationsResult = await supabaseAdmin
+  const { client } = serverCompanyClient(explicitCompanyId);
+  const allocationsResult = await client
     .from("payment_allocations")
     .select("payment_id, invoice_id")
     .in("payment_id", [...paymentIds]);
@@ -74,12 +85,15 @@ export async function getSuppressedPaymentIds(paymentIds: readonly string[]): Pr
   const allocatedIds = new Set(allocated.map((row) => row.payment_id));
   const allocations = [
     ...allocated,
-    ...(await requestedInvoiceLinks(paymentIds.filter((id) => !allocatedIds.has(id)))),
+    ...(await requestedInvoiceLinks(
+      client,
+      paymentIds.filter((id) => !allocatedIds.has(id)),
+    )),
   ];
   if (!allocations.length) return new Set();
 
   const invoiceIds = [...new Set(allocations.map((row) => row.invoice_id))];
-  const invoicesResult = await supabaseAdmin
+  const invoicesResult = await client
     .from("invoices")
     .select("id, contract_id")
     .in("id", invoiceIds);
@@ -93,7 +107,7 @@ export async function getSuppressedPaymentIds(paymentIds: readonly string[]): Pr
   ];
   if (!contractIds.length) return new Set();
 
-  const contractsResult = await supabaseAdmin
+  const contractsResult = await client
     .from("contracts")
     .select("id, suppress_tenant_billing_docs, hide_from_portal")
     .in("id", contractIds);

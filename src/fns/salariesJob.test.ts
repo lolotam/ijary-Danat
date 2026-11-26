@@ -7,6 +7,21 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
+    rpc: (...args: unknown[]) => rpc(...args),
+  }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: "11111111-1111-4111-8111-111111111111",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+}));
+
 const { runSalariesJob } = await import("./salariesJob");
 
 describe("runSalariesJob", () => {

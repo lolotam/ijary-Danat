@@ -123,6 +123,7 @@ describe("reversing real close-out settlement payments restores held insurance",
         [fixture.contractId],
       );
       expect(linked.rows[0].id).toBe(paymentId);
+      await actAs(client, "authenticated", fixture.actorId);
       await client.query("select * from public.reverse_payment($1, 'legacy settlement returned')", [
         paymentId,
       ]);

@@ -6,8 +6,8 @@ const rpc = vi.fn();
 const fetchGatewayPaymentStatus = vi.fn();
 const settleGatewayPayment = vi.fn();
 
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
     from: () => ({
       // Pending rows are windowed by created_at; superseded rows are not.
       select: () => ({
@@ -21,7 +21,23 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       }),
     }),
     rpc: (name: string, args: unknown) => rpc(name, args),
-  },
+  }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  getRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  requireRequestCompany: () => ({
+    id: "company-1",
+    slug: "danat",
+    status: "active",
+    host: "danat.localhost",
+  }),
+  runWithRequestCompany: (_company: unknown, fn: () => unknown) => fn(),
 }));
 vi.mock("@/fns/myfatoorahGateway", () => ({
   gatewayConfigFromEnv: () => ({ apiKey: "k", baseUrl: "https://apitest.myfatoorah.com" }),

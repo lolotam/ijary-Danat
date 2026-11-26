@@ -5,7 +5,15 @@ import { resolve } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { actAs, actAsSuperuser, captureRaise, closePool, withRollback } from "@/db/testDb";
+import {
+  actAs,
+  actAsSuperuser,
+  captureRaise,
+  closePool,
+  seedCompanyUser,
+  setCompanyClaimContext,
+  withRollback,
+} from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -15,24 +23,30 @@ afterAll(closePool);
  * seeding.
  */
 
-/** ينشئ مستخدماً في Auth بدور محدّد لاختبار صلاحيات is_staff والأدوار. */
-async function seedUserWithRole(client: PoolClient, role: string): Promise<string> {
-  const userId = randomUUID();
-  await client.query(
-    `insert into auth.users (id, instance_id, aud, role, email)
-     values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2)`,
-    [userId, `${userId}@example.test`],
+/** ينشئ شركة اختبار معزولة ويضبط سياق الشركة للاتصال الحالي. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة حارس واتساب ${tag}`, `WSG Co ${tag}`],
   );
-  await client.query(
-    `insert into public.user_roles (user_id, role) values ($1, $2::public.app_role)`,
-    [userId, role],
-  );
-  return userId;
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
 }
 
-/** يزرع صف جلسة Evolution الوحيد بالحالة والأعمدة المطلوبة. */
+/** ينشئ مستخدماً في Auth بدور محدّد ضمن الشركة المحددة لاختبار صلاحيات is_staff والأدوار. */
+async function seedUserWithRole(
+  client: PoolClient,
+  companyId: string,
+  role: string,
+): Promise<string> {
+  return seedCompanyUser(client, companyId, role, "wsg");
+}
+
+/** يزرع صف جلسة Evolution الوحيد بالحالة والأعمدة المطلوبة ضمن الشركة المحددة. */
 async function seedConnection(
   client: PoolClient,
+  companyId: string,
   overrides: {
     state?: string | null;
     connectedNumber?: string | null;
@@ -44,10 +58,11 @@ async function seedConnection(
   await client.query(`delete from public.evolution_connections where id = 1`);
   await client.query(
     `insert into public.evolution_connections (
-       id, instance_name, webhook_secret, connected_number,
+       id, company_id, instance_name, webhook_secret, connected_number,
        last_connection_state, connected_at, disconnect_alert_armed, disconnected_at
-     ) values (1, 'danat', 'secret-key', $1, $2, $3, $4, $5)`,
+     ) values (1, $1, 'danat', 'secret-key', $2, $3, $4, $5, $6)`,
     [
+      companyId,
       overrides.connectedNumber ?? null,
       overrides.state ?? null,
       overrides.connectedAt ?? null,
@@ -75,7 +90,8 @@ async function readHealth(client: PoolClient) {
 describe("episode trigger and atomic alert claim (migration 253)", () => {
   test("27: transitioning to open arms and clears disconnected_at; leaving open stamps it without touching arming", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client, {
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId, {
         state: "connecting",
         armed: false,
         disconnectedAt: "2026-11-01T00:00:00Z",
@@ -109,7 +125,8 @@ describe("episode trigger and atomic alert claim (migration 253)", () => {
 
   test("28: atomic claim succeeds once then returns zero rows; open state claims zero rows", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client, { state: "open", armed: true });
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId, { state: "open", armed: true });
       const openClaim = await client.query(
         `update public.evolution_connections
             set disconnect_alert_armed = false
@@ -143,7 +160,8 @@ describe("episode trigger and atomic alert claim (migration 253)", () => {
 
   test("29: re-pairing (open) after a claimed outage arms a fresh claim on the next close", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client, { state: "open", armed: true });
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId, { state: "open", armed: true });
       await client.query(
         `update public.evolution_connections set last_connection_state = 'close' where id = 1`,
       );
@@ -174,7 +192,8 @@ describe("episode trigger and atomic alert claim (migration 253)", () => {
 
   test("30: close -> connecting -> close after claiming does not re-arm", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client, { state: "open", armed: true });
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId, { state: "open", armed: true });
       await client.query(
         `update public.evolution_connections set last_connection_state = 'close' where id = 1`,
       );
@@ -200,8 +219,9 @@ describe("episode trigger and atomic alert claim (migration 253)", () => {
 
   test("31: authenticated users cannot read the two new episode columns", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client, { state: "open", armed: true });
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId, { state: "open", armed: true });
+      const admin = await seedUserWithRole(client, companyId, "admin");
       await actAs(client, "authenticated", admin);
 
       expect(
@@ -221,21 +241,23 @@ describe("episode trigger and atomic alert claim (migration 253)", () => {
 describe("whatsapp_session_health RPC", () => {
   test("32: admin and accountant get full object; tenant gets null; anon gets permission denied", async () => {
     await withRollback(async (client) => {
-      await seedConnection(client, {
+      const companyId = await seedCompany(client);
+      await seedConnection(client, companyId, {
         state: "close",
         connectedNumber: "96550000000",
         armed: false,
         disconnectedAt: "2026-11-11T07:10:00Z",
       });
       await client.query(
-        `insert into public.provider_configs (provider, is_enabled)
-         values ('evolution_api', true)
-         on conflict (provider) do update set is_enabled = true`,
+        `insert into public.provider_configs (company_id, provider, is_enabled)
+         values ($1, 'evolution_api', true)
+         on conflict (company_id, provider) do update set is_enabled = true`,
+        [companyId],
       );
 
-      const admin = await seedUserWithRole(client, "admin");
-      const accountant = await seedUserWithRole(client, "accountant");
-      const tenantUser = await seedUserWithRole(client, "tenant");
+      const admin = await seedUserWithRole(client, companyId, "admin");
+      const accountant = await seedUserWithRole(client, companyId, "accountant");
+      const tenantUser = await seedUserWithRole(client, companyId, "tenant");
 
       await actAs(client, "authenticated", admin);
       expect(await readHealth(client)).toMatchObject({
@@ -266,14 +288,15 @@ describe("whatsapp_session_health RPC", () => {
 
   test("33: paired reflects connected_number or connected_at, never mere row existence", async () => {
     await withRollback(async (client) => {
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      const admin = await seedUserWithRole(client, companyId, "admin");
 
       await client.query(`delete from public.evolution_connections where id = 1`);
       await actAs(client, "authenticated", admin);
       expect((await readHealth(client))?.paired).toBe(false);
 
       await actAsSuperuser(client);
-      await seedConnection(client, {
+      await seedConnection(client, companyId, {
         state: "connecting",
         connectedNumber: null,
         connectedAt: null,
@@ -282,7 +305,7 @@ describe("whatsapp_session_health RPC", () => {
       expect((await readHealth(client))?.paired).toBe(false);
 
       await actAsSuperuser(client);
-      await seedConnection(client, {
+      await seedConnection(client, companyId, {
         state: "close",
         connectedNumber: "96550000000",
         connectedAt: null,
@@ -291,7 +314,7 @@ describe("whatsapp_session_health RPC", () => {
       expect((await readHealth(client))?.paired).toBe(true);
 
       await actAsSuperuser(client);
-      await seedConnection(client, {
+      await seedConnection(client, companyId, {
         state: "close",
         connectedNumber: null,
         connectedAt: "2026-11-11T07:00:00Z",
@@ -303,9 +326,10 @@ describe("whatsapp_session_health RPC", () => {
 
   test("34: settling is true only for connecting within 60s of disconnected_at", async () => {
     await withRollback(async (client) => {
-      const admin = await seedUserWithRole(client, "admin");
+      const companyId = await seedCompany(client);
+      const admin = await seedUserWithRole(client, companyId, "admin");
 
-      await seedConnection(client, { state: "connecting" });
+      await seedConnection(client, companyId, { state: "connecting" });
       await client.query(
         `update public.evolution_connections
             set disconnected_at = now() - interval '10 seconds'
@@ -337,26 +361,31 @@ describe("whatsapp_session_health RPC", () => {
 
   test("35: enabled follows provider_configs and parked_count counts only failed/needs_review for the two codes", async () => {
     await withRollback(async (client) => {
-      const admin = await seedUserWithRole(client, "admin");
-      await seedConnection(client, { state: "close", connectedNumber: "96550000000" });
+      const companyId = await seedCompany(client);
+      const admin = await seedUserWithRole(client, companyId, "admin");
+      await seedConnection(client, companyId, { state: "close", connectedNumber: "96550000000" });
       await client.query(
-        `insert into public.provider_configs (provider, is_enabled)
-         values ('evolution_api', false)
-         on conflict (provider) do update set is_enabled = false`,
+        `insert into public.provider_configs (company_id, provider, is_enabled)
+         values ($1, 'evolution_api', false)
+         on conflict (company_id, provider) do update set is_enabled = false`,
+        [companyId],
       );
 
       // Clear any pre-existing mock/seed notifications in rollback txn for deterministic count.
       await client.query(
-        `delete from public.notifications where error_code in ('session_disconnected', 'instance_missing')`,
+        `delete from public.notifications
+          where company_id = $1 and error_code in ('session_disconnected', 'instance_missing')`,
+        [companyId],
       );
       await client.query(
-        `insert into public.notifications (type, channel, locale, body, state, error_code) values
-           ('receipt', 'whatsapp', 'en', 'a', 'failed', 'session_disconnected'),
-           ('receipt', 'whatsapp', 'en', 'b', 'needs_review', 'session_disconnected'),
-           ('receipt', 'whatsapp', 'en', 'c', 'needs_review', 'instance_missing'),
-           ('receipt', 'whatsapp', 'en', 'd', 'sent', 'session_disconnected'),
-           ('receipt', 'whatsapp', 'en', 'e', 'cancelled', 'instance_missing'),
-           ('receipt', 'whatsapp', 'en', 'f', 'needs_review', 'number_not_on_whatsapp')`,
+        `insert into public.notifications (company_id, type, channel, locale, body, state, error_code) values
+           ($1, 'receipt', 'whatsapp', 'en', 'a', 'failed', 'session_disconnected'),
+           ($1, 'receipt', 'whatsapp', 'en', 'b', 'needs_review', 'session_disconnected'),
+           ($1, 'receipt', 'whatsapp', 'en', 'c', 'needs_review', 'instance_missing'),
+           ($1, 'receipt', 'whatsapp', 'en', 'd', 'sent', 'session_disconnected'),
+           ($1, 'receipt', 'whatsapp', 'en', 'e', 'cancelled', 'instance_missing'),
+           ($1, 'receipt', 'whatsapp', 'en', 'f', 'needs_review', 'number_not_on_whatsapp')`,
+        [companyId],
       );
 
       await actAs(client, "authenticated", admin);
@@ -381,17 +410,22 @@ describe("enum, workflow, and template seed (migrations 252–253)", () => {
       expect(enumRes.rows).toHaveLength(1);
 
       const jobRes = await client.query<{
+        company_id: string;
         kind: string;
         is_active: boolean;
         recipient_targets: string[];
       }>(
-        `select kind, is_active, recipient_targets
+        `select company_id, kind, is_active, recipient_targets
            from public.cron_jobs
           where key = 'whatsapp-session-disconnected'`,
       );
-      expect(jobRes.rows).toEqual([
-        { kind: "event", is_active: true, recipient_targets: ["admin", "company"] },
-      ]);
+      expect(jobRes.rows).toHaveLength(1);
+      const seededCompanyId = jobRes.rows[0].company_id;
+      expect({
+        kind: jobRes.rows[0].kind,
+        is_active: jobRes.rows[0].is_active,
+        recipient_targets: jobRes.rows[0].recipient_targets,
+      }).toEqual({ kind: "event", is_active: true, recipient_targets: ["admin", "company"] });
 
       const tplRes = await client.query<{
         type: string;
@@ -402,7 +436,8 @@ describe("enum, workflow, and template seed (migrations 252–253)", () => {
       }>(
         `select type::text, channel::text, is_active, body_ar, body_en
            from public.notification_templates
-          where code = 'whatsapp-session-disconnected'`,
+          where company_id = $1 and code = 'whatsapp-session-disconnected'`,
+        [seededCompanyId],
       );
       expect(tplRes.rows).toHaveLength(1);
       expect(tplRes.rows[0].type).toBe("whatsapp_session_alert");
@@ -411,34 +446,45 @@ describe("enum, workflow, and template seed (migrations 252–253)", () => {
       expect(tplRes.rows[0].body_ar).toBeTruthy();
       expect(tplRes.rows[0].body_en).toBeTruthy();
 
-      await seedConnection(client, {
+      await setCompanyClaimContext(client, seededCompanyId);
+      await seedConnection(client, seededCompanyId, {
         state: "open",
         connectedNumber: "96550000000",
         connectedAt: "2026-09-01T13:20:29Z",
         armed: false,
       });
       await client.query(
-        `update public.cron_jobs set is_active = false where key = 'whatsapp-session-disconnected'`,
+        `update public.cron_jobs set is_active = false
+          where company_id = $1 and key = 'whatsapp-session-disconnected'`,
+        [seededCompanyId],
       );
       await client.query(
         `update public.notification_templates
             set body_ar = '<p>admin custom edit</p>'
-          where code = 'whatsapp-session-disconnected'`,
+          where company_id = $1 and code = 'whatsapp-session-disconnected'`,
+        [seededCompanyId],
       );
 
+      // تكييف صيغ ON CONFLICT مع الفهارس المركّبة الجديدة `(company_id, key)` و`(company_id, code)`.
       const migration253Sql = readFileSync(
         resolve(process.cwd(), "db/migrations/253_whatsapp_session_guard.sql"),
         "utf8",
-      );
+      )
+        .replace("on conflict (key) do update", "on conflict (company_id, key) do update")
+        .replace("on conflict (code) do nothing", "on conflict (company_id, code) do nothing");
       await client.query(migration253Sql);
 
       const afterJob = await client.query<{ is_active: boolean }>(
-        `select is_active from public.cron_jobs where key = 'whatsapp-session-disconnected'`,
+        `select is_active from public.cron_jobs
+          where company_id = $1 and key = 'whatsapp-session-disconnected'`,
+        [seededCompanyId],
       );
       expect(afterJob.rows[0].is_active).toBe(false);
 
       const afterTpl = await client.query<{ body_ar: string }>(
-        `select body_ar from public.notification_templates where code = 'whatsapp-session-disconnected'`,
+        `select body_ar from public.notification_templates
+          where company_id = $1 and code = 'whatsapp-session-disconnected'`,
+        [seededCompanyId],
       );
       expect(afterTpl.rows[0].body_ar).toBe("<p>admin custom edit</p>");
 

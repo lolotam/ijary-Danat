@@ -1,9 +1,22 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, describe, expect, test } from "vitest";
 import type { PoolClient } from "pg";
 
-import { captureRaiseError, closePool, withRollback } from "@/db/testDb";
+import { captureRaiseError, closePool, setCompanyClaimContext, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
+
+/** ينشئ شركة اختبار معزولة ويضبط سياق الشركة للاتصال الحالي. */
+async function seedCompany(client: PoolClient): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.companies (name_ar, name_en) values ($1, $2) returning id`,
+    [`شركة إشعارات ${tag}`, `Notif Co ${tag}`],
+  );
+  await setCompanyClaimContext(client, rows[0].id);
+  return rows[0].id;
+}
 
 /**
  * يدرج إشعار دفع بقيمته الفريدة وحالته وقناته.
@@ -18,6 +31,7 @@ afterAll(closePool);
 async function insertPaymentNotification(
   client: PoolClient,
   options: {
+    companyId: string;
     type: "payment_admin_alert" | "receipt";
     channel: "email" | "whatsapp";
     audience: "admin" | "tenant";
@@ -27,12 +41,19 @@ async function insertPaymentNotification(
 ): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
     `insert into public.notifications
-       (type, channel, audience, state, delivery_key, payload, recipient_address)
-     values ($1::public.notification_types, $2::public.notification_channels,
-             $3::public.notification_audience, $4::public.notification_states,
-             $5, '{"payment_ids":["p1"]}'::jsonb, 'dedup@example.test')
+       (company_id, type, channel, audience, state, delivery_key, payload, recipient_address)
+     values ($1, $2::public.notification_types, $3::public.notification_channels,
+             $4::public.notification_audience, $5::public.notification_states,
+             $6, '{"payment_ids":["p1"]}'::jsonb, 'dedup@example.test')
      returning id`,
-    [options.type, options.channel, options.audience, options.state, options.deliveryKey],
+    [
+      options.companyId,
+      options.type,
+      options.channel,
+      options.audience,
+      options.state,
+      options.deliveryKey,
+    ],
   );
   return rows[0].id;
 }
@@ -69,7 +90,9 @@ describe("migration 251 - one payment notification per payment set per channel",
     // The webhook and the return page both settle the same payment; the second
     // one must not be able to queue a second "payment received" email.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await insertPaymentNotification(client, {
+        companyId,
         type: "payment_admin_alert",
         channel: "email",
         audience: "admin",
@@ -79,6 +102,7 @@ describe("migration 251 - one payment notification per payment set per channel",
 
       const error = await captureRaiseError(client, () =>
         insertPaymentNotification(client, {
+          companyId,
           type: "payment_admin_alert",
           channel: "email",
           audience: "admin",
@@ -96,7 +120,9 @@ describe("migration 251 - one payment notification per payment set per channel",
     // row, so a second row with the same key would sit next to it and the
     // retry's update to `sent` would collide with it on every drain.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await insertPaymentNotification(client, {
+        companyId,
         type: "payment_admin_alert",
         channel: "email",
         audience: "admin",
@@ -106,6 +132,7 @@ describe("migration 251 - one payment notification per payment set per channel",
 
       const error = await captureRaiseError(client, () =>
         insertPaymentNotification(client, {
+          companyId,
           type: "payment_admin_alert",
           channel: "email",
           audience: "admin",
@@ -122,7 +149,9 @@ describe("migration 251 - one payment notification per payment set per channel",
     // A cancelled delivery was withdrawn on purpose, so it must not stand in
     // the way of a real delivery carrying the same key.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await insertPaymentNotification(client, {
+        companyId,
         type: "payment_admin_alert",
         channel: "email",
         audience: "admin",
@@ -131,6 +160,7 @@ describe("migration 251 - one payment notification per payment set per channel",
       });
 
       const id = await insertPaymentNotification(client, {
+        companyId,
         type: "payment_admin_alert",
         channel: "email",
         audience: "admin",
@@ -154,7 +184,9 @@ describe("migration 251 - one payment notification per payment set per channel",
     // key, and the first row's update to `sent` would collide with the
     // second — it would stay `skipped` and the receipt would go out twice.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await insertPaymentNotification(client, {
+        companyId,
         type: "receipt",
         channel: "email",
         audience: "tenant",
@@ -164,6 +196,7 @@ describe("migration 251 - one payment notification per payment set per channel",
 
       const error = await captureRaiseError(client, () =>
         insertPaymentNotification(client, {
+          companyId,
           type: "receipt",
           channel: "email",
           audience: "tenant",
@@ -178,7 +211,9 @@ describe("migration 251 - one payment notification per payment set per channel",
 
   test("the tenant receipt is deduped the same way", async () => {
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await insertPaymentNotification(client, {
+        companyId,
         type: "receipt",
         channel: "email",
         audience: "tenant",
@@ -188,6 +223,7 @@ describe("migration 251 - one payment notification per payment set per channel",
 
       const error = await captureRaiseError(client, () =>
         insertPaymentNotification(client, {
+          companyId,
           type: "receipt",
           channel: "email",
           audience: "tenant",
@@ -204,7 +240,9 @@ describe("migration 251 - one payment notification per payment set per channel",
     // The same rule as the admin alert: the retry reuses the failed row, so a
     // second row with the same key must be refused.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       await insertPaymentNotification(client, {
+        companyId,
         type: "receipt",
         channel: "whatsapp",
         audience: "tenant",
@@ -214,6 +252,7 @@ describe("migration 251 - one payment notification per payment set per channel",
 
       const error = await captureRaiseError(client, () =>
         insertPaymentNotification(client, {
+          companyId,
           type: "receipt",
           channel: "whatsapp",
           audience: "tenant",
@@ -231,7 +270,9 @@ describe("migration 251 - one payment notification per payment set per channel",
     // before migration 251 (and every row that carries no key at all) out of
     // it.
     await withRollback(async (client) => {
+      const companyId = await seedCompany(client);
       const first = await insertPaymentNotification(client, {
+        companyId,
         type: "payment_admin_alert",
         channel: "email",
         audience: "admin",
@@ -239,6 +280,7 @@ describe("migration 251 - one payment notification per payment set per channel",
         deliveryKey: null,
       });
       const second = await insertPaymentNotification(client, {
+        companyId,
         type: "payment_admin_alert",
         channel: "email",
         audience: "admin",

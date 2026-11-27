@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
   generatedInsertSingle: vi.fn(),
   generatedSelect: vi.fn(),
   generatedSingle: vi.fn(),
+  deliverySelect: vi.fn(),
   notificationInsertSingle: vi.fn(),
+  notificationUpdateValues: vi.fn(),
+  notificationResetSingle: vi.fn(),
   generatedUpdateEq: vi.fn(),
   scheduleUpdateEq: vi.fn(),
   scheduleUpdateValues: vi.fn(),
@@ -60,6 +63,21 @@ const dbClient = {
           mocks.notificationInsertValues(values);
           return { select: () => ({ single: mocks.notificationInsertSingle }) };
         },
+        // إعادة صف التسليم الفاشل إلى الطابور: `.update().eq().eq().select().maybeSingle()`.
+        update: (values: unknown) => {
+          mocks.notificationUpdateValues(values);
+          return {
+            eq: () => ({
+              eq: () => ({ select: () => ({ maybeSingle: mocks.notificationResetSingle }) }),
+            }),
+          };
+        },
+        // فحص صف التسليم السابق: `.select().eq().in().order()` ثم انتظار السلسلة.
+        select: () => ({
+          eq: () => ({
+            in: () => ({ order: () => mocks.deliverySelect() }),
+          }),
+        }),
       };
     }
     throw new Error(`unexpected table ${table}`);
@@ -90,7 +108,8 @@ vi.mock("@/lib/reportPdfAttachment", () => ({
   attachmentPayload: (...args: unknown[]) => mocks.attachmentPayload(...args),
 }));
 
-const { createReportRunHandler, runReportScheduleRecord } = await import("./documentsReport");
+const { createReportRunHandler, runReportScheduleRecord, resendGeneratedReportRecord } =
+  await import("./documentsReport");
 
 const SNAPSHOT = {
   html: "<html>overdue</html>",
@@ -127,6 +146,11 @@ beforeEach(() => {
   mocks.generatedUpdateEq.mockResolvedValue({ error: null });
   mocks.scheduleUpdateEq.mockResolvedValue({ error: null });
   mocks.generatedSelect.mockResolvedValue({ data: null, error: null });
+  mocks.deliverySelect.mockResolvedValue({ data: [], error: null });
+  mocks.notificationResetSingle.mockResolvedValue({
+    data: { id: "notification-1", state: "queued" },
+    error: null,
+  });
   mocks.generatedSingle.mockResolvedValue({
     data: {
       id: "generated-1",
@@ -244,5 +268,148 @@ describe("the report.run handler", () => {
     expect(mocks.generatedInsertValues).not.toHaveBeenCalled();
     expect(mocks.notificationInsertValues).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ resent: true });
+  });
+
+  test("the notification row is written under the job's delivery key", async () => {
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+
+    await createReportRunHandler()(jobContext("2026-09-28"));
+
+    // المفتاح هو ما تقرأه إعادة المحاولة التالية؛ كتابته بمظهر آخر تجعل
+    // التقرير نفسه يُرسل مرتين.
+    expect(mocks.notificationInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ delivery_key: "33333333-3333-4333-8333-333333333333:email" }),
+    );
+  });
+
+  test("a retry after the report went out sends nothing again and reports the skip", async () => {
+    // صف التسليم الذي كتبته المحاولة السابقة ووصل هو العلامة: لا تقرير
+    // مولَّد جديد، ولا صف إشعار ثانٍ، ولا إرسال.
+    mocks.deliverySelect.mockResolvedValue({
+      data: [{ id: "notification-1", state: "sent" }],
+      error: null,
+    });
+
+    const result = await createReportRunHandler()(jobContext("2026-09-28"));
+
+    expect(mocks.generatedInsertValues).not.toHaveBeenCalled();
+    expect(mocks.notificationInsertValues).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ skipped: true, notificationId: "notification-1" });
+  });
+
+  test("a retry after the provider refused re-queues the failed row and writes no second one", async () => {
+    // مع `failed` داخل الفهرس الفريد (миграция 312) — التقرير الفاشل يُعاد
+    // صفه نفسه إلى الطابور ويُصرَّف، لا أن يُكتب صف جديد ويُترك الفاشل على
+    // السجل: صف تسليم واحد لكل مهمة وقناة هو ما يبقى.
+    //
+    // With `failed` inside the delivery index (migration 312) the retry IS the
+    // delivery: the failed row is set back to `queued` the way the
+    // Notification Log's Retry button does and dispatched the way the
+    // notification drain retries a failed row — no fresh row, and the log
+    // keeps one row per job and channel.
+    mocks.deliverySelect.mockResolvedValue({
+      data: [{ id: "notification-1", state: "failed", failure_reason: "provider refused" }],
+      error: null,
+    });
+    mocks.generatedSelect.mockResolvedValue({ data: { id: "generated-1" }, error: null });
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+
+    const result = await createReportRunHandler()(jobContext("2026-09-28"));
+
+    expect(mocks.notificationInsertValues).not.toHaveBeenCalled();
+    expect(mocks.notificationUpdateValues).toHaveBeenCalledWith({
+      state: "queued",
+      failure_reason: null,
+      error_code: null,
+    });
+    expect(mocks.dispatch).toHaveBeenCalledWith("notification-1", { companyId: COMPANY_ID });
+    // The bookkeeping the resend always wrote still runs: the stored report is
+    // marked sent because this retry is the delivery that finally landed.
+    expect(mocks.generatedUpdateValues).toHaveBeenCalledWith({
+      sent: true,
+      sent_at: expect.any(String),
+    });
+    expect(result).toMatchObject({
+      resent: true,
+      notification: { id: "notification-1", state: "sent" },
+    });
+  });
+});
+
+describe("the report delivery key under insert collisions", () => {
+  /** معرّف طلب المهمة — مفتاح التسليم مبني عليه. */
+  const JOB_REQUEST_ID = "33333333-3333-4333-8333-333333333333";
+
+  test("a run whose insert collides on the delivery key reports the existing row and sends nothing", async () => {
+    // عاملان على نفس المهمة يمرّان معاً من الفحص السريع؛ الفهرس الفريد
+    // (мигرة 312) هو الضمانة، ورجل الإدراج الثاني يعيد صف الأول ولا يرسل —
+    // الفائز هو صاحب التصريف والسجل.
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+    mocks.notificationInsertSingle.mockResolvedValue({
+      data: null,
+      error: { code: "23505", message: "duplicate key value violates unique constraint" },
+    });
+    mocks.deliverySelect.mockResolvedValue({
+      data: [
+        { id: "notification-existing", state: "queued", created_at: "2026-09-28T01:30:00.000Z" },
+      ],
+      error: null,
+    });
+
+    const result = await runReportScheduleRecord(
+      "schedule-1",
+      "2026-09-28",
+      COMPANY_ID,
+      JOB_REQUEST_ID,
+    );
+
+    expect(result.notification).toMatchObject({ id: "notification-existing" });
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    // الخاسر لا يكتب سجلاً ولا يحدّث الجدول الزمني — الفائز يملك كل ذلك.
+    expect(mocks.generatedUpdateValues).not.toHaveBeenCalled();
+    expect(mocks.scheduleUpdateValues).not.toHaveBeenCalled();
+  });
+
+  test("a resend whose insert collides on the delivery key returns the existing row and sends nothing", async () => {
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+    mocks.notificationInsertSingle.mockResolvedValue({
+      data: null,
+      error: { code: "23505", message: "duplicate key value violates unique constraint" },
+    });
+    // قبل الإدراج لا شيء تحت المفتاح، ثم يظهر صف الفائز عند قراءة التصادم.
+    mocks.deliverySelect.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
+      data: [
+        { id: "notification-existing", state: "queued", created_at: "2026-09-28T01:30:00.000Z" },
+      ],
+      error: null,
+    });
+
+    const row = await resendGeneratedReportRecord("generated-1", COMPANY_ID, JOB_REQUEST_ID);
+
+    expect(row).toMatchObject({ id: "notification-existing" });
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.generatedUpdateValues).not.toHaveBeenCalled();
+  });
+
+  test("a non-duplicate insert error still throws instead of hiding behind a lookup", async () => {
+    // 23505 وحده هو تصادم المفتاح؛ أي خطأ آخر يجب أن يُرمى كما هو حتى لو
+    // وجد صف تسليم قائم تحت المفتاح.
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+    mocks.notificationInsertSingle.mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "permission denied" },
+    });
+    mocks.deliverySelect.mockResolvedValue({
+      data: [
+        { id: "notification-existing", state: "queued", created_at: "2026-09-28T01:30:00.000Z" },
+      ],
+      error: null,
+    });
+
+    await expect(
+      runReportScheduleRecord("schedule-1", "2026-09-28", COMPANY_ID, JOB_REQUEST_ID),
+    ).rejects.toThrow("permission denied");
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 });

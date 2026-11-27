@@ -23,11 +23,6 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  DRAIN_BATCH_LIMIT,
-  STALE_AFTER_HOURS,
-  estimatedDrainCapacityWithinStaleWindow,
-} from "@/fns/notificationDrainJob";
 import { useSendBulkNotification } from "@/hooks/useSendBulkNotification";
 import { useTenantEligibleTemplates } from "@/hooks/useTenantEligibleTemplates";
 import { useTenants } from "@/hooks/useTenants";
@@ -35,12 +30,6 @@ import { useI18n } from "@/i18n/provider";
 import type { LocaleCode, NotificationChannel } from "@/integrations/supabase/database.types";
 
 const channels: NotificationChannel[] = ["email", "whatsapp", "both"];
-/** Client-side mirror of the server capacity estimate (100 × 3 daily ticks). */
-const DRAIN_CAPACITY = estimatedDrainCapacityWithinStaleWindow(
-  DRAIN_BATCH_LIMIT,
-  STALE_AFTER_HOURS,
-  24,
-);
 
 type BulkAudience = "all" | "with_active_contract" | "selected";
 
@@ -126,7 +115,6 @@ export function SendBulkMessageDialog({ open, onOpenChange }: SendBulkMessageDia
   const recipientCount = matchingTenants.list.length;
   const sampleTenantId = matchingTenants.list[0]?.id ?? null;
   const confirmOk = confirmText.trim() === String(recipientCount) && recipientCount > 0;
-  const exceedsDrainCapacity = recipientCount > DRAIN_CAPACITY;
 
   useEffect(() => {
     if (!open) {
@@ -166,17 +154,11 @@ export function SendBulkMessageDialog({ open, onOpenChange }: SendBulkMessageDia
         body: body || null,
         respectRemindersEnabled: respectReminders,
       });
+      // The send itself is the worker's; this reports the staging step and its
+      // skips. The outcome arrives later as the requester's notice.
       toast.success(
-        `${t("notifications.bulkQueued").replaceAll("{queued}", String(result.queued))} · ${t("notifications.bulkSkipped").replaceAll("{skipped}", String(result.skipped.length))}`,
+        `${t("notifications.bulkQueued").replaceAll("{queued}", String(result.staged))} · ${t("notifications.bulkSkipped").replaceAll("{skipped}", String(result.skipped.length))}`,
       );
-      if (result.exceedsDrainCapacity) {
-        toast.warning(
-          t("notifications.bulkCapacityWarning")
-            .replaceAll("{count}", String(result.queued))
-            .replaceAll("{capacity}", String(result.drainCapacity))
-            .replaceAll("{hours}", String(STALE_AFTER_HOURS)),
-        );
-      }
       if (result.skipped.length) {
         const reasons = result.skipped
           .slice(0, 8)
@@ -308,15 +290,6 @@ export function SendBulkMessageDialog({ open, onOpenChange }: SendBulkMessageDia
               onCheckedChange={setRespectReminders}
             />
           </div>
-
-          {exceedsDrainCapacity ? (
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
-              {t("notifications.bulkCapacityWarning")
-                .replaceAll("{count}", String(recipientCount))
-                .replaceAll("{capacity}", String(DRAIN_CAPACITY))
-                .replaceAll("{hours}", String(STALE_AFTER_HOURS))}
-            </div>
-          ) : null}
 
           <div className="space-y-2">
             <Label required>{withCount(t("notifications.bulkConfirm"), recipientCount)}</Label>

@@ -13,6 +13,7 @@ import type { Notice } from "@/fns/notices";
 import { useMarkNoticeRead, useNotices } from "@/hooks/useNotices";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n/provider";
+import { noticeCountsFrom, type JobNoticeCounts } from "@/worker/runJob";
 
 /**
  * عنوان الإشعار: مفتاحه في قاموس الترجمة، أو نوع المهمة الخام إن لم يكن معرّفاً.
@@ -32,6 +33,26 @@ function levelBadgeClass(level: Notice["level"]): string {
   return level === "error"
     ? "bg-destructive/10 text-destructive"
     : "bg-emerald-600/10 text-emerald-700 dark:text-emerald-400";
+}
+
+/**
+ * يبني سطر العدّادات تحت عنوان الإشعار: مسمّى كل عدّاد مع رقمه، تفصلها `·`.
+ *
+ * `t` translates keys only (the dictionary takes no parameters), so the
+ * numbers are joined here and each label is its own key.
+ */
+function countsLine(t: (key: string) => string, counts: JobNoticeCounts): string {
+  const segments: string[] = [];
+  if (counts.created !== undefined) {
+    segments.push(`${t("notices.counts.created")} ${counts.created}`);
+  }
+  if (counts.skipped !== undefined) {
+    segments.push(`${t("notices.counts.skipped")} ${counts.skipped}`);
+  }
+  if (counts.failed !== undefined) {
+    segments.push(`${t("notices.counts.failed")} ${counts.failed}`);
+  }
+  return segments.join(" · ");
 }
 
 /**
@@ -83,33 +104,41 @@ export function NoticesBell() {
             {t("notices.empty")}
           </DropdownMenuItem>
         ) : (
-          notices.map((notice) => (
-            <DropdownMenuItem
-              key={notice.id}
-              onSelect={() => markRead.mutate(notice.id)}
-              className="flex flex-col items-start gap-0.5"
-            >
-              <span className="flex w-full items-center justify-between gap-2">
-                <span
-                  className={`truncate text-xs ${
-                    notice.readAt === null ? "font-bold" : "font-medium text-muted-foreground"
-                  }`}
-                >
-                  {noticeTitle(t, notice)}
+          notices.map((notice) => {
+            const counts = noticeCountsFrom(notice.body);
+            return (
+              <DropdownMenuItem
+                key={notice.id}
+                onSelect={() => markRead.mutate(notice.id)}
+                className="flex flex-col items-start gap-0.5"
+              >
+                <span className="flex w-full items-center justify-between gap-2">
+                  <span
+                    className={`truncate text-xs ${
+                      notice.readAt === null ? "font-bold" : "font-medium text-muted-foreground"
+                    }`}
+                  >
+                    {noticeTitle(t, notice)}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${levelBadgeClass(
+                      notice.level,
+                    )}`}
+                  >
+                    {t(`notices.level.${notice.level}`)}
+                  </span>
                 </span>
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${levelBadgeClass(
-                    notice.level,
-                  )}`}
-                >
-                  {t(`notices.level.${notice.level}`)}
+                {counts !== undefined && (
+                  <span data-testid="notice-counts" className="text-[10px] text-muted-foreground">
+                    {countsLine(t, counts)}
+                  </span>
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {dateFormatter.format(new Date(notice.createdAt))}
                 </span>
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {dateFormatter.format(new Date(notice.createdAt))}
-              </span>
-            </DropdownMenuItem>
-          ))
+              </DropdownMenuItem>
+            );
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>

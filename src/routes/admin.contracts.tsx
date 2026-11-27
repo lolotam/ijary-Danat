@@ -234,16 +234,13 @@ function ContractsPage() {
   async function confirmRestore() {
     if (!restoreTarget || !restoreReason.trim()) return;
     try {
-      const restoreResult = await restore.mutateAsync({
+      await restore.mutateAsync({
         contractId: restoreTarget.id,
         targetState: restoreState,
         restoreTenant: false,
         reason: restoreReason.trim(),
       });
       toast.success(t("archive.restoreSuccess"));
-      if (restoreResult?.notificationWarning) {
-        toast.warning(t("archive.notifyWarning"));
-      }
       closeRestoreDialog();
     } catch (error) {
       showError(t("archive.restoreError"), error);

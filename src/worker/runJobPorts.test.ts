@@ -224,4 +224,37 @@ describe("the runJob ports (T064)", () => {
       ignoreDuplicates: true,
     });
   });
+
+  test("the notice body carries the result counts when the notice has them", async () => {
+    await runJobPorts.writeNotice({
+      companyId: COMPANY_ID,
+      userId: STAFF_ID,
+      jobRequestId: REQUEST_ID,
+      kind: "notification.bulk",
+      level: "success",
+      body: { created: 2, skipped: 1, failed: 0 },
+    });
+
+    expect(fakeDb.writes.upserts).toHaveLength(1);
+    expect(fakeDb.writes.upserts[0].values).toMatchObject({
+      body: { created: 2, skipped: 1, failed: 0 },
+    });
+    expect(fakeDb.writes.upserts[0].options).toEqual({
+      onConflict: "job_request_id",
+      ignoreDuplicates: true,
+    });
+  });
+
+  test("a notice with no counts writes no body", async () => {
+    await runJobPorts.writeNotice({
+      companyId: COMPANY_ID,
+      userId: STAFF_ID,
+      jobRequestId: REQUEST_ID,
+      kind: "notification.bulk",
+      level: "success",
+    });
+
+    expect(fakeDb.writes.upserts).toHaveLength(1);
+    expect(fakeDb.writes.upserts[0].values).not.toHaveProperty("body");
+  });
 });

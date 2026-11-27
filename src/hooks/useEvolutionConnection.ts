@@ -114,10 +114,11 @@ export function useRefreshEvolutionQr() {
 }
 
 /**
- * يشغّل مزامنة تاريخ المحادثات من مخزن Evolution (زر "مزامنة السجل").
+ * يحجز مزامنة تاريخ المحادثات في العامل (زر "مزامنة السجل").
  *
- * The sweep is bounded server-side; `complete: false` in the result means
- * "click again to continue", which the card surfaces in its toast.
+ * The sweep runs as a background job now (`whatsapp.history.sync`): the click
+ * queues it and gets the job's id back, and the import happens out of the
+ * request.
  */
 export function useRunEvolutionHistorySync() {
   const queryClient = useQueryClient();
@@ -134,22 +135,20 @@ export function useRunEvolutionHistorySync() {
 }
 
 /**
- * يشغّل مزامنة صور الملفات الشخصية لكل المحادثات وجهات الاتصال.
+ * يحجز مزامنة صور الملفات الشخصية في العامل.
  *
- * Separate from the history sweep although the card places them side by side:
+ * Separate from the history sync although the card places them side by side:
  * history walks message pages and can take a minute, while this only refreshes
  * pictures, and an admin whose contacts show initials should not have to
- * re-import a year of messages to fix it.
- *
- * `after` is the cursor the previous run handed back; passing it is what makes
- * a second click continue the directory instead of re-checking its head.
+ * re-import a year of messages to fix it. The worker job walks the whole
+ * directory itself, so there is no cursor to pass between clicks any more.
  */
 export function useSyncEvolutionAvatars() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (after?: string | null) => {
+    mutationFn: async () => {
       const headers = await sessionHeaders();
-      return syncEvolutionAvatars({ data: after ? { after } : {}, headers });
+      return syncEvolutionAvatars({ headers });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });

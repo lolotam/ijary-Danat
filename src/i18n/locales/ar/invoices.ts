@@ -55,6 +55,8 @@ export const invoices: Record<string, string> = {
   "invoices.dueDate": "تاريخ الاستحقاق",
   "invoices.visible": "ظاهرة للمستأجر",
   "invoices.generated": "تم إنشاء {count} فاتورة.",
+  "invoices.generateQueued": "بدأ توليد الفواتير في الخلفية.",
+  "invoices.generateAlreadyRunning": "توليد هذه السنة قيد التنفيذ بالفعل — لن يُشغَّل مرتين.",
   "invoices.evaluated": "تم تحديث {count} فاتورة متأخرة.",
   "invoices.generateTitle": "إنشاء الفواتير حتى سنة محددة",
   "invoices.generateDescription":

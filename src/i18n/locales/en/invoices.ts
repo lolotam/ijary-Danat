@@ -56,6 +56,9 @@ export const invoices: Record<string, string> = {
   "invoices.dueDate": "Due date",
   "invoices.visible": "Visible to tenant",
   "invoices.generated": "Generated {count} invoices.",
+  "invoices.generateQueued": "Invoice generation is queued.",
+  "invoices.generateAlreadyRunning":
+    "Invoice generation for this year is already running — it will not run twice.",
   "invoices.evaluated": "Updated {count} overdue invoices.",
   "invoices.generateTitle": "Generate invoices through a target year",
   "invoices.generateDescription":

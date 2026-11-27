@@ -1,19 +1,20 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { notifyInvoiceDisputedRecord } from "@/fns/notifyInvoiceDisputed";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { disputeSchema } from "@/lib/closeoutSchemas";
-import { isReportableSkip } from "@/fns/notificationSkip";
 import { requirePermission } from "@/fns/requirePermission";
 
 export type { DisputeInput } from "@/lib/closeoutSchemas";
 
 /**
- * Sets or clears an invoice dispute flag (migration 86).
+ * يضع أو يزيل علامة النزاع على الفاتورة عبر set_invoice_dispute (migration 86).
+ *
  * Throws plain Error on denial — never Response (see closeOutContract).
  *
- * Notification fires only on set (not clear), after the RPC commits. A mail
- * failure is logged — it must never fail a committed dispute flag.
+ * No notification runs here any more: `set_invoice_dispute` enqueues
+ * `invoice.disputed` in the same transaction as the flag (migration 309,
+ * FR-018) and the money event handler runs the send from the worker. Clearing
+ * a dispute still sends nothing — it is not a money event.
  */
 export const setInvoiceDispute = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -38,18 +39,6 @@ export const setInvoiceDispute = createServerFn({ method: "POST" })
       p_reason: data.reason!,
     });
     if (error) throw new Error(error.message);
-
-    // The notification runs after the RPC commits and must never fail it. Its
-    // outcome is logged, not returned: this fn used to return a
-    // `notificationWarning` that no caller ever read (audit M5).
-    try {
-      const notifyResult = await notifyInvoiceDisputedRecord(data.invoiceId);
-      if (isReportableSkip(notifyResult)) {
-        console.warn("notifyInvoiceDisputed skipped:", notifyResult.reason);
-      }
-    } catch (notificationError) {
-      console.error("notifyInvoiceDisputed failed:", notificationError);
-    }
 
     return { ok: true as const };
   });

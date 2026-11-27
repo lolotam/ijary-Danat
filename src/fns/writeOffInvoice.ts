@@ -1,19 +1,20 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { notifyInvoiceWrittenOffRecord } from "@/fns/notifyInvoiceWrittenOff";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { writeOffSchema } from "@/lib/closeoutSchemas";
-import { isReportableSkip } from "@/fns/notificationSkip";
 import { requirePermission } from "@/fns/requirePermission";
 
 export type { WriteOffInput } from "@/lib/closeoutSchemas";
 
 /**
- * Writes off an invoice (state → waived) via write_off_invoice (migration 86).
+ * يشطب الفاتورة (الحالة إلى مُعفاة) عبر write_off_invoice (migration 86).
+ *
  * Throws plain Error on denial — never Response (see closeOutContract).
  *
- * Notification runs AFTER the RPC commits. A mail failure is logged and
- * logged — it must never fail a committed write-off.
+ * No notification runs here any more: `write_off_invoice` enqueues
+ * `invoice.written_off` in the same transaction as the write-off (migration
+ * 309, FR-018) and the money event handler runs the send from the worker —
+ * carrying the reason from the operational event this RPC writes.
  */
 export const writeOffInvoice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -30,18 +31,6 @@ export const writeOffInvoice = createServerFn({ method: "POST" })
       p_reason: data.reason,
     });
     if (error) throw new Error(error.message);
-
-    // The notification runs after the RPC commits and must never fail it. Its
-    // outcome is logged, not returned: this fn used to return a
-    // `notificationWarning` that no caller ever read (audit M5).
-    try {
-      const notifyResult = await notifyInvoiceWrittenOffRecord(data.invoiceId, data.reason);
-      if (isReportableSkip(notifyResult)) {
-        console.warn("notifyInvoiceWrittenOff skipped:", notifyResult.reason);
-      }
-    } catch (notificationError) {
-      console.error("notifyInvoiceWrittenOff failed:", notificationError);
-    }
 
     return { ok: true as const };
   });

@@ -1,20 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { notifyContractRestoredRecord } from "@/fns/notifyContractRestored";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { restoreSchema } from "@/lib/closeoutSchemas";
-import { isReportableSkip } from "@/fns/notificationSkip";
 import { requirePermission } from "@/fns/requirePermission";
 
 export type { RestoreInput } from "@/lib/closeoutSchemas";
 
 /**
- * Restores an archived/ended contract via restore_contract (migration 87).
+ * يستعيد العقد المؤرشف عبر restore_contract (migration 87).
+ *
  * Throws plain Error on denial — never Response (see closeOutContract).
  *
- * Notification runs AFTER the RPC. A mail failure is logged/swallowed and
- * returned as notificationWarning for a warning toast — restore must still
- * succeed.
+ * No notification runs here any more: `restore_contract` enqueues
+ * `contract.restored` in the same transaction as the change (migration 310,
+ * FR-018) and the money event handler runs the send from the worker.
  */
 export const restoreContract = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -34,23 +33,5 @@ export const restoreContract = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message);
 
-    let notificationWarning: string | null = null;
-    try {
-      const notifyResult = await notifyContractRestoredRecord(
-        data.contractId,
-        data.targetState,
-        data.reason,
-      );
-      if (isReportableSkip(notifyResult)) {
-        notificationWarning = notifyResult.reason;
-      }
-    } catch (notificationError) {
-      console.error("notifyContractRestored failed:", notificationError);
-      notificationWarning =
-        notificationError instanceof Error
-          ? notificationError.message
-          : "Restore notification failed.";
-    }
-
-    return { ok: true as const, result, notificationWarning };
+    return { ok: true as const, result };
   });

@@ -10,7 +10,6 @@ import { logAuditForCurrentSession } from "@/lib/audit";
 import { fetchExportRows } from "@/lib/pagedQuery";
 import { PERMISSIONS } from "@/lib/permissions";
 import { assertPdfOrImageWithinStorageLimit } from "@/lib/uploadLimits";
-import { notifyDepositConfirmed } from "@/fns/notifyDepositConfirmed";
 import { invalidatePortalViews } from "@/lib/portalQueryKeys";
 
 /**
@@ -234,13 +233,6 @@ export function useCreateDeposit() {
         entityId: result.data.id,
         after: result.data,
       });
-      if (result.data.status === "confirmed") {
-        try {
-          await notifyDepositConfirmed({ data: { depositId: result.data.id } });
-        } catch (error) {
-          console.error("Deposit confirmation notification failed", error);
-        }
-      }
       return result.data;
     },
     onSuccess: () => invalidateAfterDepositWrite(queryClient),
@@ -292,13 +284,6 @@ export function useUpdateDeposit() {
         before: before.data,
         after: after.data,
       });
-      if (after.data.status === "confirmed" && before.data.status !== "confirmed") {
-        try {
-          await notifyDepositConfirmed({ data: { depositId: after.data.id } });
-        } catch (error) {
-          console.error("Deposit confirmation notification failed", error);
-        }
-      }
       return after.data;
     },
     onSuccess: () => invalidateAfterDepositWrite(queryClient),

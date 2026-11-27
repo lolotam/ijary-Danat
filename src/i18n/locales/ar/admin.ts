@@ -138,6 +138,9 @@ export const admin: Record<string, string> = {
   "electricity.charges.generateConfirm":
     "سيتم إنشاء رسوم مسودة للفترة المحددة مع تخطي الرسوم الموجودة مسبقًا. هل تريد المتابعة؟",
   "electricity.charges.generated": "عدد الرسوم المنشأة",
+  "electricity.charges.generateQueued": "بدأ توليد الرسوم في الخلفية.",
+  "electricity.charges.generateAlreadyRunning":
+    "توليد هذه الفترة قيد التنفيذ بالفعل — لن يُشغَّل مرتين.",
   "electricity.charges.export": "تصدير CSV",
   "electricity.charges.statusConfirmTitle": "تأكيد تغيير حالة الرسم",
   "electricity.charges.statusConfirm": "سيتم تغيير حالة الرسم إلى",
@@ -389,8 +392,6 @@ export const admin: Record<string, string> = {
     "هذه معاينة على أول مستأجر مطابق — ليست نص الرسالة التي سيصلها الجميع.",
   "notifications.previewLocaleUnavailable":
     "لا يوجد قالب نشط بهذه اللغة — لن يمكن إرسال هذه المعاينة.",
-  "notifications.bulkCapacityWarning":
-    "تحذير: {count} مستلم يتجاوز سعة التصريف ({capacity} خلال {hours} ساعة). ما يتبقى بعد النافذة يُلغى ولا يُرسل.",
   "admin.whatsappBanner.disconnected":
     "جلسة واتساب مفصولة — رسائل واتساب لا تُرسل حتى يُعاد مسح رمز QR.",
   "admin.whatsappBanner.neverPaired": "مزوّد واتساب مفعّل لكن لا يوجد رقم مربوط.",
@@ -405,6 +406,11 @@ export const admin: Record<string, string> = {
   "notices.badge": "إشعارات غير مقروءة",
   "notices.level.success": "تم",
   "notices.level.error": "فشل",
+
+  // سطر العدّادات تحت عنوان الإشعار: ما أنشأه العمل الضخم وما تخطّى وما فشل.
+  "notices.counts.created": "تم إنشاء",
+  "notices.counts.skipped": "تم التخطي",
+  "notices.counts.failed": "فشل",
   "notices.notification.bulk.success": "تم إرسال الإشعارات الجماعية",
   "notices.notification.bulk.error": "تعذّر إرسال الإشعارات الجماعية",
   "notices.report.export.success": "تم تصدير التقرير",

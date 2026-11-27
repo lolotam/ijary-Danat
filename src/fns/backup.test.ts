@@ -1,6 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import {
-  createBackupSchema,
   deleteBackupSchema,
   downloadBackupSchema,
   createBackup,
@@ -12,8 +11,10 @@ import {
   restoreBackupSchema,
   backupRestorePreflightSchema,
   restoreBackup,
+  performRestore,
 } from "@/fns/restoreBackup";
 import { createBackupArchive, deleteBackupRecord } from "@/fns/backupCore";
+import { JOB_CATALOG } from "@/jobs/catalog";
 import { buildArchive, sha256Hex } from "@/lib/backupArchive";
 
 const supabaseAdmin = vi.hoisted(() => ({
@@ -86,7 +87,6 @@ describe("backup.ts", () => {
 
   test("exported Zod schemas: valid parses; a bad uuid and a wrong confirm literal fail", () => {
     const validUuid = "123e4567-e89b-12d3-a456-426614174000";
-    expect(createBackupSchema.parse({ note: "test" })).toEqual({ note: "test" });
     expect(deleteBackupSchema.parse({ id: validUuid })).toEqual({ id: validUuid });
     expect(downloadBackupSchema.parse({ id: validUuid })).toEqual({ id: validUuid });
     expect(restoreBackupSchema.parse({ id: validUuid, confirm: "RESTORE" })).toEqual({
@@ -109,7 +109,7 @@ describe("backup.ts", () => {
   test("a non-admin caller is refused, and the refusal is OBSERVABLE", async () => {
     const createFn = createBackup as any;
     createFn._context = mockContext(false);
-    await expect(createFn({ note: "hi" })).rejects.toThrow("Forbidden");
+    await expect(createFn(undefined)).rejects.toThrow("Forbidden");
 
     const listFn = listBackups as any;
     listFn._context = mockContext(false);
@@ -188,11 +188,13 @@ describe("backup.ts", () => {
       }),
     });
 
-    const restoreFn = restoreBackup as any;
-    restoreFn._context = mockContext(true);
-
     await expect(
-      restoreFn({ id: "123e4567-e89b-12d3-a456-426614174000", confirm: "RESTORE" }),
+      performRestore({
+        companyId: "11111111-1111-4111-8111-111111111111",
+        backupId: "123e4567-e89b-12d3-a456-426614174000",
+        actor: "user-1",
+        jobRequestId: "22222222-2222-4222-8222-222222222222",
+      }),
     ).rejects.toThrow();
 
     expect(supabaseAdmin.rpc).not.toHaveBeenCalledWith("backup_restore", expect.any(Object));
@@ -228,13 +230,79 @@ describe("backup.ts", () => {
     // Mock createBackupArchive to fail
     (createBackupArchive as any).mockRejectedValue(new Error("Insert failed"));
 
-    const restoreFn = restoreBackup as any;
-    restoreFn._context = mockContext(true);
-
     await expect(
-      restoreFn({ id: "123e4567-e89b-12d3-a456-426614174000", confirm: "RESTORE" }),
+      performRestore({
+        companyId: "11111111-1111-4111-8111-111111111111",
+        backupId: "123e4567-e89b-12d3-a456-426614174000",
+        actor: "user-1",
+        jobRequestId: "22222222-2222-4222-8222-222222222222",
+      }),
     ).rejects.toThrow("Aborted: Could not create safety backup");
 
     expect(supabaseAdmin.rpc).not.toHaveBeenCalledWith("backup_restore", expect.any(Object));
+  });
+
+  /** يسجّل نداءات RPC للاختبارات التي تفحص الحجز بدل التنفيذ. */
+  function recordingRpc() {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    (supabaseAdmin.rpc as any).mockImplementation(
+      async (name: string, args: Record<string, unknown>) => {
+        calls.push({ name, args });
+        return { data: name === "enqueue_job" ? "job-1" : null, error: null };
+      },
+    );
+    return calls;
+  }
+
+  test("createBackup enqueues exactly one catalogue-valid company.export job and creates no archive here", async () => {
+    const calls = recordingRpc();
+
+    const createFn = createBackup as any;
+    createFn._context = mockContext(true);
+    const result = await createFn(undefined);
+
+    expect(result).toEqual({ queued: true, jobRequestId: "job-1" });
+    const jobs = calls.filter((call) => call.name === "enqueue_job");
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].args._kind).toBe("company.export");
+    expect(() => JOB_CATALOG["company.export"].payload.parse(jobs[0].args._payload)).not.toThrow();
+    expect(jobs[0].args._dedupe_key).toMatch(/^company\.export:[0-9a-f-]{36}$/);
+    expect(jobs[0].args._requested_by).toBe("user-1");
+    // No slow work in the request: the dump-and-archive path never runs here.
+    expect(createBackupArchive).not.toHaveBeenCalled();
+    expect(calls.filter((call) => call.name === "backup_dump_all")).toEqual([]);
+  });
+
+  test("restoreBackup enqueues exactly one catalogue-valid company.restore job and restores nothing here", async () => {
+    const backupId = "123e4567-e89b-12d3-a456-426614174000";
+    (supabaseAdmin.from as any).mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: backupId }, error: null }),
+        }),
+      }),
+    });
+    const calls = recordingRpc();
+
+    const restoreFn = restoreBackup as any;
+    restoreFn._context = mockContext(true);
+    const result = await restoreFn({ id: backupId, confirm: "RESTORE" });
+
+    expect(result).toEqual({ queued: true, jobRequestId: "job-1" });
+    const jobs = calls.filter((call) => call.name === "enqueue_job");
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].args._kind).toBe("company.restore");
+    // The payload carries the backup to restore as its single id, and no
+    // dedupe key: an admin may restore the same backup again on purpose.
+    expect(jobs[0].args._payload).toEqual({ requestId: backupId });
+    expect(() => JOB_CATALOG["company.restore"].payload.parse(jobs[0].args._payload)).not.toThrow();
+    expect(jobs[0].args._dedupe_key).toBeNull();
+    expect(jobs[0].args._requested_by).toBe("user-1");
+    // The "restore requested" audit stays at request time; the destructive
+    // work does not.
+    expect(calls.map((call) => call.name)).toContain("write_audit");
+    expect(calls.filter((call) => call.name === "backup_restore")).toEqual([]);
+    expect(supabaseAdmin.storage.from).not.toHaveBeenCalled();
+    expect(createBackupArchive).not.toHaveBeenCalled();
   });
 });

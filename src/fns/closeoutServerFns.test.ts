@@ -50,6 +50,9 @@ vi.mock("./notifyInvoiceDisputed", () => ({
 import { cancelContractCloseout } from "./cancelContractCloseout";
 import { closeOutContract } from "./closeOutContract";
 import { notifyContractCloseoutRecord } from "./notifyContractCloseout";
+import { notifyContractRestoredRecord } from "./notifyContractRestored";
+import { notifyInvoiceDisputedRecord } from "./notifyInvoiceDisputed";
+import { notifyInvoiceWrittenOffRecord } from "./notifyInvoiceWrittenOff";
 import { notifyRefundRecordedRecord } from "./notifyRefundRecorded";
 import { previewContractCloseout } from "./previewContractCloseout";
 import { restoreContract } from "./restoreContract";
@@ -266,53 +269,107 @@ describe("setInvoiceDispute clear path", () => {
   });
 });
 
-describe("closeOutContract refund notification", () => {
-  it("calls notifyRefundRecorded when the RPC returned a refund_id", async () => {
-    const refundId = "55555555-5555-4555-8555-555555555555";
-    const supabase = mockSupabase({
-      close_out_contract: {
-        closeout_id: "c1",
-        refund_id: refundId,
-        refund_total: 50,
+describe("money mutations send nothing themselves (T072)", () => {
+  // الإرسال انتقل إلى أحداث المال: الدالة نفسها لا تلمس حدود الإرسال إطلاقاً،
+  // والحدث الذي تخرجه المعاملة هو ما يشغّل المُرسِل في العامل.
+  const cases: Array<{
+    name: string;
+    fn: unknown;
+    input: unknown;
+    rpcName: string;
+    sender: ReturnType<typeof vi.fn>;
+  }> = [
+    {
+      name: "closeOutContract",
+      fn: closeOutContract,
+      input: closeoutInput,
+      rpcName: "close_out_contract",
+      sender: vi.mocked(notifyContractCloseoutRecord),
+    },
+    {
+      name: "restoreContract",
+      fn: restoreContract,
+      input: {
+        contractId: "11111111-1111-4111-8111-111111111111",
+        targetState: "active",
+        restoreTenant: true,
+        reason: "restore",
       },
-    });
-    const bound = bind(closeOutContract, supabase);
-    await bound(closeoutInput);
-
-    expect(notifyRefundRecordedRecord).toHaveBeenCalledWith(refundId);
-  });
-
-  it("does NOT call notifyRefundRecorded when refund_total was zero (no refund_id)", async () => {
-    vi.mocked(notifyRefundRecordedRecord).mockClear();
-    const supabase = mockSupabase({
-      close_out_contract: {
-        closeout_id: "c1",
-        refund_id: null,
-        refund_total: 0,
+      rpcName: "restore_contract",
+      sender: vi.mocked(notifyContractRestoredRecord),
+    },
+    {
+      name: "writeOffInvoice",
+      fn: writeOffInvoice,
+      input: { invoiceId: "11111111-1111-4111-8111-111111111111", reason: "bad debt" },
+      rpcName: "write_off_invoice",
+      sender: vi.mocked(notifyInvoiceWrittenOffRecord),
+    },
+    {
+      name: "setInvoiceDispute",
+      fn: setInvoiceDispute,
+      input: {
+        invoiceId: "11111111-1111-4111-8111-111111111111",
+        reason: "disputed",
+        clear: false,
       },
-    });
-    const bound = bind(closeOutContract, supabase);
-    await bound({ ...closeoutInput, refundAmount: 0 });
+      rpcName: "set_invoice_dispute",
+      sender: vi.mocked(notifyInvoiceDisputedRecord),
+    },
+  ];
 
-    expect(notifyRefundRecordedRecord).not.toHaveBeenCalled();
-  });
+  it.each(cases)(
+    "$name calls no sender after the money RPC",
+    async ({ fn, input, rpcName, sender }) => {
+      sender.mockClear();
+      vi.mocked(notifyRefundRecordedRecord).mockClear();
+      const supabase = mockSupabase({
+        close_out_contract: {
+          closeout_id: "c1",
+          refund_id: "55555555-5555-4555-8555-555555555555",
+          refund_total: 50,
+        },
+      });
+      const bound = bind(fn, supabase);
 
-  it("still sends the refund notice when the close-out notice throws", async () => {
-    // alreadyNotified() now throws on a query error rather than re-sending.
-    // Under one shared try, that throw skipped the refund notice silently.
-    const refundId = "66666666-6666-4666-8666-666666666666";
-    vi.mocked(notifyRefundRecordedRecord).mockClear();
-    vi.mocked(notifyContractCloseoutRecord).mockRejectedValueOnce(new Error("dedup read failed"));
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const outcome = (await bound(input)) as { ok: true };
+
+      expect(outcome.ok).toBe(true);
+      expect(supabase.rpc).toHaveBeenCalledWith(rpcName, expect.anything());
+      // لا حدود إرسال تُلمس: المُرسلون جميعاً صامتون، مهما حمل ردّ الـ RPC.
+      expect(sender).not.toHaveBeenCalled();
+      expect(notifyRefundRecordedRecord).not.toHaveBeenCalled();
+      expect(notifyContractCloseoutRecord).not.toHaveBeenCalled();
+      expect(notifyContractRestoredRecord).not.toHaveBeenCalled();
+      expect(notifyInvoiceWrittenOffRecord).not.toHaveBeenCalled();
+      expect(notifyInvoiceDisputedRecord).not.toHaveBeenCalled();
+    },
+  );
+
+  it("closeOutContract carries no notification warning any more", async () => {
+    // لا تحمل نتيجة التصفية أي قناة تحذير: الحقل حُذف من العقد بعدما صار
+    // الإرسال خارج الطلب كلياً، فلا حاجة لتنبيه يقرأه المسار (route).
+    vi.mocked(notifyContractCloseoutRecord).mockClear();
     const supabase = mockSupabase({
-      close_out_contract: { closeout_id: "c1", refund_id: refundId, refund_total: 50 },
+      close_out_contract: { closeout_id: "c1", refund_id: null, refund_total: 0 },
     });
 
     const outcome = await bind(closeOutContract, supabase)(closeoutInput);
 
-    expect(notifyRefundRecordedRecord).toHaveBeenCalledWith(refundId);
-    // The money change still reports success; the failure surfaces as a warning.
-    expect(outcome).toMatchObject({ ok: true, notificationWarning: "dedup read failed" });
-    logged.mockRestore();
+    expect(outcome).toMatchObject({ ok: true });
+    expect(outcome).not.toHaveProperty("notificationWarning");
+    expect(notifyContractCloseoutRecord).not.toHaveBeenCalled();
+  });
+
+  it("a refund-less close-out still reaches no send boundary", async () => {
+    vi.mocked(notifyRefundRecordedRecord).mockClear();
+    const supabase = mockSupabase({
+      close_out_contract: { closeout_id: "c1", refund_id: null, refund_total: 0 },
+    });
+
+    await bind(closeOutContract, supabase)({ ...closeoutInput, refundAmount: 0 });
+
+    expect(notifyRefundRecordedRecord).not.toHaveBeenCalled();
+    expect(notifyContractCloseoutRecord).not.toHaveBeenCalled();
   });
 });

@@ -35,7 +35,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { notifyPaymentSuccessFn } from "@/fns/notifyPaymentSuccess";
 import { useCompany } from "@/hooks/useCompany";
 import { primaryUnit, useContracts } from "@/hooks/useContracts";
 import { useInvoices } from "@/hooks/useInvoices";
@@ -200,8 +199,9 @@ export function CreatePaymentDialog({
           amount: settlement.amount,
           // One evidence file for the batch; later rows stay attachment-free.
           attachment: index === 0 ? attachment : null,
-          // The batch notifies once at the end — per-payment would send a
-          // tenant one receipt per month settled.
+          // No inline notify: `apply_payment_allocation` emits
+          // `payment.succeeded` in the same transaction as the allocation
+          // (migration 308), and the worker's event handler queues the receipt.
           notify: false,
         });
         await applyAllocation.mutateAsync({
@@ -250,17 +250,12 @@ export function CreatePaymentDialog({
     const { createdIds, error } = await settleInvoices(values, settlements, selectedContract);
     setSettling(false);
 
-    // Money moved for every id in `createdIds`, including on a partial failure,
-    // so the receipt goes out for what actually settled rather than only for a
-    // clean run. Notification failure must never fail a settled payment.
-    if (createdIds.length) {
-      try {
-        await notifyPaymentSuccessFn({ data: { paymentIds: createdIds } });
-      } catch (notifyError) {
-        console.error("Payment notifications failed", notifyError);
-      }
-    }
-
+    // Money moved for every id in `createdIds`, including on a partial failure.
+    // No receipt call belongs here any more: `apply_payment_allocation` emits
+    // `payment.succeeded` for each settled payment in the allocation's own
+    // transaction (migration 308), and the worker's event handler queues the
+    // receipt — the explicit notify this used to make was a second, duplicate
+    // request for the same receipts (GR-004).
     if (error) {
       const detail = error instanceof Error ? error.message : t("common.error");
       toast.error(

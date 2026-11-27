@@ -9,6 +9,8 @@ import { estimatedDrainCapacityWithinStaleWindow } from "@/fns/notificationDrain
 import { buildFinalMessage } from "@/fns/resolveTemplateVariables";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json, LocaleCode, Tables } from "@/integrations/supabase/database.types";
+import { enqueueJob } from "@/jobs/enqueue";
+import type { QueuedBulkJob } from "@/jobs/handlers/bulk";
 import { isTemplateOfferable } from "@/lib/templateEligibility";
 import { requirePermission } from "@/fns/requirePermission";
 
@@ -39,13 +41,17 @@ export interface BulkSkip {
   reason: string;
 }
 
-export interface SendBulkNotificationResult {
-  queued: number;
+/**
+ * ما يعيد التسليم الجماعي: الدفعة حُجزت للعامل، ومعها ما جرى ترحيله فعلاً.
+ *
+ * `staged` and `skipped` report the request-time staging step — how many rows
+ * reached the batch and which tenants were left out, with the reason the
+ * dialog names. The outcome of the send itself arrives later as the
+ * requester's notice.
+ */
+export interface SendBulkNotificationResult extends QueuedBulkJob {
+  staged: number;
   skipped: BulkSkip[];
-  batchId: string;
-  /** Max rows the daily drain can clear before the 72h stale cancel. */
-  drainCapacity: number;
-  exceedsDrainCapacity: boolean;
 }
 
 /**
@@ -115,12 +121,12 @@ export function bulkDeliveryKey(parts: {
 }
 
 /**
- * يرسل رسالة يدوية أو قالبًا إلى مجموعة من المستأجرين دفعة واحدة.
+ * يرسل رسالة يدوية أو قالبًا إلى مجموعة من المستأجرين خارج الطلب.
  *
- * الصفوف تُدرَج كـ queued عبر enqueueNotification({ dispatch: false }) ويسلّمها
- * notificationDrainJob. DRAIN_BATCH_LIMIT=100 لكل تشغيل وSTALE_AFTER_HOURS=72:
- * مع cron يومي تُقدَّر السعة بـ 100×3=300. ما يبقى بعد 72 ساعة يُلغى لا يُرسل —
- * لذلك نعيد exceedsDrainCapacity ونُظهر تحذيرًا في الحوار قبل الإرسال.
+ * الصفوف تُدرَج كـ queued عبر enqueueNotification({ dispatch: false }) — مخزن
+ * الدفعة الموجود — ثم تُسلَّم مهمة `notification.bulk` واحدة إلى العامل، وهي
+ * التي تُخرج مهام الإرسال على دفعات من 200 (contracts/jobs.md section 5).
+ * الإرسال الفعلي يبقى لعامل الإشعارات بإيقاعه لكل اتصال واتساب.
  *
  * المتغيرات تُحلّ لكل مستأجر عبر buildFinalMessage — نفس دالة المعاينة والإرسال الفردي.
  *
@@ -245,6 +251,16 @@ export const sendBulkNotification = createServerFn({ method: "POST" })
 
     const exceedsDrainCapacity = queued > drainCapacity;
 
+    // The fan-out job is enqueued after the last staged row, never before: the
+    // relay can pick the job up within a second, and a handler that read the
+    // batch mid-staging would fan out half of it and finish "succeeded".
+    const { jobId } = await enqueueJob(
+      db,
+      "notification.bulk",
+      { requestId: batchId },
+      { dedupeKey: `notification.bulk:${batchId}`, requestedBy: context.userId },
+    );
+
     const auditResult = await context.supabase.rpc("write_audit", {
       p_action: "notification.bulk_create",
       p_entity_type: "notification",
@@ -266,11 +282,5 @@ export const sendBulkNotification = createServerFn({ method: "POST" })
     });
     if (auditResult.error) throw new Error(auditResult.error.message);
 
-    return {
-      queued,
-      skipped,
-      batchId,
-      drainCapacity,
-      exceedsDrainCapacity,
-    };
+    return { queued: true, jobRequestId: jobId, staged: queued, skipped };
   });

@@ -1,8 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { companyClient } from "@/company/companyClient.server";
+import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requirePermission } from "@/fns/requirePermission";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { enqueueJob } from "@/jobs/enqueue";
+import type { QueuedBulkJob } from "@/jobs/handlers/bulk";
 
 const schema = z.object({ contractId: z.string().uuid() });
 
@@ -58,26 +62,52 @@ export function summarizeRegeneration(
 }
 
 /**
- * Reconciles a contract's invoices after the contract itself changed.
+ * يوحّد فواتير عقد بعد تغيّره، خارج الطلب: يتحقق ثم يحجز مهمة
+ * `invoices.regenerate`.
  *
- * Called from the contract edit path, never from a database trigger. The
- * underlying function requires `invoices.create`, and an accountant holds
- * `contracts.update` without it — so a trigger would raise 42501 inside their
- * contract save and abort it. Keeping this at the server-fn boundary means the
- * save succeeds and only the reconciliation is refused.
+ * The request no longer reconciles anything: it validates, checks the
+ * permission, reads the contract so a wrong id fails here and not in a job
+ * that would fail a minute later with nothing on screen, and hands one
+ * `invoices.regenerate` job to the worker (contracts/jobs.md section 1).
+ *
+ * Each request mints its own `requestId`, and the dedupe key is contract +
+ * request id (contracts/jobs.md section 5): an admin editing a contract twice
+ * in a row gets two jobs, while a double-click of one submit queues one.
+ *
+ * The permission stays at this boundary rather than in a database trigger:
+ * the underlying function requires `invoices.create`, and an accountant holds
+ * `contracts.update` without it — a trigger would raise 42501 inside their
+ * contract save and abort it. The save succeeds and only the reconciliation
+ * is refused.
  */
 export const regenerateContractInvoices = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(schema)
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<QueuedBulkJob> => {
     await requirePermission(context, {
       code: "invoices.create",
       attempted: "invoice.regenerate",
       refusal: "You do not have permission to regenerate contract invoices.",
     });
-    const { data: rows, error } = await context.supabase.rpc("regenerate_contract_invoices", {
-      p_contract_id: data.contractId,
-    });
-    if (error) throw new Error(error.message);
-    return rows;
+
+    const company = requireRequestCompany();
+    const db = companyClient(company.id);
+
+    const contractRes = await db.from("contracts").select("id").eq("id", data.contractId).single();
+    if (contractRes.error || !contractRes.data) {
+      throw new Error(contractRes.error?.message ?? "Contract not found");
+    }
+
+    const requestId = crypto.randomUUID();
+    const { jobId } = await enqueueJob(
+      db,
+      "invoices.regenerate",
+      { contractId: data.contractId, requestId },
+      {
+        dedupeKey: `invoices.regenerate:${data.contractId}:${requestId}`,
+        requestedBy: context.userId,
+      },
+    );
+
+    return { queued: true, jobRequestId: jobId };
   });

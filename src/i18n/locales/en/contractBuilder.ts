@@ -287,6 +287,7 @@ export const contractBuilder: Record<string, string> = {
   "settings.integrations.evolutionSyncAvatars": "Sync profile pictures",
   "settings.integrations.evolutionAvatarsDone": "Profile pictures synced",
   "settings.integrations.evolutionSyncDone": "Chat history sync finished.",
+  "settings.integrations.evolutionSyncQueued": "Sync queued — it will run in the background.",
   "settings.integrations.evolutionSyncPartial":
     "Partial history synced — press Sync history again to continue.",
   "settings.integrations.evolutionSyncMessages": "messages",
@@ -397,6 +398,7 @@ export const contractBuilder: Record<string, string> = {
   "settings.backup.hero.backupNow": "Back Up Now",
   "settings.backup.hero.backing": "Creating…",
   "settings.backup.hero.success": "Backup created successfully.",
+  "settings.backup.hero.queued": "Backup queued — it will be created in the background.",
   "settings.backup.hero.error": "Failed to create backup.",
   "settings.backup.auto.title": "Automatic Backup",
   "settings.backup.auto.description": "The system keeps the newest 10 archives.",
@@ -460,6 +462,9 @@ export const contractBuilder: Record<string, string> = {
   "settings.backup.restore.confirming": "Restoring…",
   "settings.backup.restore.cancel": "Cancel",
   "settings.backup.restore.success": "Restore completed successfully.",
+  "settings.backup.restore.queued": "Restore queued",
+  "settings.backup.restore.queuedHint":
+    "The restore runs in the background; its report arrives in your notices.",
   "settings.backup.restore.report": "Restore Report",
   "settings.backup.restore.reportDeleted": "Deleted",
   "settings.backup.restore.reportInserted": "Inserted",

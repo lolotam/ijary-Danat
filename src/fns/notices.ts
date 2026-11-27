@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { requireStaff } from "@/fns/requirePermission";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { Tables } from "@/integrations/supabase/database.types";
+import type { Json, Tables } from "@/integrations/supabase/database.types";
 
 /**
  * أقصى عدد إشعارات يعرضها الجرس؛ نفس الحدّ في الاستعلام وفي النتيجة.
@@ -19,6 +19,8 @@ export interface Notice {
   kind: string;
   /** مفتاح عنوان في قاموس الترجمة؛ يُعرض نوع المهمة الخام إن لم يكن معرّفاً. */
   titleKey: string;
+  /** جسم الإشعار: عدّادات النتيجة حين تحملها، وإلا `{}`. */
+  body: Json;
   level: "success" | "error";
   readAt: string | null;
   createdAt: string;
@@ -31,7 +33,7 @@ const markNoticeReadSchema = z.object({
 /** صف الإشعار كما تقرؤه قاعدة البيانات. */
 type NoticeRow = Pick<
   Tables<"user_notices">,
-  "id" | "kind" | "title_key" | "level" | "read_at" | "created_at"
+  "id" | "kind" | "title_key" | "body" | "level" | "read_at" | "created_at"
 >;
 
 /**
@@ -42,6 +44,7 @@ function toNotice(row: NoticeRow): Notice {
     id: row.id,
     kind: row.kind,
     titleKey: row.title_key,
+    body: row.body,
     level: row.level,
     readAt: row.read_at,
     createdAt: row.created_at,
@@ -79,7 +82,7 @@ export const myNotices = createServerFn({ method: "GET" })
 
     const { data, error } = await context.supabase
       .from("user_notices")
-      .select("id, kind, title_key, level, read_at, created_at")
+      .select("id, kind, title_key, body, level, read_at, created_at")
       .order("read_at", { ascending: true, nullsFirst: true })
       .order("created_at", { ascending: false })
       .limit(NOTICE_LIMIT);

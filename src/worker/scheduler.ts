@@ -58,6 +58,9 @@ export interface ScheduleDefinition {
  * delivered, and it must not queue behind a mailbox sync. The old host crontab
  * staggered them for the same reason (deploy/README.md).
  *
+ * `company.export` is the nightly backup fan-out — one export per active,
+ * unpaused company at 01:50, the crontab's old backup slot.
+ *
  * `usage.rebuild` has no row here: the catalogue lists the kind but no work
  * function exists for it yet, so a row would fail permanently.
  */
@@ -101,6 +104,17 @@ export const SCHEDULES: readonly ScheduleDefinition[] = [
     kind: "notification.drain",
     pattern: "40 1 * * *",
     registryKey: "notification-drain",
+    unit: "company",
+    slot: "day",
+  },
+  {
+    // The nightly backup — `company.export` replaces the old `backup` cron
+    // (contracts/jobs.md section 5). 01:50 is the crontab's own backup slot:
+    // after the 01:10–01:40 batch and before `log.retention` at 02:00, which
+    // the workflow catalogue describes as running "after the backup".
+    kind: "company.export",
+    pattern: "50 1 * * *",
+    registryKey: "backup",
     unit: "company",
     slot: "day",
   },
@@ -198,11 +212,17 @@ export interface SchedulerDatabase {
  *
  * The payload travels with the row, so the worker knows which day or month it
  * is running for without reading the schedule again.
+ *
+ * `company.export` is the one exception: a backup is a snapshot of the moment
+ * it runs (like `runBackupJob`, which deliberately ignores any reference date),
+ * and its payload carries only an optional request id, so the nightly rows
+ * carry an empty payload and the day travels in the dedupe slot alone.
  */
 function companyFanOutFields(
   schedule: ScheduleDefinition,
   moment: CompanyMoment,
 ): { payload: Json; slot: string } {
+  if (schedule.kind === "company.export") return { payload: {}, slot: moment.date };
   if (schedule.slot === "month") return { payload: { month: moment.month }, slot: moment.month };
   if (schedule.slot === "window") return { payload: {}, slot: moment.window };
   return { payload: { date: moment.date }, slot: moment.date };
@@ -325,7 +345,7 @@ export function scheduleFromJobName(name: string): ScheduleDefinition | null {
 }
 
 /**
- * يبني معالج مهمة التوزيع: يوزّع الجدول الذي，因为他 أُطلق.
+ * يبني معالج مهمة التوزيع: يوزّع الجدول الذي أُطلقت من أجله المهمة.
  */
 export function createFanOutProcessor(
   db: SchedulerDatabase,

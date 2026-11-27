@@ -202,7 +202,8 @@ async function updateRequest(
  *
  * The insert is idempotent per `job_request_id`: a retry of the job writes the
  * same notice again, and the unique index on that column (migration 311)
- * keeps one row.
+ * keeps one row. The counts body is written only when the notice carries it;
+ * a notice without counts leaves the column on its `'{}'` default.
  */
 async function insertNotice(db: RunJobDatabase, notice: JobNotice): Promise<void> {
   const { error } = await db.from("user_notices").upsert(
@@ -213,6 +214,7 @@ async function insertNotice(db: RunJobDatabase, notice: JobNotice): Promise<void
       kind: notice.kind,
       title_key: `notices.${notice.kind}.${notice.level}`,
       level: notice.level,
+      ...(notice.body === undefined ? {} : { body: notice.body }),
     },
     { onConflict: "job_request_id", ignoreDuplicates: true },
   );

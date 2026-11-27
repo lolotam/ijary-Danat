@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { JOB_CATALOG } from "@/jobs/catalog";
+
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: vi.fn().mockImplementation(() => {
     const fn: any = (input?: { headers?: unknown }) =>
@@ -23,6 +25,11 @@ vi.mock("@tanstack/react-start", () => ({
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
 
+// The module now derives the dedupe day from the worker's company-moment
+// helper, which builds the service-role client at import time; the tests never
+// touch it, so the real client must never be built.
+vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
+
 const db = {
   connection: null as Record<string, unknown> | null,
   provider: {
@@ -34,6 +41,8 @@ const db = {
   ingestBatches: [] as Record<string, unknown>[][],
   /** message_id → chat_number rows the "live webhook" already ingested. */
   liveMessages: {} as Record<string, string>,
+  /** طلبات المهام المسجَّلة عبر `enqueue_job`. */
+  jobs: [] as { kind: string; payload: Record<string, unknown>; dedupeKey: string | null }[],
 };
 
 const TEST_COMPANY = {
@@ -86,8 +95,16 @@ vi.mock("@/company/companyClient.server", () => {
   }
   const client = {
     from: (table: string) => builder(table),
-    rpc: vi.fn().mockImplementation((_name: string, args: { p_rows: unknown }) => {
-      const rows = args.p_rows as Record<string, unknown>[];
+    rpc: vi.fn().mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === "enqueue_job") {
+        db.jobs.push({
+          kind: String(args._kind),
+          payload: (args._payload ?? {}) as Record<string, unknown>,
+          dedupeKey: (args._dedupe_key as string | null) ?? null,
+        });
+        return Promise.resolve({ data: `job-${db.jobs.length}`, error: null });
+      }
+      const rows = (args.p_rows ?? []) as Record<string, unknown>[];
       db.ingestBatches.push(rows);
       return Promise.resolve({ data: rows.length, error: null });
     }),
@@ -97,7 +114,7 @@ vi.mock("@/company/companyClient.server", () => {
   };
 });
 
-import { runEvolutionHistorySync } from "./evolutionHistorySync";
+import { runEvolutionHistorySweep, runEvolutionHistorySync } from "./evolutionHistorySync";
 
 /** Routes the stubbed fetch by Evolution endpoint path. */
 function stubEvolution(handlers: {
@@ -130,7 +147,7 @@ function baileysMessage(id: string, jid: string, body: string) {
   };
 }
 
-describe("runEvolutionHistorySync", () => {
+describe("runEvolutionHistorySweep", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
     vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
@@ -138,6 +155,7 @@ describe("runEvolutionHistorySync", () => {
     db.contactUpserts = [];
     db.ingestBatches = [];
     db.liveMessages = {};
+    db.jobs = [];
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -149,7 +167,9 @@ describe("runEvolutionHistorySync", () => {
 
   it("refuses to sweep without an open session, naming the fix", async () => {
     db.connection = { instance_name: "danat", last_connection_state: "close" };
-    await expect(runEvolutionHistorySync({})).rejects.toThrow(/scan the qr/i);
+    await expect(
+      runEvolutionHistorySweep({ companyId: TEST_COMPANY.id, connectionId: TEST_COMPANY.id }),
+    ).rejects.toThrow(/scan the qr/i);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -167,7 +187,10 @@ describe("runEvolutionHistorySync", () => {
       messages: () => [baileysMessage("h-1", "96550123456@s.whatsapp.net", "قديمة")],
     });
 
-    const result = await runEvolutionHistorySync({});
+    const result = await runEvolutionHistorySweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+    });
 
     expect(result).toMatchObject({
       chatsWalked: 1,
@@ -195,7 +218,10 @@ describe("runEvolutionHistorySync", () => {
       ],
     });
 
-    const result = await runEvolutionHistorySync({});
+    const result = await runEvolutionHistorySweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+    });
 
     expect(result).toMatchObject({ chatsWalked: 1, chatsAwaitingLid: 0, messagesImported: 2 });
     const rows = db.ingestBatches[0];
@@ -209,7 +235,10 @@ describe("runEvolutionHistorySync", () => {
       messages: () => [baileysMessage("h-lid", "84885901418607@lid", "معلّقة")],
     });
 
-    const result = await runEvolutionHistorySync({});
+    const result = await runEvolutionHistorySweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+    });
 
     expect(result).toMatchObject({
       chatsWalked: 0,
@@ -226,7 +255,7 @@ describe("runEvolutionHistorySync", () => {
       messages: () => [baileysMessage("h-2", "96550123456@s.whatsapp.net", "old")],
     });
 
-    await runEvolutionHistorySync({});
+    await runEvolutionHistorySweep({ companyId: TEST_COMPANY.id, connectionId: TEST_COMPANY.id });
 
     expect(db.ingestBatches[0][0]).toMatchObject({
       message_id: "h-2",
@@ -250,7 +279,10 @@ describe("runEvolutionHistorySync", () => {
       },
     });
 
-    const result = await runEvolutionHistorySync({});
+    const result = await runEvolutionHistorySweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+    });
 
     expect(seen).toEqual([1, 2, 3]);
     expect(result.messagesImported).toBe(3);
@@ -263,9 +295,54 @@ describe("runEvolutionHistorySync", () => {
     }));
     stubEvolution({ chats: manyChats, messages: () => [] });
 
-    const result = await runEvolutionHistorySync({});
+    const result = await runEvolutionHistorySweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+    });
 
     expect(result.chatsWalked).toBe(25);
     expect(result.complete).toBe(false);
+  });
+});
+
+describe("runEvolutionHistorySync (the server function)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
+    db.connection = { instance_name: "danat", last_connection_state: "open" };
+    db.contactUpserts = [];
+    db.ingestBatches = [];
+    db.liveMessages = {};
+    db.jobs = [];
+  });
+
+  it("enqueues exactly one catalogue-valid whatsapp.history.sync job and sweeps nothing here", async () => {
+    const result = await runEvolutionHistorySync({});
+
+    expect(result).toEqual({ queued: true, jobRequestId: "job-1" });
+    expect(db.jobs).toHaveLength(1);
+    expect(db.jobs[0].kind).toBe("whatsapp.history.sync");
+    expect(db.jobs[0].payload).toEqual({ connectionId: TEST_COMPANY.id });
+    expect(() =>
+      JOB_CATALOG["whatsapp.history.sync"].payload.parse(db.jobs[0].payload),
+    ).not.toThrow();
+    // Dedupe connection id + day (contracts/jobs.md section 5).
+    expect(db.jobs[0].dedupeKey).toMatch(
+      new RegExp(`^whatsapp\\.history\\.sync:${TEST_COMPANY.id}:\\d{4}-\\d{2}-\\d{2}$`),
+    );
+    // No slow work here: the provider is never contacted and nothing is
+    // imported — the worker's sweep does that.
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(db.ingestBatches).toEqual([]);
+    expect(db.contactUpserts).toEqual([]);
+  });
+
+  it("refuses the click when the session is closed, before anything is queued", async () => {
+    db.connection = { instance_name: "danat", last_connection_state: "close" };
+
+    await expect(runEvolutionHistorySync({})).rejects.toThrow(/scan the qr/i);
+
+    expect(db.jobs).toEqual([]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

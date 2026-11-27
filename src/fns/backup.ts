@@ -3,17 +3,9 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import {
-  createBackupArchive,
-  deleteBackupRecord,
-  listBackupRecords,
-  BACKUP_BUCKET,
-} from "@/fns/backupCore";
+import { deleteBackupRecord, listBackupRecords, BACKUP_BUCKET } from "@/fns/backupCore";
 import { requirePermission } from "@/fns/requirePermission";
-
-export const createBackupSchema = z.object({
-  note: z.string().trim().optional(),
-});
+import { enqueueJob } from "@/jobs/enqueue";
 
 export const deleteBackupSchema = z.object({
   id: z.string().uuid(),
@@ -24,27 +16,42 @@ export const downloadBackupSchema = z.object({
 });
 
 /**
- * ينشئ نسخة احتياطية يدوية جديدة للمستخدم.
+ * يحجز مهمة إنشاء نسخة احتياطية يدوية خارج الطلب: يتحقق، ثم يسجّل مهمة
+ * `company.export` ويعيد معرّفها.
  *
- * Admin only. Uses the core backup engine to create a manual backup.
+ * Admin only. The archive is created by the worker (contracts/jobs.md section
+ * 1): the request validates the permission and hands one `company.export` job
+ * over, and the notice reports how it ended. Each request mints its own
+ * `requestId`, the dedupe key is `company.export:<requestId>`, and the handler
+ * keys the backup it creates to the job's own id — so a retried job creates
+ * one backup while two deliberate clicks still get two.
+ *
+ * The catalogue's `company.export` payload carries ids only ("every other kind
+ * carries ids only", contracts/jobs.md section 1), so the note the dialog used
+ * to accept cannot travel to the worker and the input is gone rather than
+ * silently dropped. Re-adding it needs one optional payload field in
+ * `src/jobs/catalog.ts`.
  */
 export const createBackup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(createBackupSchema)
-  .handler(async ({ data, context }) => {
+  .handler(async ({ context }) => {
     await requirePermission(context, {
       code: "settings.backup",
       attempted: "backup.create",
       refusal: "Forbidden: you do not have permission to create backups.",
     });
 
-    const record = await createBackupArchive({
-      kind: "manual",
-      createdBy: context.userId,
-      note: data.note,
-    });
+    const db = companyClient(requireRequestCompany().id);
 
-    return { ok: true, record };
+    const requestId = crypto.randomUUID();
+    const { jobId } = await enqueueJob(
+      db,
+      "company.export",
+      { requestId },
+      { dedupeKey: `company.export:${requestId}`, requestedBy: context.userId },
+    );
+
+    return { queued: true, jobRequestId: jobId };
   });
 
 /**

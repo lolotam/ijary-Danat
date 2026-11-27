@@ -1,18 +1,11 @@
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
-
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { loadCompanyDefaults, rowOrThrow } from "@/fns/adminEmailNotification";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { depositConfirmationTemplate, renderEmailDocument } from "@/lib/emailTemplates";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
-import { requireAnyPermission } from "@/fns/requirePermission";
-
-const schema = z.object({ depositId: z.string().uuid() });
 
 async function enqueueDepositConfirmation(depositId: string, targets: WorkflowRecipientTarget[]) {
   const db = companyClient(requireRequestCompany().id);
@@ -106,10 +99,10 @@ async function enqueueDepositConfirmation(depositId: string, targets: WorkflowRe
 }
 
 /**
- * The workflow admins see as "Deposit confirmed".
+ * المُرسِل الذي يراه المشرفون باسم "تأكيد الإيداع".
  *
- * The pause check lives here rather than at the two call sites in
- * useDeposits.ts, so neither can forget it.
+ * The pause check lives here rather than at the call site — the
+ * `deposit.confirmed` job handler — so it cannot be forgotten.
  */
 export async function notifyDepositConfirmedRecord(depositId: string) {
   type Result = Awaited<ReturnType<typeof enqueueDepositConfirmation>>;
@@ -133,17 +126,3 @@ export async function notifyDepositConfirmedRecord(depositId: string) {
         : { status: "success" as const, error: null },
   });
 }
-
-export const notifyDepositConfirmed = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => schema.parse(data))
-  .handler(async ({ data, context }) => {
-    // Either permission admits the caller: creating a deposit as already
-    // confirmed triggers this notify, so `deposits.create` has to pass too.
-    await requireAnyPermission(context, {
-      codes: ["deposits.update", "deposits.create"],
-      attempted: "notification.deposit_confirmed",
-      refusal: "You do not have permission to confirm a deposit.",
-    });
-    return notifyDepositConfirmedRecord(data.depositId);
-  });

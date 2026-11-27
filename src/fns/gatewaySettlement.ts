@@ -157,8 +157,11 @@ async function settleAlreadyPaidRequest(
     payload: input.payload,
   });
 
-  // Adoption is the first moment this settlement is recorded as a gateway
-  // payment, so it is also the first moment a receipt is owed.
+  // Best-effort: the admin + tenant receipt for adopted placeholder payments.
+  // This send is kept here on purpose (T072): an admin placeholder is usually
+  // settled by `set_invoice_paid`, which inserts its allocations directly and
+  // emits no `payment.succeeded` event (migration 289), so no job will ever owe
+  // this receipt — adoption is the only moment that does.
   if (adoptedIds.length) {
     await makeReceiptsVisibleToTenant(db, adoptedIds);
     const notifyResult = await notifyPaymentSuccess(adoptedIds);
@@ -314,8 +317,9 @@ async function runSettlement(
   // payment represents the settlement and owns the receipt lookup.
   await linkPaymentRequest(db, paymentRequest, settledDetails, primaryPaymentId);
   // The excess payment's receipt is shown like the others, but it is left out
-  // of the "payment received" notification below: that message names the
-  // invoices a payment settled, and this one settled none.
+  // of the "payment received" notification: that message names the invoices a
+  // payment settled, and this one settled none — it has no allocation, so it
+  // also emits no `payment.succeeded` event.
   await makeReceiptsVisibleToTenant(db, excessId ? [...paymentIds, excessId] : paymentIds);
   await finalizePaymentRequest(db, {
     details: settledDetails,
@@ -324,13 +328,10 @@ async function runSettlement(
     payload,
   });
 
-  // Best-effort: admin + tenant receipt notifications (email/WhatsApp + log).
-  if (paymentIds.length) {
-    const notifyResult = await notifyPaymentSuccess(paymentIds);
-    if (!notifyResult.ok) {
-      console.error("Payment notifications failed:", notifyResult.error);
-    }
-  }
+  // No notification runs here any more: every allocation above went through
+  // `apply_payment_allocation`, which enqueues `payment.succeeded` in the same
+  // transaction (migration 308, FR-018) and the money event handler queues the
+  // receipts from the worker.
 
   return false;
 }

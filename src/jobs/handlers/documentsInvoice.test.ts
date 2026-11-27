@@ -4,6 +4,10 @@ import { TENANT_PAUSED_REASON } from "@/lib/tenantNotificationsPaused";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const INVOICE_ID = "22222222-2222-4222-8222-222222222222";
+/** معرّف طلب المهمة الذي تعمل تحته الإرساليات — مفتاح التسليم مبني عليه. */
+const JOB_REQUEST_ID = "33333333-3333-4333-8333-333333333333";
+/** معرّف صف التسليم الذي تعيد المحاولة العثور عليه — UUID كما يطلبه الكتالوج. */
+const REUSED_ROW_ID = "44444444-4444-4444-8444-444444444449";
 
 const invoiceRow = vi.fn();
 const tenantRow = vi.fn();
@@ -12,7 +16,9 @@ const unitsRow = vi.fn();
 const propertiesRow = vi.fn();
 const companyRow = vi.fn();
 const templateRow = vi.fn();
+const priorDeliveries = vi.fn();
 const enqueue = vi.fn();
+const enqueueJobRpc = vi.fn();
 
 const dbClient = {
   from: (table: string) => {
@@ -31,9 +37,20 @@ const dbClient = {
         select: () => ({ eq: () => ({ maybeSingle: companyRow }) }),
       };
     }
+    // notifications: فحص صف التسليم السابق — `.select().eq().in().order()`.
+    if (table === "notifications") {
+      return {
+        select: () => ({
+          eq: () => ({
+            in: () => ({ order: () => priorDeliveries() }),
+          }),
+        }),
+      };
+    }
     // notification_templates: `.eq("code").eq("is_active").maybeSingle()`.
     return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: templateRow }) }) }) };
   },
+  rpc: (...args: unknown[]) => enqueueJobRpc(...args),
 };
 
 vi.mock("@/company/companyClient.server", () => ({
@@ -50,7 +67,11 @@ vi.mock("@/company/requestCompany.server", () => ({
   runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
 }));
 
-vi.mock("@/fns/enqueueNotification", () => ({
+// `pickExistingDelivery` rides the same module and stays real — it is the row
+// policy under test (GR-009), so the mock spreads the original and replaces
+// only the row writer.
+vi.mock("@/fns/enqueueNotification", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/fns/enqueueNotification")>()),
   enqueueNotification: (...args: unknown[]) => enqueue(...args),
 }));
 
@@ -67,7 +88,7 @@ const { createInvoiceSendHandler, sendInvoiceDocument } = await import("./docume
 
 /** يبني الفاتورة لقنواتها — هذا هو العمل الذي ينفّذه معالج المهمة. */
 const send = (channels: ("email" | "whatsapp")[]) =>
-  sendInvoiceDocument(INVOICE_ID, channels, COMPANY_ID);
+  sendInvoiceDocument(INVOICE_ID, channels, COMPANY_ID, JOB_REQUEST_ID);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -112,7 +133,9 @@ beforeEach(() => {
     data: { name_ar: "د", name_en: "D", invoice_footer_ar: "شكراً", invoice_footer_en: "Thanks" },
   });
   templateRow.mockResolvedValue({ data: null, error: null });
+  priorDeliveries.mockResolvedValue({ data: [], error: null });
   enqueue.mockResolvedValue({ id: "notification-1", state: "sent" });
+  enqueueJobRpc.mockResolvedValue({ data: "job-1", error: null });
   renderPdf.mockResolvedValue(null);
 });
 
@@ -309,18 +332,110 @@ describe("the invoice.send handler", () => {
 
   test("writes one row per run, because an admin may resend on purpose", async () => {
     const handler = createInvoiceSendHandler();
-    const context = {
-      jobRequestId: "33333333-3333-4333-8333-333333333333",
+    const first = {
+      jobRequestId: JOB_REQUEST_ID,
+      companyId: COMPANY_ID,
+      payload: { invoiceId: INVOICE_ID, channel: "email" },
+      attempt: 1,
+    };
+    // إعادة الإرسال المتعمدة مهمة جديدة بمعرّف جديد — ومفتاح التسليم لا يمنعها.
+    const resend = {
+      jobRequestId: "88888888-8888-4888-8888-888888888888",
       companyId: COMPANY_ID,
       payload: { invoiceId: INVOICE_ID, channel: "email" },
       attempt: 1,
     };
 
-    await handler(context);
-    await handler(context);
+    await handler(first);
+    await handler(resend);
 
-    // There is no sent marker on an invoice send, so a second run sends again:
-    // the admin asked for it.
+    // Two jobs are two sends: the admin asked for the invoice again.
     expect(enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  test("a retry of the same job reuses the row it already wrote and re-claims its dispatch", async () => {
+    // صف التسليم الذي كتبته المحاولة السابقة هو العلامة: إعادة المحاولة
+    // تُبلغ عنه ولا تكتب صفّاً ثانياً. لكن صفه المعلّق قد ماتت محاولته قبل حجز
+    // التصريف، فتُعاد حجز مهمة إرساله بنفس مفتاح المنع (GR-003) — لا انتظار
+    // للتصريف اليومي.
+    priorDeliveries.mockResolvedValue({
+      data: [{ id: REUSED_ROW_ID, state: "queued", failure_reason: null }],
+      error: null,
+    });
+    const handler = createInvoiceSendHandler();
+
+    const result = await handler({
+      jobRequestId: JOB_REQUEST_ID,
+      companyId: COMPANY_ID,
+      payload: { invoiceId: INVOICE_ID, channel: "email" },
+      attempt: 2,
+    });
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ queued: [REUSED_ROW_ID] });
+    expect(enqueueJobRpc).toHaveBeenCalledTimes(1);
+    expect(enqueueJobRpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: REUSED_ROW_ID },
+      _dedupe_key: `notification.dispatch:${REUSED_ROW_ID}`,
+      _requested_by: null,
+    });
+  });
+
+  test("a reused row that already went out is reported and not dispatched again", async () => {
+    // صف مُرسَل لا يحتاج تصريفاً جديداً — إعادة الحجز للمعلّق فقط.
+    priorDeliveries.mockResolvedValue({
+      data: [{ id: REUSED_ROW_ID, state: "sent", failure_reason: null }],
+      error: null,
+    });
+
+    const result = await send(["email"]);
+
+    expect(result.sent).toEqual([REUSED_ROW_ID]);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueJobRpc).not.toHaveBeenCalled();
+  });
+
+  test("the pick policy of the report handler decides which row is reused (GR-009)", async () => {
+    // صف أحدث فاشل لا يحجب صفّاً أقدم معلّقاً: نفس سياسة `pickExistingDelivery`
+    // التي يعيد بها معالج التقارير — الصف القابل للشحن هو التسليم نفسه.
+    priorDeliveries.mockResolvedValue({
+      data: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          state: "failed",
+          failure_reason: "provider refused",
+          created_at: "2026-08-02T00:00:00.000Z",
+        },
+        {
+          id: REUSED_ROW_ID,
+          state: "queued",
+          failure_reason: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await send(["email"]);
+
+    expect(result.queued).toEqual([REUSED_ROW_ID]);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(enqueueJobRpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: REUSED_ROW_ID },
+      _dedupe_key: `notification.dispatch:${REUSED_ROW_ID}`,
+      _requested_by: null,
+    });
+  });
+
+  test("the row is written under the job's delivery key", async () => {
+    // `enqueueNotification` is the row writer in this file; its input is what
+    // lands in `notifications.delivery_key`, and the retry check reads it back.
+    await send(["email"]);
+
+    expect(enqueue.mock.calls[0]?.[0]).toMatchObject({
+      deliveryKey: `${JOB_REQUEST_ID}:email`,
+    });
   });
 });

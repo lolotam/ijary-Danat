@@ -128,13 +128,22 @@ export function GenerateChargesDialog({ open, onOpenChange, units }: GenerateCha
         close={() => setConfirmOpen(false)}
         confirm={async () => {
           try {
-            const generated = await generateCharges.mutateAsync({
+            const result = await generateCharges.mutateAsync({
               periodMonth: month,
               periodYear: year,
               unitId: unitId === "all" ? null : unitId,
             });
             setConfirmOpen(false);
-            toast.success(`${t("electricity.charges.generated")}: ${generated.length}`);
+            if (result.queued) {
+              // مهمة مماثلة لا تزال تعمل: لا توليد ثانٍ، والواجهة تقول ذلك بوضوح.
+              if (result.alreadyRunning) {
+                toast.info(t("electricity.charges.generateAlreadyRunning"));
+              } else {
+                toast.success(t("electricity.charges.generateQueued"));
+              }
+            } else {
+              toast.success(`${t("electricity.charges.generated")}: ${result.created}`);
+            }
           } catch (error) {
             toast.error(error instanceof Error ? error.message : t("common.error"));
           }

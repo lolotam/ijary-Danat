@@ -26,10 +26,10 @@ import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
  * entry point they call; the row loader and the tenant-name / contract-code
  * lookups several of them share live here too.
  *
- * `notifyDepositConfirmed` does not use `notifyAdminEvent`: it has a status
- * pre-check, returns the ids of earlier rows, and renders through a built-in
- * template builder. Folding those into this helper would add a branch per
- * special case, which is the wrong abstraction.
+ * `notifyDepositConfirmedRecord` does not use `notifyAdminEvent`: it has a
+ * status pre-check, returns the ids of earlier rows, and renders through a
+ * built-in template builder. Folding those into this helper would add a branch
+ * per special case, which is the wrong abstraction.
  */
 
 /** نتيجة مُرسِل تنبيه إداري: إمّا صف الإشعار المُدرج، أو سبب التخطّي. */

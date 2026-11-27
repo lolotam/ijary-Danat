@@ -288,10 +288,59 @@ describe("runJob (T064)", () => {
     expect(state.notices).toEqual(expected);
   });
 
+  test.each([
+    {
+      label: "a result with all three counts carries them all in the notice body",
+      result: { created: 3, skipped: 1, failed: 2, errors: ["row 3 refused"] },
+      expected: { created: 3, skipped: 1, failed: 2 },
+    },
+    {
+      label: "a result with one count carries just that count in the notice body",
+      result: { created: 5 },
+      expected: { created: 5 },
+    },
+    {
+      label: "a result of zero counts carries them in the notice body",
+      result: { created: 0, skipped: 0, failed: 0, errors: [] },
+      expected: { created: 0, skipped: 0, failed: 0 },
+    },
+  ])("$label", async ({ result, expected }) => {
+    const { ports, handlerFor, state } = createFakePorts({
+      row: requestRow({ kind: "notification.bulk", payload: payloadFor("notification.bulk") }),
+      handler: async () => result,
+    });
+
+    await createRunJob(ports, handlerFor)(attemptFor({ kind: "notification.bulk" }));
+
+    expect(state.request.status).toBe("succeeded");
+    expect(state.notices).toHaveLength(1);
+    expect(state.notices[0].body).toEqual(expected);
+  });
+
+  test.each([
+    { label: "a plain result", result: { sent: true } },
+    {
+      label: "a result whose counts are not numbers",
+      result: { created: "3", skipped: "1", failed: "0" },
+    },
+    { label: "no result at all", result: null },
+  ])("$label writes a notice with no body", async ({ result }) => {
+    const { ports, handlerFor, state } = createFakePorts({
+      row: requestRow({ kind: "notification.bulk", payload: payloadFor("notification.bulk") }),
+      handler: async () => result,
+    });
+
+    await createRunJob(ports, handlerFor)(attemptFor({ kind: "notification.bulk" }));
+
+    expect(state.request.status).toBe("succeeded");
+    expect(state.notices).toHaveLength(1);
+    expect(state.notices[0]).not.toHaveProperty("body");
+  });
+
   test("a notice that cannot be written leaves the job unfinished, and the retry writes one notice", async () => {
     const { ports, handlerFor, state } = createFakePorts({
       row: requestRow({ kind: "notification.bulk", payload: payloadFor("notification.bulk") }),
-      handler: async () => ({ done: true }),
+      handler: async () => ({ created: 2, skipped: 0, failed: 0 }),
       noticeFailures: 1,
     });
 
@@ -307,6 +356,7 @@ describe("runJob (T064)", () => {
 
     expect(state.request.status).toBe("succeeded");
     expect(state.notices).toHaveLength(1);
+    expect(state.notices[0].body).toEqual({ created: 2, skipped: 0, failed: 0 });
   });
 
   test("a handler failure before the last attempt leaves the job for a retry", async () => {

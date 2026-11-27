@@ -243,8 +243,13 @@ function InvoicesPage() {
    */
   const runGenerate = async () => {
     try {
-      const rows = await generate.mutateAsync({ throughYear: generateThroughYear });
-      toast.success(t("invoices.generated").replace("{count}", String(rows.length)));
+      const result = await generate.mutateAsync({ year: generateThroughYear });
+      // مهمة مماثلة لا تزال تعمل: لا توليد ثانٍ، والواجهة تقول ذلك بوضوح.
+      if (result.alreadyRunning) {
+        toast.info(t("invoices.generateAlreadyRunning"));
+      } else {
+        toast.success(t("invoices.generateQueued"));
+      }
       setGenerateOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("common.error"));

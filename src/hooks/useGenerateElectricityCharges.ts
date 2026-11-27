@@ -17,13 +17,17 @@ export function useGenerateElectricityCharges() {
       if (!permissions.can(PERMISSIONS.ELECTRICITY_CREATE)) {
         throw new Error("Permission denied.");
       }
-      const generatedCharges = await generateElectricityChargesForCurrentSession(input);
+      const result = await generateElectricityChargesForCurrentSession(input);
       await logAuditForCurrentSession({
         action: "electricity_charge.generate",
         entityType: "electricity_charge_batch",
-        after: { input, generated: generatedCharges.length },
+        after: {
+          input,
+          queued: result.queued,
+          created: result.queued ? null : result.created,
+        },
       });
-      return generatedCharges;
+      return result;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["electricity-charges"] }),
   });

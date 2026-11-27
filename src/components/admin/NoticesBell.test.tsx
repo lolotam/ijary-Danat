@@ -9,21 +9,15 @@
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
 
+import type { Notice } from "@/fns/notices";
 import { I18nProvider } from "@/i18n/provider";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
-  notices: [] as Array<{
-    id: string;
-    kind: string;
-    titleKey: string;
-    level: "success" | "error";
-    readAt: string | null;
-    createdAt: string;
-  }>,
+  notices: [] as Notice[],
   markRead: vi.fn(),
 }));
 
@@ -38,13 +32,17 @@ vi.mock("@/hooks/usePermissions", () => ({
 
 const { NoticesBell } = await import("@/components/admin/NoticesBell");
 
-/** إشعار واحد للاختبار. */
-function notice(overrides: Partial<(typeof mocks.notices)[number]> = {}) {
+/**
+ * إشعار واحد للاختبار، على شكل صف `user_notices` الحقيقي: جسمٌ jsonb يحمل
+ * عدّادات النتيجة أو `{}` حين لا عدّادات.
+ */
+function notice(overrides: Partial<Notice> = {}): Notice {
   return {
     id: "n1",
     kind: "invoices.generate",
     titleKey: "notices.invoices.generate.success",
-    level: "success" as const,
+    body: {},
+    level: "success",
     readAt: null,
     createdAt: "2026-11-27T10:00:00Z",
     ...overrides,
@@ -136,5 +134,40 @@ describe("NoticesBell", () => {
     const items = openMenu();
 
     expect(items[0]?.textContent).toContain("invoices.generate");
+  });
+
+  test.each([
+    {
+      label: "all three counts",
+      body: { created: 3, skipped: 1, failed: 0 },
+      expected: "تم إنشاء 3 · تم التخطي 1 · فشل 0",
+    },
+    {
+      label: "a subset of the counts",
+      body: { created: 5 },
+      expected: "تم إنشاء 5",
+    },
+    {
+      label: "a body with no counts",
+      body: {},
+      expected: null,
+    },
+    {
+      label: "a body of another shape",
+      body: { note: "written by another release" },
+      expected: null,
+    },
+  ])("the counts line under the title renders $label", ({ body, expected }) => {
+    mocks.notices = [notice({ id: "n1", body })];
+    mountBell();
+
+    const items = openMenu();
+    const countsLine = items[0]?.querySelector('[data-testid="notice-counts"]');
+
+    if (expected === null) {
+      expect(countsLine).toBeNull();
+    } else {
+      expect(countsLine?.textContent).toBe(expected);
+    }
   });
 });

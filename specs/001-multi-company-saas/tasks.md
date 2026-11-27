@@ -158,7 +158,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T053 [P] [US2] Transactional enqueue tests (commit yields one job, rollback yields none, dedupe key returns the existing job) in `src/db/outbox/enqueueJob.sqltest.ts`
 - [x] T054 [P] [US2] Relay tests (claims pending rows, republish is harmless) in `src/worker/relay.test.ts`
 - [x] T055 [P] [US2] Handler wrapper tests (skips suspended and switched-off, statuses, notice on final failure) in `src/worker/runJob.test.ts`
-- [ ] T056 [P] [US2] Idempotency tests, one per handler family, in `src/jobs/handlers/idempotency.test.ts`
+- [x] T056 [P] [US2] Idempotency tests, one per handler family, in `src/jobs/handlers/idempotency.test.ts`
 - [x] T057 [P] [US2] Per-connection pacing tests in `src/worker/pacing.test.ts`
 
 ### Implementation for User Story 2
@@ -174,10 +174,11 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T066 [US2] Add the worker build target to `Dockerfile` and the worker and redis services to `deploy/ijary/docker-compose.yml`
 - [x] T067 [US2] Notification handler in `src/jobs/handlers/notification.ts`; make `src/fns/enqueueNotification.ts` and `src/fns/sendNotification.ts` insert and enqueue without sending
 - [x] T068 [US2] Document handlers (`invoice.send`, `payment.receipt`, `company.info.send`, `contract.pdf`, `report.run`, `report.export`) in `src/jobs/handlers/documents.ts`; make `sendInvoiceToTenant.ts`, `notifyPaymentSuccess.ts`, `sendCompanyInfo.ts`, `runReportSchedule.ts`, `resendGeneratedReport.ts` enqueue
-- [ ] T069 [US2] Bulk handlers with 200-row chunks (`notification.bulk`, `invoices.generate`, `invoices.regenerate`, `import.run`, `electricity.generate`, `salaries.generate`) in `src/jobs/handlers/bulk.ts`; make `sendBulkNotification.ts`, `generateInvoices.ts`, `regenerateContractInvoices.ts`, `bulkImport.ts`, `generateElectricityCharges.ts` enqueue
-- [ ] T070 [US2] Sync handlers (`company.export`, `company.restore`, `whatsapp.history.sync`, `whatsapp.avatars.sync`, `gmail.sync`, `payment.reconcile`) in `src/jobs/handlers/sync.ts`; make `backup.ts`, `restoreBackup.ts`, `evolutionHistorySync.ts`, `evolutionAvatars.ts` enqueue
+- [x] T069 [US2] Bulk handlers with 200-row chunks (`notification.bulk`, `invoices.generate`, `invoices.regenerate`, `import.run`, `electricity.generate`, `salaries.generate`) in `src/jobs/handlers/bulk.ts`; make `sendBulkNotification.ts`, `generateInvoices.ts`, `regenerateContractInvoices.ts`, `bulkImport.ts`, `generateElectricityCharges.ts` enqueue
+- [ ] T069a [US2] Move `import.run` off the request: it stays synchronous because no staging store exists for parsed rows; decide and add one (owner decision), then enqueue from `bulkImport.ts`
+- [x] T070 [US2] Sync handlers (`company.export`, `company.restore`, `whatsapp.history.sync`, `whatsapp.avatars.sync`, `gmail.sync`, `payment.reconcile`) in `src/jobs/handlers/sync.ts`; make `backup.ts`, `restoreBackup.ts`, `evolutionHistorySync.ts`, `evolutionAvatars.ts` enqueue
 - [x] T071 [US2] Write migrations `db/migrations/308_money_events_payments.sql`, `db/migrations/309_money_events_invoice_adjustments.sql`, `db/migrations/310_money_events_contract_closeout.sql`: emit `payment.succeeded`, `payment.reversed`, `deposit.confirmed`, `refund.recorded`, `invoice.written_off`, `invoice.disputed`, `contract.closed_out`, `contract.restored` with `enqueue_job` inside the owning SQL functions
-- [ ] T072 [US2] Event handlers mapping each money event to its existing sender in `src/jobs/handlers/events.ts`; remove the direct sender calls from their call sites
+- [x] T072 [US2] Event handlers mapping each money event to its existing sender in `src/jobs/handlers/events.ts`; remove the direct sender calls from their call sites
 - [x] T073 [US2] Notices: `src/fns/notices.ts` (`myNotices`, `markNoticeRead`), `src/hooks/useNotices.ts` (Realtime with 30-second polling fallback), `src/components/admin/NoticesBell.tsx`
 - [x] T074 [US2] Failed jobs: `src/fns/companyJobs.ts` (`companyFailedJobs`, `retryJob`) and `src/components/admin/settings/FailedJobsCard.tsx`
 - [ ] T075 [US2] Show the immediate confirmation for deferred actions in the screens that call the functions changed in T067 to T070

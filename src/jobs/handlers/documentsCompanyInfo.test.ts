@@ -4,11 +4,15 @@ import type { CompanyInfoSendChoice } from "./documentsCompanyInfo";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const TENANT_ID = "22222222-2222-4222-8222-222222222222";
+/** معرّف طلب المهمة الذي تعمل تحته الإرساليات — مفتاح التسليم مبني عليه. */
+const JOB_REQUEST_ID = "33333333-3333-4333-8333-333333333333";
 
 const inserted: Array<Record<string, unknown>> = [];
 const uploads: string[] = [];
 
 const templateRow = vi.fn();
+const priorDeliveries = vi.fn();
+const notifyInsertSingle = vi.fn();
 const rpc = vi.fn();
 
 /**
@@ -71,15 +75,16 @@ const clientStub = {
     }
     if (table === "notifications") {
       return {
+        // فحص صف التسليم السابق: `.select().eq().in().order()` ثم انتظار السلسلة.
+        select: () => ({
+          eq: () => ({
+            in: () => ({ order: () => priorDeliveries() }),
+          }),
+        }),
         insert: (row: Record<string, unknown>) => {
           inserted.push(row);
           return {
-            select: () => ({
-              single: async () => ({
-                data: { ...row, id: notificationIdFor(inserted.length) },
-                error: null,
-              }),
-            }),
+            select: () => ({ single: () => notifyInsertSingle(row) }),
           };
         },
       };
@@ -135,6 +140,11 @@ beforeEach(() => {
   inserted.length = 0;
   uploads.length = 0;
   templateRow.mockResolvedValue({ data: null, error: null });
+  priorDeliveries.mockResolvedValue({ data: [], error: null });
+  notifyInsertSingle.mockImplementation(async (row: Record<string, unknown>) => ({
+    data: { ...row, id: notificationIdFor(inserted.length) },
+    error: null,
+  }));
   rpc.mockResolvedValue({ data: "job-1", error: null });
 });
 describe("sendCompanyInformation", () => {
@@ -142,7 +152,7 @@ describe("sendCompanyInformation", () => {
     // Evolution sends `attachment_paths` as document parts, so withholding the
     // key from the WhatsApp leg meant the tenant got the summary but never the
     // bank-details document the button promises.
-    await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice());
+    await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice(), JOB_REQUEST_ID);
 
     expect(uploads).toHaveLength(1);
     const [pdfPath] = uploads;
@@ -170,7 +180,7 @@ describe("sendCompanyInformation", () => {
   });
 
   test("the WhatsApp body is plain text addressed to the tenant's number", async () => {
-    await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice());
+    await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice(), JOB_REQUEST_ID);
 
     expect(inserted).toHaveLength(2);
     const whatsapp = inserted.find((row) => row.channel === "whatsapp");
@@ -193,7 +203,7 @@ describe("sendCompanyInformation", () => {
       error: null,
     });
 
-    await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice());
+    await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice(), JOB_REQUEST_ID);
 
     expect(inserted.map((row) => row.channel)).toEqual(["email"]);
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -202,7 +212,7 @@ describe("sendCompanyInformation", () => {
   test.each<[("email" | "whatsapp")[]]>([[["email"]], [["whatsapp"]], [["email", "whatsapp"]]])(
     "sends only the channels the request chose: %j",
     async (channels) => {
-      await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice({ channels }));
+      await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice({ channels }), JOB_REQUEST_ID);
 
       expect(inserted.map((row) => row.channel)).toEqual(channels);
       // One dispatch job per written row.
@@ -222,6 +232,7 @@ describe("sendCompanyInformation", () => {
         TENANT_ID,
         COMPANY_ID,
         choice({ channels: ["email"], language }),
+        JOB_REQUEST_ID,
       );
 
       expect(inserted).toHaveLength(1);
@@ -229,6 +240,153 @@ describe("sendCompanyInformation", () => {
       expect(String(inserted[0]?.body)).toContain(intro);
     },
   );
+
+  test.each([["email"], ["whatsapp"]] as const)(
+    "the %s row is written under the job's delivery key",
+    async (channel) => {
+      await sendCompanyInformation(TENANT_ID, COMPANY_ID, choice(), JOB_REQUEST_ID);
+
+      expect(inserted.find((row) => row.channel === channel)).toMatchObject({
+        delivery_key: `${JOB_REQUEST_ID}:${channel}`,
+      });
+    },
+  );
+
+  test("a retry that finds the delivery already written reuses it and re-claims its dispatch", async () => {
+    // صف التسليم الذي كتبته المحاولة السابقة هو العلامة: المهمة نفسها تعيد
+    // صفوفها كما هي بلا صف ثانٍ — لكن صفه المعلّق يُعاد حجز تصريفه بنفس مفتاح
+    // المنع (GR-003)، فمحاولة ماتت بين الإدراج والحجز لا تنتظر التصريف اليومي.
+    priorDeliveries.mockResolvedValue({
+      data: [{ id: "44444444-4444-4444-8444-444444444449", state: "queued" }],
+      error: null,
+    });
+
+    const result = await sendCompanyInformation(
+      TENANT_ID,
+      COMPANY_ID,
+      choice({ channels: ["email"] }),
+      JOB_REQUEST_ID,
+    );
+
+    expect(inserted).toHaveLength(0);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: "44444444-4444-4444-8444-444444444449" },
+      _dedupe_key: "notification.dispatch:44444444-4444-4444-8444-444444444449",
+      _requested_by: null,
+    });
+    expect(result.notificationIds).toEqual(["44444444-4444-4444-8444-444444444449"]);
+  });
+
+  test("a reused row that already went out is reported and not dispatched again", async () => {
+    // صف مُرسَل لا يحتاج تصريفاً جديداً — إعادة الحجز للمعلّق فقط.
+    priorDeliveries.mockResolvedValue({
+      data: [{ id: "44444444-4444-4444-8444-444444444449", state: "sent" }],
+      error: null,
+    });
+
+    const result = await sendCompanyInformation(
+      TENANT_ID,
+      COMPANY_ID,
+      choice({ channels: ["email"] }),
+      JOB_REQUEST_ID,
+    );
+
+    expect(inserted).toHaveLength(0);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(result.notificationIds).toEqual(["44444444-4444-4444-8444-444444444449"]);
+  });
+
+  test("the pick policy of the report handler decides which row is reused (GR-009)", async () => {
+    // صف أحدث فاشل لا يحجب صفّاً أقدم معلّقاً — نفس سياسة `pickExistingDelivery`
+    // التي يعيد بها معالج التقارير.
+    priorDeliveries.mockResolvedValue({
+      data: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          state: "failed",
+          created_at: "2026-08-02T00:00:00.000Z",
+        },
+        {
+          id: "44444444-4444-4444-8444-444444444449",
+          state: "queued",
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await sendCompanyInformation(
+      TENANT_ID,
+      COMPANY_ID,
+      choice({ channels: ["email"] }),
+      JOB_REQUEST_ID,
+    );
+
+    expect(result.notificationIds).toEqual(["44444444-4444-4444-8444-444444444449"]);
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: "44444444-4444-4444-8444-444444444449" },
+      _dedupe_key: "notification.dispatch:44444444-4444-4444-8444-444444444449",
+      _requested_by: null,
+    });
+  });
+
+  test("a racing insert refused by the delivery index reuses the row and queues no second copy", async () => {
+    // عاملان على نفس المهمة يمرّان معاً من الفحص السريع؛ الفهرس الفريد
+    // (миغرة 312) هو الضمانة: إدراج الثاني يرتكب 23505، فيعيد صف الأول — بلا
+    // صف ثانٍ. الصف المعلّق يُعاد حجز تصريفه بالمفتاح نفسه (GR-003)، فالصندوق
+    // يطوي الحجزين على مهمة واحدة والفايز يملك التسليم.
+    notifyInsertSingle.mockResolvedValue({
+      data: null,
+      error: { code: "23505", message: "duplicate key value violates unique constraint" },
+    });
+    priorDeliveries.mockResolvedValueOnce({ data: [], error: null }).mockResolvedValueOnce({
+      data: [
+        {
+          id: "44444444-4444-4444-8444-444444444449",
+          state: "queued",
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await sendCompanyInformation(
+      TENANT_ID,
+      COMPANY_ID,
+      choice({ channels: ["email"] }),
+      JOB_REQUEST_ID,
+    );
+
+    expect(result.notificationIds).toEqual(["44444444-4444-4444-8444-444444444449"]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: "44444444-4444-4444-8444-444444444449" },
+      _dedupe_key: "notification.dispatch:44444444-4444-4444-8444-444444444449",
+      _requested_by: null,
+    });
+  });
+
+  test("a non-duplicate insert error still throws instead of hiding behind a lookup", async () => {
+    // 23505 وحده هو تصادم المفتاح؛ أي خطأ آخر يجب أن يُرمى كما هو.
+    notifyInsertSingle.mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "permission denied" },
+    });
+
+    await expect(
+      sendCompanyInformation(
+        TENANT_ID,
+        COMPANY_ID,
+        choice({ channels: ["email"] }),
+        JOB_REQUEST_ID,
+      ),
+    ).rejects.toThrow("permission denied");
+    expect(rpc).not.toHaveBeenCalled();
+  });
 });
 
 describe("the company.info.send handler", () => {

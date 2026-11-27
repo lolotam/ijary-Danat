@@ -58,6 +58,16 @@ export interface JobHandlerContext {
 /** معالج نوع مهمة واحدة؛ نتيجته تُخزَّن في `job_requests.result`. */
 export type JobHandler = (ctx: JobHandlerContext) => Promise<unknown>;
 
+/** عدّادات نتيجة بعض المعالجين (الأعمال الضخمة) التي تحملها جسم الإشعار. */
+export type JobNoticeCounts = {
+  /** عدد السجلات التي أُنشئت فعلاً. */
+  created?: number;
+  /** عدد العناصر التي كان لا عمل لها. */
+  skipped?: number;
+  /** عدد العناصر التي فشلت. */
+  failed?: number;
+};
+
 /** إشعار يصل لصاحب الطلب عند انتهاء مهمة يطلب نوعها إشعاراً. */
 export interface JobNotice {
   companyId: string;
@@ -65,6 +75,12 @@ export interface JobNotice {
   jobRequestId: string;
   kind: string;
   level: "success" | "error";
+  /**
+   * عدّادات النتيجة إن حملتها؛ وغيابها يعني إشعاراً بلا جسم كما كان.
+   *
+   * Failure notices carry no body, and neither do results without counts.
+   */
+  body?: JobNoticeCounts;
 }
 
 /** دالة تختار معالج نوع المهمة؛ نوع بلا معالج هو فشل دائم لا تأخير. */
@@ -154,7 +170,10 @@ export function createRunJob(ports: RunJobPorts, handlerFor: HandlerLookup): Pro
     // written must leave the row retryable, or the requester never learns how
     // the job ended. The notice write is idempotent, so the retry writes one
     // notice and not two.
-    await writeRequesterNotice(ports, row, spec.notice, "success");
+    await writeRequesterNotice(ports, row, spec.notice, {
+      level: "success",
+      counts: noticeCountsFrom(outcome.result),
+    });
     await ports.markSucceeded(ref, outcome.result);
   };
 }
@@ -215,7 +234,7 @@ async function failJob(
   message: string,
 ): Promise<void> {
   await ports.markFailed(refOf(row), message);
-  await writeRequesterNotice(ports, row, spec.notice, "error");
+  await writeRequesterNotice(ports, row, spec.notice, { level: "error" });
 }
 
 /**
@@ -240,17 +259,24 @@ async function callHandler(
   }
 }
 
+/** ما يحمله إشعار صاحب الطلب: مستوى النهاية وعدّادات النتيجة إن وُجدت. */
+type NoticeContent = {
+  level: JobNotice["level"];
+  counts?: JobNoticeCounts;
+};
+
 /**
  * يكتب إشعاراً لصاحب الطلب عندما يطلب نوع المهمة إشعاراً وله مستلم.
  *
  * The "platform" notice target writes no user notice here: platform notices
- * are raised by their own job later.
+ * are raised by their own job later. Only a success notice carries the
+ * result's counts; a failure notice reads as it always did.
  */
 async function writeRequesterNotice(
   ports: RunJobPorts,
   row: JobRequestRow,
   noticeTarget: NoticeTarget,
-  level: JobNotice["level"],
+  content: NoticeContent,
 ): Promise<void> {
   if (noticeTarget !== "requester") return;
   if (!row.requestedBy) return;
@@ -259,8 +285,33 @@ async function writeRequesterNotice(
     userId: row.requestedBy,
     jobRequestId: row.id,
     kind: row.kind,
-    level,
+    level: content.level,
+    ...(content.counts === undefined ? {} : { body: content.counts }),
   });
+}
+
+/**
+ * يستخرج العدّادات الرقمية (أي مجموعة منها) من كائن مجهول، أو لا شيء إن لم يحمل عدّادات.
+ *
+ * The writer side reads it on the handler result — `BulkRunResult` in
+ * `jobs/handlers/bulkChunks.ts` carries created/skipped/failed beside error
+ * texts, and only the numbers belong in the notice body — while the bell runs
+ * the same narrowing on the jsonb body of a stored row. A value that carries
+ * no numeric count keeps the notice body empty.
+ */
+export function noticeCountsFrom(value: unknown): JobNoticeCounts | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const fields = value as Record<string, unknown>;
+  const counts: JobNoticeCounts = {};
+  if (isCount(fields.created)) counts.created = fields.created;
+  if (isCount(fields.skipped)) counts.skipped = fields.skipped;
+  if (isCount(fields.failed)) counts.failed = fields.failed;
+  return Object.keys(counts).length > 0 ? counts : undefined;
+}
+
+/** هل القيمة عدّاد: عدد حقيقي نهائي؟ */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 /**

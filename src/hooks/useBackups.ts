@@ -25,41 +25,10 @@ export type BackupRecord = {
   table_count: number;
   row_count: number;
   kind: BackupKind;
-  period_key: string | null; // مفتاح الفترة — يُضبط للنسخ التلقائية فقط (§7.2)
+  period_key: string | null; // مفتاح الفترة: للنسخ التلقائية، ومفتاح المهمة للنسخ المرتبطة بمهمة
   note: string | null;
   created_by: string | null;
   created_at: string;
-};
-
-/**
- * تقرير صف واحد من الجداول المستعادة.
- *
- * `nulled` counts rows where a nullable auth-FK column was set to null
- * instead of the row being skipped — the schema's on-delete semantics
- * demanded null, not deletion, so the business row is kept (§6.3).
- */
-export type RestoreTableRow = {
-  name: string;
-  deleted: number;
-  inserted: number;
-  skipped: number;
-  nulled: number;
-};
-
-/**
- * تقرير الاستعادة الكامل كما يعود من الخادم (§6.7).
- *
- * `skipped_by_table` replaces the old `skipped_profiles`: rev 1 skipped any
- * row with a FK to auth.users, which would have deleted payments and expenses
- * whose recording staff member no longer exists. Rev 2 handles each FK per
- * its actual on-delete behaviour, so the count is now per-table rather than
- * per-concept.
- */
-export type RestoreReport = {
-  tables: RestoreTableRow[];
-  skipped_by_table: Record<string, number>;
-  orphan_logins: number;
-  restored_at: string;
 };
 
 /**
@@ -120,15 +89,18 @@ export function useBackupList() {
 }
 
 /**
- * يُنشئ نسخة احتياطية يدوية ويُبطل قائمة النسخ عند النجاح.
+ * يحجز إنشاء نسخة احتياطية يدوية في العامل ويُبطل القائمة عند الحجز.
+ *
+ * The archive is created out of the request now (`company.export`): the
+ * mutation resolves as soon as the job is queued, and the backup appears in
+ * the list once the worker finishes.
  */
 export function useCreateBackup() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (note?: string): Promise<BackupRecord> => {
-      const result = await createBackup({ data: { note } });
-      return result.record as BackupRecord;
+    mutationFn: async (): Promise<{ queued: true; jobRequestId: string }> => {
+      return await createBackup();
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: BACKUPS_QUERY_KEY });
@@ -174,28 +146,24 @@ export function useRestorePreflight(id: string | null) {
 }
 
 /**
- * يستعيد قاعدة البيانات من نسخة احتياطية محددة ويُبطل كامل ذاكرة التخزين
- * المؤقت عند النجاح.
+ * يحجز استعادة قاعدة البيانات من نسخة احتياطية محددة في العامل.
  *
  * The `confirm: "RESTORE"` token is enforced server-side in addition to the
  * typed-confirmation UI — a double gate so an accidental programmatic call
- * cannot bypass the dialog.
+ * cannot bypass the dialog. The restore itself runs out of the request now
+ * (`company.restore`), so the mutation resolves when the job is queued and
+ * the outcome arrives as the platform's notice.
  *
- * Full cache invalidation (no filter) is intentional: a restore replaces every
- * row in the database, so every cached query — contracts, invoices, tenants,
- * dashboards — is stale the instant it returns. Scoped invalidation would show
- * the admin pre-restore data and make the restore look like it did nothing.
+ * Full cache invalidation (no filter) is kept on purpose: the queued restore
+ * replaces every row in the database, and every cached query is stale from
+ * the moment it lands.
  */
 export function useRestoreBackup() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (id: string): Promise<{ report: RestoreReport; safetyBackupId: string }> => {
-      const result = await restoreBackup({ data: { id, confirm: "RESTORE" } });
-      return {
-        report: result.report as RestoreReport,
-        safetyBackupId: result.safetyBackupId as string,
-      };
+    mutationFn: async (id: string): Promise<{ queued: true; jobRequestId: string }> => {
+      return await restoreBackup({ data: { id, confirm: "RESTORE" } });
     },
     onSuccess: () => {
       // A restore replaces every row in the database. Every cached query is

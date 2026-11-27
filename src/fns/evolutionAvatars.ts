@@ -3,12 +3,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { companyClient } from "@/company/companyClient.server";
 import { getRequestCompany, requireRequestCompany } from "@/company/requestCompany.server";
 import { loadEvolutionProviderConfig } from "@/fns/evolutionSession";
+import { loadOpenEvolutionConnection } from "@/fns/evolutionHistorySync";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { enqueueJob } from "@/jobs/enqueue";
+import type { QueuedSyncJob } from "@/jobs/handlers/sync";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import type { EvolutionClient } from "@/lib/evolution/client";
 import { maskJid } from "@/lib/evolution/client";
 import { isAvatarUrlExpired } from "@/lib/whatsappAvatar";
 import { requirePermission } from "@/fns/requirePermission";
+import { companyMoment } from "@/worker/scheduler";
 
 /**
  * مزامنة صور الملفات الشخصية لواتساب من Evolution إلى الصندوق.
@@ -285,22 +289,64 @@ export interface EvolutionAvatarSyncResult {
 /**
  * يمشّط كل المحادثات وجهات الاتصال ويحدّث صور الملفات الشخصية.
  *
+ * Moved out of the server function when the sweep became the
+ * `whatsapp.avatars.sync` job: one implementation, driven by the job handler
+ * (`move, not copy`).
+ *
  * Refreshes numbers that already have a picture too, rather than only filling
  * blanks: WhatsApp's CDN URLs expire, so a stored link goes dead on its own
  * and a row that "has" a picture can still be showing initials.
  *
- * A directory larger than one run's ceiling is walked across clicks by the
+ * A directory larger than one run's ceiling is walked across runs by the
  * `after` cursor — the caller passes back the `nextCursor` it was handed, and
  * the run resumes past it. Without that, every run re-checks the same head of
- * the list and the tail is never reached.
+ * the list and the tail is never reached. The job handler is that caller.
+ */
+export async function runEvolutionAvatarSweep(input: {
+  companyId: string;
+  connectionId: string;
+  after: string | null;
+}): Promise<EvolutionAvatarSyncResult> {
+  const { companyId, connectionId, after } = input;
+  const db = companyClient(companyId);
+  const { instanceName } = await loadOpenEvolutionConnection(db, connectionId);
+  const client = evolutionClientFromConfig((await loadEvolutionProviderConfig(companyId)).config);
+
+  const numbers = (await numbersToSweep(companyId)).filter((number) => !after || number > after);
+
+  const deadline = Date.now() + BUDGET_MS;
+  let checked = 0;
+  let updated = 0;
+  let cursor: string | null = after;
+  for (const number of numbers) {
+    if (checked >= NUMBERS_PER_RUN || Date.now() > deadline) {
+      return { checked, updated, complete: false, nextCursor: cursor };
+    }
+    checked += 1;
+    cursor = number;
+    try {
+      if (await syncOne(companyId, client, instanceName, number)) updated += 1;
+    } catch (error) {
+      // One unreachable number must not abandon the rest of the directory.
+      console.error("[evolutionAvatars] lookup failed for", maskJid(number), describeError(error));
+    }
+  }
+  return { checked, updated, complete: true, nextCursor: null };
+}
+
+/**
+ * يحجز مهمة مزامنة صور الملفات الشخصية خارج الطلب: يتحقق من الصلاحية ومن
+ * الجلسة، ثم يسجّل مهمة `whatsapp.avatars.sync` ويعيد معرّفها.
+ *
+ * The cursor the dialog used to pass between clicks is gone with the request:
+ * the worker job walks the whole directory itself, pass by pass, and files one
+ * job per connection per day (contracts/jobs.md section 5: dedupe connection
+ * id + day). The click keeps its fail-fast session read so a closed session is
+ * refused on screen.
  */
 export const syncEvolutionAvatars = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((input: unknown): { after?: string } => {
-    const after = (input as { after?: unknown } | null)?.after;
-    return typeof after === "string" && after ? { after } : {};
-  })
-  .handler(async ({ context, data }): Promise<EvolutionAvatarSyncResult> => {
+  .handler(async ({ context }): Promise<QueuedSyncJob> => {
     await requirePermission(context, {
       code: "settings.integrations",
       attempted: "whatsapp.sync_avatars",
@@ -314,31 +360,15 @@ export const syncEvolutionAvatars = createServerFn({ method: "POST" })
         "No open WhatsApp session. Scan the QR code in Settings → Integrations first.",
       );
     }
-    const client = evolutionClientFromConfig((await loadEvolutionProviderConfig(companyId)).config);
 
-    const after = data.after ?? null;
-    const numbers = (await numbersToSweep(companyId)).filter((number) => !after || number > after);
+    const db = companyClient(companyId);
+    const day = companyMoment(new Date()).date;
+    const { jobId } = await enqueueJob(
+      db,
+      "whatsapp.avatars.sync",
+      { connectionId: companyId },
+      { dedupeKey: `whatsapp.avatars.sync:${companyId}:${day}` },
+    );
 
-    const deadline = Date.now() + BUDGET_MS;
-    let checked = 0;
-    let updated = 0;
-    let cursor: string | null = after;
-    for (const number of numbers) {
-      if (checked >= NUMBERS_PER_RUN || Date.now() > deadline) {
-        return { checked, updated, complete: false, nextCursor: cursor };
-      }
-      checked += 1;
-      cursor = number;
-      try {
-        if (await syncOne(companyId, client, instanceName, number)) updated += 1;
-      } catch (error) {
-        // One unreachable number must not abandon the rest of the directory.
-        console.error(
-          "[evolutionAvatars] lookup failed for",
-          maskJid(number),
-          describeError(error),
-        );
-      }
-    }
-    return { checked, updated, complete: true, nextCursor: null };
+    return { queued: true, jobRequestId: jobId };
   });

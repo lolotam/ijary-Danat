@@ -6,7 +6,7 @@ import { runWithRequestCompany } from "@/company/requestCompany.server";
 import { companyStoragePath } from "@/company/storagePath";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { templateAllowsChannel } from "@/fns/templateChannelPolicy";
-import type { Database, NotificationChannel } from "@/integrations/supabase/database.types";
+import type { Database, NotificationChannel, Tables } from "@/integrations/supabase/database.types";
 import type { Company } from "@/hooks/useCompany";
 import type { CompanyInfoChannel, JobPayload } from "@/jobs/catalog";
 import { notificationDispatchDedupeKey } from "@/jobs/catalog";
@@ -25,6 +25,8 @@ import {
 import { renderEmailDocument } from "@/lib/emailTemplates";
 import { tenantDisplayName } from "@/lib/tenantDisplayName";
 import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
+
+import { documentDeliveryKey, reuseExistingDocumentDelivery } from "./documentsDelivery";
 
 /** Private bucket holding server-generated company documents (migration 49). */
 const COMPANY_DOCUMENTS_BUCKET = "company-documents";
@@ -110,11 +112,24 @@ export interface CompanyInfoSendChoice {
  * The channels and the language come from the payload, so the job sends what
  * the staff member chose at request time. A channel the template forbids or the
  * renter has no contact for is dropped, exactly as the request used to drop it.
+ *
+ * Idempotent per job: each row is written under `delivery_key =
+ * <jobRequestId>:<channel>` — with migration 312's unique index as the
+ * guarantee and the delivery-key read before each insert as the fast path —
+ * and a run that finds the row an earlier attempt wrote reuses it and queues
+ * no second row. A reused row that is still `queued` gets its
+ * `notification.dispatch` job re-claimed under the row's own dedupe key
+ * (GR-003), so an attempt that died between the insert and its dispatch
+ * enqueue does not leave the row waiting for the daily drain. A failed row is
+ * retried by the drain, never by writing it again here — so a BullMQ retry
+ * cannot reach the renter twice, while a deliberate resend (a new job, new id)
+ * still sends.
  */
 export async function sendCompanyInformation(
   tenantId: string,
   companyId: string,
   choice: CompanyInfoSendChoice,
+  jobRequestId: string,
 ): Promise<{ notificationIds: string[] }> {
   const client = companyClient(companyId);
 
@@ -182,26 +197,28 @@ export async function sendCompanyInformation(
   for (const delivery of deliveries) {
     const { channel, recipient } = delivery;
 
-    const notificationId = await insertCompanyInfoRow(client, {
+    const deliveryKey = documentDeliveryKey(jobRequestId, channel);
+    // إعادة محاولة لنفس المهمة: التسليم سبق أن كُتب — بسياسة الاختيار نفسها
+    // التي يعيد بها معالج التقارير — فتُعاد صفوفه كما هي بلا صف ثانٍ، وتُعاد
+    // حجز مهمة إرساله إن كان لا يزال معلّقاً (GR-003).
+    const prior = await reuseExistingDocumentDelivery(client, deliveryKey);
+    if (prior) {
+      inserted.push(prior.id);
+      continue;
+    }
+
+    const row = await queueCompanyInfoDelivery(client, {
       attachmentPath: objectPath,
       body: channel === "email" ? emailBody : waBody,
       channel,
       companyId,
+      deliveryKey,
       locale,
       recipient,
       subject: channel === "email" ? emailSubject : null,
       tenantId: tenant.id,
     });
-    inserted.push(notificationId);
-    // The delivery is left to the notify worker: the row is written `queued`
-    // and the worker sends it, so a provider that is down cannot fail the
-    // request that asked for the document (contracts/jobs.md section 1).
-    await enqueueJob(
-      client,
-      "notification.dispatch",
-      { notificationId },
-      { dedupeKey: notificationDispatchDedupeKey(notificationId) },
-    );
+    inserted.push(row.id);
   }
 
   return { notificationIds: inserted };
@@ -243,6 +260,7 @@ interface CompanyInfoRow {
   body: string;
   channel: CompanyInfoChannel;
   companyId: string;
+  deliveryKey: string;
   locale: Locale;
   recipient: string;
   subject: string | null;
@@ -250,15 +268,24 @@ interface CompanyInfoRow {
 }
 
 /**
- * يُدرج صف إشعار من نوع `company_info` يحمل ملف PDF المرفق.
+ * يُدرج صف إشعار من نوع `company_info` يحمل ملف PDF المرفق، ويضع تسليمه في صندوق المهام.
  *
- * The row is written `queued`; the notify worker picks it up and delivers it,
- * which is also where the tenant's pause switch is honoured.
+ * The row is written `queued` under the job's delivery key and the delivery is
+ * left to the notify worker: the worker sends it and honours the tenant's
+ * pause switch, so a provider that is down cannot fail the request that asked
+ * for the document (contracts/jobs.md section 1).
+ *
+ * On a delivery-key collision — migration 312's unique index refusing a
+ * duplicate the fast-path read above did not see — the existing row is
+ * returned and no second row is written, exactly what `enqueueNotification`
+ * does on 23505: the winning run owns the delivery. The winner's own dispatch
+ * is re-claimed by the reuse path under the row's dedupe key (GR-003), so a
+ * winner that died before enqueueing still gets dispatched.
  */
-async function insertCompanyInfoRow(
+async function queueCompanyInfoDelivery(
   client: SupabaseClient<Database>,
   row: CompanyInfoRow,
-): Promise<string> {
+): Promise<Tables<"notifications">> {
   const insertResult = await client
     .from("notifications")
     .insert({
@@ -267,6 +294,7 @@ async function insertCompanyInfoRow(
       tenant_id: row.tenantId,
       type: "company_info",
       channel: row.channel,
+      delivery_key: row.deliveryKey,
       locale: row.locale,
       template_code: "company-info",
       subject: row.subject,
@@ -281,8 +309,22 @@ async function insertCompanyInfoRow(
     })
     .select("*")
     .single();
-  if (insertResult.error) throw new Error(insertResult.error.message);
-  return insertResult.data.id;
+  if (insertResult.error) {
+    if (insertResult.error.code === "23505") {
+      // الفائز يملك التسليم، لكن صفه قد يكون معلّقاً بلا مهمة إرسال —
+      // الاستعادة هنا تُعيد حجز تصريفه بالمفتاح نفسه (GR-003).
+      const existing = await reuseExistingDocumentDelivery(client, row.deliveryKey);
+      if (existing) return existing;
+    }
+    throw new Error(insertResult.error.message);
+  }
+  await enqueueJob(
+    client,
+    "notification.dispatch",
+    { notificationId: insertResult.data.id },
+    { dedupeKey: notificationDispatchDedupeKey(insertResult.data.id) },
+  );
+  return insertResult.data;
 }
 
 /**
@@ -297,7 +339,8 @@ export function createCompanyInfoSendHandler(): JobHandler {
     const { tenantId, channels, language } = ctx.payload as JobPayload<"company.info.send">;
     const result = await runWithRequestCompany(
       { id: ctx.companyId, slug: "", status: "active", host: "" },
-      () => sendCompanyInformation(tenantId, ctx.companyId, { channels, language }),
+      () =>
+        sendCompanyInformation(tenantId, ctx.companyId, { channels, language }, ctx.jobRequestId),
     );
     return { tenantId, channels, language, notificationIds: result.notificationIds };
   };

@@ -1,14 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { buildIngestRow } from "@/fns/evolutionWebhook";
 import { loadEvolutionProviderConfig } from "@/fns/evolutionSession";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { Json } from "@/integrations/supabase/database.types";
+import type { Database, Json } from "@/integrations/supabase/database.types";
+import { enqueueJob } from "@/jobs/enqueue";
+import type { QueuedSyncJob } from "@/jobs/handlers/sync";
 import { collectMessagePage, maskJid, remoteNumberFor } from "@/lib/evolution/client";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import { requirePermission, type PermissionContext } from "@/fns/requirePermission";
+import { companyMoment } from "@/worker/scheduler";
 
 /**
  * مزامنة تاريخ المحادثات من مخزن Evolution إلى صندوق واتساب.
@@ -16,9 +21,10 @@ import { requirePermission, type PermissionContext } from "@/fns/requirePermissi
  * Baileys pushes nothing for pre-pairing messages, so walking findChats /
  * findContacts / findMessages is the only backfill path. The sweep is bounded
  * (chat and page ceilings plus a wall-clock budget) and idempotent — the
- * ingest RPC dedupes on message_id — so the admin can click "Sync history"
- * repeatedly until `complete` is true. History rows carry count_unread: false;
- * a year of imported chats must not light the inbox badge.
+ * ingest RPC dedupes on message_id — so a retried job imports nothing twice
+ * and a truncated run (`complete: false`) is safe to repeat. History rows
+ * carry count_unread: false; a year of imported chats must not light the
+ * inbox badge.
  *
  * What Evolution does not hold cannot be synced: with the container's default
  * partial history, only the snapshot WhatsApp sent at pairing exists. Fuller
@@ -141,132 +147,181 @@ export interface EvolutionHistorySyncResult {
 }
 
 /**
+ * يقرأ جلسة واتساب المفتوحة للوصلة المطلوبة، أو يرفض إن لم تكن هناك جلسة.
+ *
+ * The connection is the per-company singleton of migration 179 (its row is
+ * `(company_id, id = 1)`), so `connectionId` is that connection's stable
+ * company-scoped id until `whatsapp_connections` (T160) replaces the singleton.
+ * Scoping the read by it is what makes another company's id find nothing.
+ */
+export async function loadOpenEvolutionConnection(
+  db: SupabaseClient<Database>,
+  connectionId: string,
+): Promise<{ instanceName: string }> {
+  const connection = await db
+    .from("evolution_connections")
+    .select("instance_name, last_connection_state")
+    .eq("company_id", connectionId)
+    .eq("id", 1)
+    .maybeSingle();
+  if (connection.error) throw new Error(connection.error.message);
+  if (!connection.data || connection.data.last_connection_state !== "open") {
+    throw new Error("No open WhatsApp session. Scan the QR code in Settings → Integrations first.");
+  }
+  return { instanceName: connection.data.instance_name };
+}
+
+/**
  * يمشّط محادثات Evolution ويستورد رسائلها التاريخية إلى صندوق الوارد.
+ *
+ * Moved out of the server function when the sweep became the
+ * `whatsapp.history.sync` job: one implementation, driven by the job handler
+ * (`move, not copy`).
+ */
+export async function runEvolutionHistorySweep(input: {
+  companyId: string;
+  connectionId: string;
+}): Promise<EvolutionHistorySyncResult> {
+  const { companyId, connectionId } = input;
+  const db = companyClient(companyId);
+
+  const { instanceName } = await loadOpenEvolutionConnection(db, connectionId);
+  const providerConfig = await loadEvolutionProviderConfig(companyId);
+  const client = evolutionClientFromConfig(providerConfig.config);
+  const deadline = Date.now() + BUDGET_MS;
+
+  const contactRecords = (await client.findContacts(instanceName)) as unknown[];
+  const contactsImported = Array.isArray(contactRecords)
+    ? await importContacts(db, contactRecords)
+    : 0;
+
+  const chatRecords = (await client.findChats(instanceName)) as unknown[];
+  const chats = (Array.isArray(chatRecords) ? chatRecords : [])
+    .map((record) => asRecord(record))
+    .filter((record): record is Rec => record !== null);
+
+  let chatsWalked = 0;
+  let chatsSkipped = 0;
+  let chatsAwaitingLid = 0;
+  let messagesImported = 0;
+  let truncated = false;
+
+  for (const chat of chats) {
+    const jid = chatJid(chat);
+    const isDirect = !!jid && jid.endsWith("@s.whatsapp.net") && jid !== "0@s.whatsapp.net";
+    const isLid = !!jid && jid.endsWith("@lid");
+    // Groups, newsletters and the WhatsApp system chat (0@) are out of scope
+    // — the inbox is 1:1 tenant conversations keyed by phone number.
+    if (!jid || (!isDirect && !isLid)) {
+      chatsSkipped += 1;
+      continue;
+    }
+    if (chatsWalked >= CHAT_LIMIT_PER_RUN || Date.now() > deadline) {
+      truncated = true;
+      break;
+    }
+
+    // LID chats resolve through message ids we already ingested live; a
+    // chat with no live message yet stays pending, not failed.
+    let firstPage: ReturnType<typeof collectMessagePage> | null = null;
+    let resolveLidNumber: ((lidJid: string) => string | null) | undefined;
+    if (isLid) {
+      firstPage = collectMessagePage(
+        await client.findMessages(instanceName, { remoteJid: jid, page: 1 }),
+      );
+      const knownIds = firstPage.records
+        .map((item) => asRecord(asRecord(item)?.key)?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      const phone = await lookupChatNumberByMessageIds(db, knownIds);
+      if (!phone) {
+        chatsAwaitingLid += 1;
+        console.warn(`[evolution-history] no live anchor yet for ${maskJid(jid)}`);
+        continue;
+      }
+      resolveLidNumber = () => phone;
+    }
+    chatsWalked += 1;
+
+    for (let page = 1; page <= PAGES_PER_CHAT; page += 1) {
+      if (Date.now() > deadline) {
+        truncated = true;
+        break;
+      }
+      const { records, totalPages } =
+        page === 1 && firstPage
+          ? firstPage
+          : collectMessagePage(await client.findMessages(instanceName, { remoteJid: jid, page }));
+      const rows = records
+        .map((item) => {
+          const record = asRecord(item);
+          return record ? buildIngestRow(record, { countUnread: false, resolveLidNumber }) : null;
+        })
+        .filter((row): row is Rec => row !== null);
+      if (rows.length) {
+        const ingest = await db.rpc("ingest_whatsapp_messages", {
+          p_rows: rows as unknown as Json,
+        });
+        if (ingest.error) throw new Error(ingest.error.message);
+        messagesImported += ingest.data ?? 0;
+      }
+      // Bare-array deployments return everything at once; envelope
+      // deployments terminate on `pages`, never on a short page.
+      if (totalPages === null || page >= totalPages) break;
+      if (page === PAGES_PER_CHAT) truncated = true;
+    }
+
+    // Evolution's chat record carries the WhatsApp profile picture URL —
+    // stamp it on the chat row the ingest just created/updated. The URL
+    // expires on WhatsApp's side; re-running the sweep refreshes it.
+    const avatar = chat.profilePicUrl;
+    if (typeof avatar === "string" && avatar) {
+      const phone = resolveLidNumber?.(jid) ?? remoteNumberFor(jid);
+      const update = await db
+        .from("whatsapp_chats")
+        .update({ avatar_url: avatar })
+        .eq("chat_number", phone);
+      if (update.error) throw new Error(update.error.message);
+    }
+  }
+
+  return {
+    chatsWalked,
+    chatsSkipped,
+    chatsAwaitingLid,
+    messagesImported,
+    contactsImported,
+    complete: !truncated,
+  };
+}
+
+/**
+ * يحجز مهمة مزامنة تاريخ المحادثات خارج الطلب: يتحقق من الصلاحية ومن الجلسة،
+ * ثم يسجّل مهمة `whatsapp.history.sync` ويعيد معرّفها.
+ *
+ * The sweep runs in the worker now (contracts/jobs.md section 1). The click
+ * keeps its fail-fast reads — a closed session is refused on screen instead of
+ * failing a minute later in a job nobody watches — and then queues one job per
+ * connection per day (contracts/jobs.md section 5: dedupe connection id + day).
+ * The job is idempotent on its own: the ingest RPC dedupes on message_id, so a
+ * retry imports nothing twice.
  */
 export const runEvolutionHistorySync = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<EvolutionHistorySyncResult> => {
+  .handler(async ({ context }): Promise<QueuedSyncJob> => {
     await assertCanManageIntegrations(context as never);
 
     const companyId = requireRequestCompany().id;
     const db = companyClient(companyId);
 
-    const connection = await db
-      .from("evolution_connections")
-      .select("instance_name, last_connection_state")
-      .eq("id", 1)
-      .maybeSingle();
-    if (connection.error) throw new Error(connection.error.message);
-    if (!connection.data || connection.data.last_connection_state !== "open") {
-      throw new Error(
-        "No open WhatsApp session. Scan the QR code in Settings → Integrations first.",
-      );
-    }
-    const instanceName = connection.data.instance_name;
-    const providerConfig = await loadEvolutionProviderConfig(companyId);
-    const client = evolutionClientFromConfig(providerConfig.config);
-    const deadline = Date.now() + BUDGET_MS;
+    await loadOpenEvolutionConnection(db, companyId);
 
-    const contactRecords = (await client.findContacts(instanceName)) as unknown[];
-    const contactsImported = Array.isArray(contactRecords)
-      ? await importContacts(db, contactRecords)
-      : 0;
+    const day = companyMoment(new Date()).date;
+    const { jobId } = await enqueueJob(
+      db,
+      "whatsapp.history.sync",
+      { connectionId: companyId },
+      { dedupeKey: `whatsapp.history.sync:${companyId}:${day}` },
+    );
 
-    const chatRecords = (await client.findChats(instanceName)) as unknown[];
-    const chats = (Array.isArray(chatRecords) ? chatRecords : [])
-      .map((record) => asRecord(record))
-      .filter((record): record is Rec => record !== null);
-
-    let chatsWalked = 0;
-    let chatsSkipped = 0;
-    let chatsAwaitingLid = 0;
-    let messagesImported = 0;
-    let truncated = false;
-
-    for (const chat of chats) {
-      const jid = chatJid(chat);
-      const isDirect = !!jid && jid.endsWith("@s.whatsapp.net") && jid !== "0@s.whatsapp.net";
-      const isLid = !!jid && jid.endsWith("@lid");
-      // Groups, newsletters and the WhatsApp system chat (0@) are out of scope
-      // — the inbox is 1:1 tenant conversations keyed by phone number.
-      if (!jid || (!isDirect && !isLid)) {
-        chatsSkipped += 1;
-        continue;
-      }
-      if (chatsWalked >= CHAT_LIMIT_PER_RUN || Date.now() > deadline) {
-        truncated = true;
-        break;
-      }
-
-      // LID chats resolve through message ids we already ingested live; a
-      // chat with no live message yet stays pending, not failed.
-      let firstPage: ReturnType<typeof collectMessagePage> | null = null;
-      let resolveLidNumber: ((lidJid: string) => string | null) | undefined;
-      if (isLid) {
-        firstPage = collectMessagePage(
-          await client.findMessages(instanceName, { remoteJid: jid, page: 1 }),
-        );
-        const knownIds = firstPage.records
-          .map((item) => asRecord(asRecord(item)?.key)?.id)
-          .filter((id): id is string => typeof id === "string" && id.length > 0);
-        const phone = await lookupChatNumberByMessageIds(db, knownIds);
-        if (!phone) {
-          chatsAwaitingLid += 1;
-          console.warn(`[evolution-history] no live anchor yet for ${maskJid(jid)}`);
-          continue;
-        }
-        resolveLidNumber = () => phone;
-      }
-      chatsWalked += 1;
-
-      for (let page = 1; page <= PAGES_PER_CHAT; page += 1) {
-        if (Date.now() > deadline) {
-          truncated = true;
-          break;
-        }
-        const { records, totalPages } =
-          page === 1 && firstPage
-            ? firstPage
-            : collectMessagePage(await client.findMessages(instanceName, { remoteJid: jid, page }));
-        const rows = records
-          .map((item) => {
-            const record = asRecord(item);
-            return record ? buildIngestRow(record, { countUnread: false, resolveLidNumber }) : null;
-          })
-          .filter((row): row is Rec => row !== null);
-        if (rows.length) {
-          const ingest = await db.rpc("ingest_whatsapp_messages", {
-            p_rows: rows as unknown as Json,
-          });
-          if (ingest.error) throw new Error(ingest.error.message);
-          messagesImported += ingest.data ?? 0;
-        }
-        // Bare-array deployments return everything at once; envelope
-        // deployments terminate on `pages`, never on a short page.
-        if (totalPages === null || page >= totalPages) break;
-        if (page === PAGES_PER_CHAT) truncated = true;
-      }
-
-      // Evolution's chat record carries the WhatsApp profile picture URL —
-      // stamp it on the chat row the ingest just created/updated. The URL
-      // expires on WhatsApp's side; re-running the sweep refreshes it.
-      const avatar = chat.profilePicUrl;
-      if (typeof avatar === "string" && avatar) {
-        const phone = resolveLidNumber?.(jid) ?? remoteNumberFor(jid);
-        const update = await db
-          .from("whatsapp_chats")
-          .update({ avatar_url: avatar })
-          .eq("chat_number", phone);
-        if (update.error) throw new Error(update.error.message);
-      }
-    }
-
-    return {
-      chatsWalked,
-      chatsSkipped,
-      chatsAwaitingLid,
-      messagesImported,
-      contactsImported,
-      complete: !truncated,
-    };
+    return { queued: true, jobRequestId: jobId };
   });

@@ -8,10 +8,28 @@ import type {
   Json,
   ReportFrequency,
   ReportKind,
+  Tables,
 } from "@/integrations/supabase/database.types";
 import type { JobPayload } from "@/jobs/catalog";
 import { attachmentPayload, renderAndStorePdf } from "@/lib/reportPdfAttachment";
 import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
+
+import {
+  documentDeliveryKey,
+  findDocumentDeliveries,
+  findExistingDocumentDelivery,
+} from "./documentsDelivery";
+
+/**
+ * مفتاح تسليم صف تقرير: معرّف المهمة ثم قناة البريد — قناة التقرير الوحيدة.
+ *
+ * The handler checks this key before it sends and the two record functions
+ * write it on their rows, so a retry of one `report.run` job finds the row the
+ * earlier attempt wrote instead of sending the same report again.
+ */
+function reportDeliveryKey(jobRequestId: string): string {
+  return documentDeliveryKey(jobRequestId, "email");
+}
 
 /**
  * يستخرج عناوين البريد الصالحة من حقل المستلمين في الجدول الزمني.
@@ -61,11 +79,18 @@ async function buildReportSnapshot(
  *
  * The work moved out of the request so the browser does not wait for a report
  * snapshot and a PDF render (contracts/jobs.md section 3).
+ *
+ * `jobRequestId` names the job whose run this is: its notification row is
+ * written under the job's delivery key, so the handler can recognise the row
+ * on a retry, and a run whose insert collides on that key reports the existing
+ * row and sends nothing. A caller outside the jobs pipeline — the legacy
+ * scheduled-reports job — has no job id and writes rows without the marker.
  */
 export async function runReportScheduleRecord(
   scheduleId: string,
   asOf: string | null = null,
   companyId?: string,
+  jobRequestId?: string,
 ) {
   const resolvedCompanyId = companyId ?? requireRequestCompany().id;
   const db = companyClient(resolvedCompanyId);
@@ -115,6 +140,7 @@ export async function runReportScheduleRecord(
       channel: "email",
       audience: "admin",
       locale: schedule.locale,
+      delivery_key: jobRequestId ? reportDeliveryKey(jobRequestId) : null,
       subject:
         schedule.locale === "ar"
           ? `${schedule.name_ar} — ${snapshot.period_start} / ${snapshot.period_end}`
@@ -133,7 +159,18 @@ export async function runReportScheduleRecord(
     })
     .select("*")
     .single();
-  if (notificationResult.error) throw new Error(notificationResult.error.message);
+  if (notificationResult.error) {
+    // 23505 alone means a colliding delivery key: another run of this job
+    // wrote the row first — migration 312's index is the guarantee. Report the
+    // existing row and send nothing: the winning run owns the dispatch and the
+    // bookkeeping below. Any other error must surface as itself.
+    const colliding =
+      jobRequestId && notificationResult.error.code === "23505"
+        ? await findExistingDocumentDelivery(db, reportDeliveryKey(jobRequestId))
+        : null;
+    if (colliding) return { generatedReport: generatedResult.data, notification: colliding };
+    throw new Error(notificationResult.error.message);
+  }
   const dispatched = await dispatchNotificationRecord(notificationResult.data.id);
   const now = new Date();
   const sent = dispatched.state === "sent";
@@ -170,12 +207,54 @@ export async function runReportScheduleRecord(
 }
 
 /**
+ * يعيد صف تسليم تقرير فاشل إلى الطابور ثم يصرّفه كما تصرّف مهمة التفريغ صفّاً فاشلاً.
+ *
+ * With `failed` inside migration 312's delivery index a retry can no longer
+ * write a fresh row under the same key, so the retry IS the delivery: the row
+ * is put back to `queued` exactly like the Notification Log's Retry button —
+ * clearing `failure_reason` and `error_code` so the partner code that parked
+ * it cannot judge the new attempt — then dispatched through
+ * `dispatchNotificationRecord`, the same call `runNotificationDrainJob`'s
+ * retry of a failed row makes.
+ *
+ * The `.eq("state", "failed")` guard means a row some other sender already
+ * re-queued is left alone: that sender owns this delivery, and dispatching it
+ * here as well would reach the renter twice.
+ */
+async function requeueFailedReportDelivery(
+  db: SupabaseClient<Database>,
+  row: Tables<"notifications">,
+  companyId: string,
+): Promise<Tables<"notifications">> {
+  const reset = await db
+    .from("notifications")
+    .update({ state: "queued", failure_reason: null, error_code: null })
+    .eq("id", row.id)
+    .eq("state", "failed")
+    .select("*")
+    .maybeSingle();
+  if (reset.error) throw new Error(reset.error.message);
+  if (!reset.data) return row;
+  return dispatchNotificationRecord(reset.data.id, { companyId });
+}
+
+/**
  * يعيد إرسال تقرير مولَّد سابقًا إلى مستلمي جدوله الزمني.
  *
  * The work moved out of the request with the rest of the report family: the
  * `report.run` job finds the stored report and sends it again.
+ *
+ * `jobRequestId` marks the row the same way `runReportScheduleRecord` does: a
+ * retry of one job collides on the key and sends nothing twice — a row the
+ * provider refused is re-queued and dispatched again, since `failed` sits
+ * inside the delivery index (migration 312) — and a resend the admin asked
+ * for is a new job with a new id that still goes out.
  */
-export async function resendGeneratedReportRecord(reportId: string, companyId?: string) {
+export async function resendGeneratedReportRecord(
+  reportId: string,
+  companyId?: string,
+  jobRequestId?: string,
+) {
   const resolvedCompanyId = companyId ?? requireRequestCompany().id;
   const db = companyClient(resolvedCompanyId);
 
@@ -198,46 +277,77 @@ export async function resendGeneratedReportRecord(reportId: string, companyId?: 
   );
   const locale = report.locale ?? schedule.locale;
 
-  // Reuses the stored document when this exact report was already printed,
-  // and renders when it was not — a report generated before migration 109 has
-  // no stored PDF, and a resend is exactly when someone is trying to get the
-  // attachment they did not receive the first time. `renderAndStorePdf` keys
-  // on the content, so the decision needs nothing from this call site.
-  const storedPdf = await renderAndStorePdf({
-    arabic: locale === "ar",
-    companyId: resolvedCompanyId,
-    discriminator: `${report.period_start ?? ""}_${report.period_end ?? ""}`,
-    html: report.html_content,
-    name: schedule.name_en ?? schedule.name_ar,
-    prefix: "scheduled-reports",
-  });
+  // A retry of one job must not write a second delivery row. With `failed`
+  // inside migration 312's index a fresh row under the same key is refused
+  // anyway, so the retry re-queues the row the failed attempt wrote and
+  // dispatches it — the notification drain's retry of a failed row, done here
+  // and now. A row already delivered or in flight is returned as it is: the
+  // winning run owns its dispatch and bookkeeping.
+  const prior = jobRequestId
+    ? await findExistingDocumentDelivery(db, reportDeliveryKey(jobRequestId))
+    : null;
+  if (prior && prior.state !== "failed") {
+    return prior;
+  }
 
-  const notificationResult = await db
-    .from("notifications")
-    .insert({
-      company_id: resolvedCompanyId,
-      report_schedule_id: schedule.id,
-      type: "scheduled_report",
-      audience: "admin",
-      channel: "email",
-      locale,
-      subject: `${locale === "ar" ? schedule.name_ar : (schedule.name_en ?? schedule.name_ar)} — ${report.period_start ?? ""} / ${report.period_end ?? ""}`,
-      body: report.html_content,
-      // Same join as runReportSchedule: the log column is one text field,
-      // and leaving it null made a resend worse than the original one-address
-      // blind spot.
-      recipient_address: emails.join(", "),
-      payload: {
-        generated_report_id: report.id,
-        recipients: emails,
-        ...attachmentPayload(storedPdf),
-      },
-      scheduled_at: new Date().toISOString(),
-    })
-    .select("*")
-    .single();
-  if (notificationResult.error) throw new Error(notificationResult.error.message);
-  const dispatched = await dispatchNotificationRecord(notificationResult.data.id);
+  let dispatched: Tables<"notifications">;
+  if (prior) {
+    dispatched = await requeueFailedReportDelivery(db, prior, resolvedCompanyId);
+  } else {
+    // Reuses the stored document when this exact report was already printed,
+    // and renders when it was not — a report generated before migration 109 has
+    // no stored PDF, and a resend is exactly when someone is trying to get the
+    // attachment they did not receive the first time. `renderAndStorePdf` keys
+    // on the content, so the decision needs nothing from this call site. A
+    // re-queued row keeps its original payload — attachments included — so no
+    // render runs for it.
+    const storedPdf = await renderAndStorePdf({
+      arabic: locale === "ar",
+      companyId: resolvedCompanyId,
+      discriminator: `${report.period_start ?? ""}_${report.period_end ?? ""}`,
+      html: report.html_content,
+      name: schedule.name_en ?? schedule.name_ar,
+      prefix: "scheduled-reports",
+    });
+
+    const notificationResult = await db
+      .from("notifications")
+      .insert({
+        company_id: resolvedCompanyId,
+        report_schedule_id: schedule.id,
+        type: "scheduled_report",
+        audience: "admin",
+        channel: "email",
+        locale,
+        delivery_key: jobRequestId ? reportDeliveryKey(jobRequestId) : null,
+        subject: `${locale === "ar" ? schedule.name_ar : (schedule.name_en ?? schedule.name_ar)} — ${report.period_start ?? ""} / ${report.period_end ?? ""}`,
+        body: report.html_content,
+        // Same join as runReportSchedule: the log column is one text field,
+        // and leaving it null made a resend worse than the original one-address
+        // blind spot.
+        recipient_address: emails.join(", "),
+        payload: {
+          generated_report_id: report.id,
+          recipients: emails,
+          ...attachmentPayload(storedPdf),
+        },
+        scheduled_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+    if (notificationResult.error) {
+      // 23505 alone means a colliding delivery key: a racing run of this job
+      // inserted between the read above and this write. Its row is the
+      // delivery — report it and send nothing. Any other error must surface.
+      const colliding =
+        jobRequestId && notificationResult.error.code === "23505"
+          ? await findExistingDocumentDelivery(db, reportDeliveryKey(jobRequestId))
+          : null;
+      if (colliding) return colliding;
+      throw new Error(notificationResult.error.message);
+    }
+    dispatched = await dispatchNotificationRecord(notificationResult.data.id);
+  }
   const sent = dispatched.state === "sent";
   const reportUpdate = await db
     .from("generated_reports")
@@ -290,6 +400,14 @@ async function findGeneratedReport(
  * the admin asked for that report again, so it is sent again as it was; no
  * stored report means the schedule runs and produces a new one.
  *
+ * A retry of the same job is not that ask: the delivery key the job's rows
+ * carry is the marker, and a run that finds a delivered (or still queued) row
+ * under its key sends nothing again. A row the provider refused is no marker —
+ * the retry is what delivers the report — so the resend re-queues that very
+ * row and dispatches it again: with `failed` inside the delivery index
+ * (migration 312) a fresh row under the same key is refused anyway, and one
+ * delivery row per job and channel is what stays on the log.
+ *
  * The dispatch runs inside the job's own company context because the schedule,
  * its recipients and its template are read through the request company, and a
  * background job has no request.
@@ -301,12 +419,26 @@ export function createReportRunHandler(): JobHandler {
       { id: ctx.companyId, slug: "", status: "active", host: "" },
       async () => {
         const db = companyClient(ctx.companyId);
+        const priorRows = await findDocumentDeliveries(db, reportDeliveryKey(ctx.jobRequestId));
+        const delivered = priorRows.find((row) => row.state !== "failed");
+        if (delivered) {
+          return { skipped: true, notificationId: delivered.id };
+        }
         const stored = await findGeneratedReport(db, scheduleId, date);
         if (stored) {
-          const notification = await resendGeneratedReportRecord(stored.id, ctx.companyId);
+          const notification = await resendGeneratedReportRecord(
+            stored.id,
+            ctx.companyId,
+            ctx.jobRequestId,
+          );
           return { resent: true, notification };
         }
-        const report = await runReportScheduleRecord(scheduleId, date, ctx.companyId);
+        const report = await runReportScheduleRecord(
+          scheduleId,
+          date,
+          ctx.companyId,
+          ctx.jobRequestId,
+        );
         return { resent: false, ...report };
       },
     );

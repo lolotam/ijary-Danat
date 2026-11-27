@@ -1,14 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@tanstack/react-start", () => ({
-  createServerFn: vi.fn().mockReturnValue({
-    middleware: vi.fn().mockReturnThis(),
-    validator: vi.fn().mockReturnThis(),
-    handler: vi.fn().mockReturnThis(),
-  }),
-  createMiddleware: vi.fn().mockReturnValue({ server: vi.fn() }),
-}));
+import { JOB_CATALOG } from "@/jobs/catalog";
+
+vi.mock("@tanstack/react-start", () => {
+  // A FRESH object per createServerFn() call, so the avatar sweep's function
+  // and the enqueuing server function never share one `_handler`.
+  function makeFn() {
+    const fn: any = (data?: unknown) => fn._handler({ data, context: fn._context });
+    fn._context = {
+      userId: "admin-user",
+      supabase: { rpc: async () => ({ data: true, error: null }) },
+    };
+    fn.middleware = vi.fn().mockReturnValue(fn);
+    fn.validator = vi.fn().mockReturnValue(fn);
+    fn.inputValidator = vi.fn().mockReturnValue(fn);
+    fn.handler = vi.fn().mockImplementation((h: any) => {
+      fn._handler = h;
+      return fn;
+    });
+    return fn;
+  }
+  return {
+    createServerFn: vi.fn().mockImplementation(() => makeFn()),
+    createMiddleware: vi.fn().mockReturnValue({ server: vi.fn() }),
+  };
+});
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
+
+// The module now derives the dedupe day from the worker's company-moment
+// helper, which builds the service-role client at import time; the tests never
+// touch it, so the real client must never be built.
+vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 
 const db = {
   /** whatsapp_chats rows the fake PostgREST answers `in()` selects with. */
@@ -20,6 +42,8 @@ const db = {
     unknown
   > | null,
   updates: [] as { table: string; values: Record<string, unknown>; filter: string }[],
+  /** طلبات المهام المسجَّلة عبر `enqueue_job`. */
+  jobs: [] as { kind: string; payload: Record<string, unknown>; dedupeKey: string | null }[],
 };
 
 const TEST_COMPANY = {
@@ -63,13 +87,31 @@ vi.mock("@/company/companyClient.server", () => {
         return chain;
       },
       then: (onFulfilled: (value: unknown) => unknown) => {
-        if (values) db.updates.push({ table, values, filter });
-        return Promise.resolve({ data: null, error: null }).then(onFulfilled);
+        if (values) {
+          db.updates.push({ table, values, filter });
+          return Promise.resolve({ data: null, error: null }).then(onFulfilled);
+        }
+        const rows =
+          table === "whatsapp_chats" ? db.chats : table === "whatsapp_contacts" ? db.contacts : [];
+        return Promise.resolve({ data: rows, error: null }).then(onFulfilled);
       },
     });
     return chain;
   }
-  const client = { from: (table: string) => builder(table) };
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      if (name === "enqueue_job") {
+        db.jobs.push({
+          kind: String(args._kind),
+          payload: (args._payload ?? {}) as Record<string, unknown>,
+          dedupeKey: (args._dedupe_key as string | null) ?? null,
+        });
+        return { data: `job-${db.jobs.length}`, error: null };
+      }
+      return { data: null, error: null };
+    },
+  };
   return { companyClient: () => client };
 });
 
@@ -82,13 +124,15 @@ vi.mock("@/lib/providers/evolution", () => ({
   evolutionClientFromConfig: () => ({ fetchProfilePictureUrl }),
 }));
 
-const { backfillChatAvatars } = await import("./evolutionAvatars");
+const { backfillChatAvatars, runEvolutionAvatarSweep, syncEvolutionAvatars } =
+  await import("./evolutionAvatars");
 
 beforeEach(() => {
   db.chats = [];
   db.contacts = [];
   db.connection = { instance_name: "danat", last_connection_state: "open" };
   db.updates = [];
+  db.jobs = [];
   fetchProfilePictureUrl.mockReset();
 });
 
@@ -194,5 +238,74 @@ describe("backfillChatAvatars", () => {
     await backfillChatAvatars(["96551234567"]);
 
     expect(fetchProfilePictureUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("runEvolutionAvatarSweep", () => {
+  it("walks the numbers and stores their pictures", async () => {
+    db.chats = [
+      { chat_number: "96551234561", avatar_url: null },
+      { chat_number: "96551234562", avatar_url: null },
+    ];
+    fetchProfilePictureUrl.mockResolvedValue({ profilePictureUrl: "https://pps/x.jpg" });
+
+    const result = await runEvolutionAvatarSweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+      after: null,
+    });
+
+    expect(result).toMatchObject({ checked: 2, updated: 2, complete: true, nextCursor: null });
+    expect(db.updates.filter((entry) => entry.table === "whatsapp_chats")).toHaveLength(2);
+  });
+
+  it("resumes past the cursor instead of re-checking the head of the directory", async () => {
+    db.chats = [
+      { chat_number: "96551234561", avatar_url: null },
+      { chat_number: "96551234562", avatar_url: null },
+    ];
+    fetchProfilePictureUrl.mockResolvedValue({ profilePictureUrl: "https://pps/x.jpg" });
+
+    const result = await runEvolutionAvatarSweep({
+      companyId: TEST_COMPANY.id,
+      connectionId: TEST_COMPANY.id,
+      after: "96551234561",
+    });
+
+    expect(result.checked).toBe(1);
+    expect(fetchProfilePictureUrl).toHaveBeenCalledTimes(1);
+    expect(fetchProfilePictureUrl).toHaveBeenCalledWith("danat", "96551234562");
+  });
+});
+
+describe("syncEvolutionAvatars (the server function)", () => {
+  it("enqueues exactly one catalogue-valid whatsapp.avatars.sync job and sweeps nothing here", async () => {
+    db.chats = [{ chat_number: "96551234567", avatar_url: null }];
+    fetchProfilePictureUrl.mockResolvedValue({ profilePictureUrl: "https://pps/x.jpg" });
+
+    const result = await syncEvolutionAvatars({});
+
+    expect(result).toEqual({ queued: true, jobRequestId: "job-1" });
+    expect(db.jobs).toHaveLength(1);
+    expect(db.jobs[0].kind).toBe("whatsapp.avatars.sync");
+    expect(db.jobs[0].payload).toEqual({ connectionId: TEST_COMPANY.id });
+    expect(() =>
+      JOB_CATALOG["whatsapp.avatars.sync"].payload.parse(db.jobs[0].payload),
+    ).not.toThrow();
+    // Dedupe connection id + day (contracts/jobs.md section 5).
+    expect(db.jobs[0].dedupeKey).toMatch(
+      new RegExp(`^whatsapp\\.avatars\\.sync:${TEST_COMPANY.id}:\\d{4}-\\d{2}-\\d{2}$`),
+    );
+    // No slow work here: the gateway is never asked for a picture.
+    expect(fetchProfilePictureUrl).not.toHaveBeenCalled();
+    expect(db.updates).toEqual([]);
+  });
+
+  it("refuses the click when the session is closed, before anything is queued", async () => {
+    db.connection = { instance_name: "danat", last_connection_state: "close" };
+
+    await expect(syncEvolutionAvatars({})).rejects.toThrow(/scan the qr/i);
+
+    expect(db.jobs).toEqual([]);
   });
 });

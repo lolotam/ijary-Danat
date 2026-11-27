@@ -10,15 +10,15 @@ export function useGenerateInvoices() {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   return useMutation({
-    mutationFn: async (input: { contractId?: string | null; throughYear?: number | null }) => {
+    mutationFn: async (input: { year: number }) => {
       if (!permissions.can(PERMISSIONS.INVOICES_CREATE)) throw new Error("Permission denied.");
-      const rows = await generateInvoicesForCurrentSession(input);
+      const result = await generateInvoicesForCurrentSession(input);
       await logAuditForCurrentSession({
         action: "invoice.generate",
         entityType: "invoice_batch",
-        after: { input, generated: rows.length },
+        after: { input, job_request_id: result.jobRequestId },
       });
-      return rows;
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });

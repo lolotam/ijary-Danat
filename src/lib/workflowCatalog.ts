@@ -9,7 +9,7 @@ export type WorkflowCatalogEntry = {
   supportedTargets: WorkflowRecipientTarget[];
   /** Scheduled only — permission required for admin run-now. */
   runPermission?: PermissionCode;
-  /** Scheduled only — documents the deployed host crontab; not used for dispatch. */
+  /** Scheduled only — the worker's schedule in `src/worker/scheduler.ts`; not used for dispatch. */
   schedule?: string;
 };
 
@@ -17,7 +17,8 @@ export type WorkflowCatalogEntry = {
  * Single source of truth for built-in workflows. Inserting a cron_jobs row does
  * not wire a dispatcher — only keys present here (and in JOBS / a sender) run.
  *
- * `schedule` mirrors deploy/README.md crontab lines; change both together.
+ * `schedule` mirrors the `SCHEDULES` patterns in `src/worker/scheduler.ts`,
+ * which owns dispatch; change both together.
  */
 export const WORKFLOW_CATALOG: Record<string, WorkflowCatalogEntry> = {
   // --- scheduled (JOBS map in src/fns/cronJobs.ts) ---
@@ -55,7 +56,8 @@ export const WORKFLOW_CATALOG: Record<string, WorkflowCatalogEntry> = {
     kind: "scheduled",
     supportedTargets: ["admin", "company"],
     runPermission: "notifications.read",
-    // Every 10 minutes — inbox-facing; change host crontab in deploy/README.md together.
+    // Every 10 minutes — inbox-facing; `src/worker/scheduler.ts` owns the
+    // cadence now.
     schedule: "*/10 * * * *",
   },
   salaries: {

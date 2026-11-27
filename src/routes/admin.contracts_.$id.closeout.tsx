@@ -320,9 +320,6 @@ function CloseoutWizard() {
       const payload = (result.result ?? {}) as CloseoutResult;
       setSuccess(payload);
       toast.success(t("closeout.success"));
-      if (result.notificationWarning) {
-        toast.warning(t("closeout.notifyWarning"));
-      }
     } catch (error) {
       showError(t("closeout.submitError"), error);
     }

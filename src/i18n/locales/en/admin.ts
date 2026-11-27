@@ -142,6 +142,9 @@ export const admin: Record<string, string> = {
   "electricity.charges.generateConfirm":
     "Draft charges will be generated for the selected period and existing charges will be skipped. Continue?",
   "electricity.charges.generated": "Charges generated",
+  "electricity.charges.generateQueued": "Charge generation is queued.",
+  "electricity.charges.generateAlreadyRunning":
+    "Charge generation for this period is already running — it will not run twice.",
   "electricity.charges.export": "Export CSV",
   "electricity.charges.statusConfirmTitle": "Confirm charge status change",
   "electricity.charges.statusConfirm": "The charge status will change to",
@@ -400,8 +403,6 @@ export const admin: Record<string, string> = {
     "This preview uses the first matching tenant — it is not what all recipients will see.",
   "notifications.previewLocaleUnavailable":
     "No active template in this language — this preview cannot be sent.",
-  "notifications.bulkCapacityWarning":
-    "Warning: {count} recipients exceed drain capacity ({capacity} within {hours} hours). Rows still queued after that window are cancelled, not sent.",
   "admin.whatsappBanner.disconnected":
     "The WhatsApp session is disconnected — messages are not sent until the QR code is rescanned.",
   "admin.whatsappBanner.neverPaired": "The WhatsApp provider is enabled but no number is linked.",
@@ -416,6 +417,11 @@ export const admin: Record<string, string> = {
   "notices.badge": "Unread notices",
   "notices.level.success": "Done",
   "notices.level.error": "Failed",
+
+  // The counts line under a notice title: what the bulk job created, skipped and failed.
+  "notices.counts.created": "Created",
+  "notices.counts.skipped": "Skipped",
+  "notices.counts.failed": "Failed",
   "notices.notification.bulk.success": "Bulk notifications sent",
   "notices.notification.bulk.error": "Bulk notifications could not be sent",
   "notices.report.export.success": "Report exported",

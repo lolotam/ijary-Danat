@@ -19,6 +19,8 @@ import { stripMarkup } from "@/lib/templateRender";
 import { TENANT_PAUSED_REASON } from "@/lib/tenantNotificationsPaused";
 import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
 
+import { documentDeliveryKey, reuseExistingDocumentDelivery } from "./documentsDelivery";
+
 /** قنوات إرسال الفاتورة: البريد أو واتساب. */
 export type InvoiceSendChannel = "email" | "whatsapp";
 
@@ -33,9 +35,12 @@ export type InvoiceSendChannel = "email" | "whatsapp";
  * sheet); WhatsApp carries the text summary. When the invoice sheet renders to a
  * PDF, BOTH channels carry it as an attachment — the dispatcher downloads from
  * `attachment_bucket` and, under Evolution, sends it as a WhatsApp document;
- * under Meta/Twilio the key is ignored and the text still goes out. No
- * deliveryKey is set so an admin can re-send the same invoice as many times as
- * needed.
+ * under Meta/Twilio the key is ignored and the text still goes out. Each row is
+ * written under `delivery_key = <jobRequestId>:<channel>`, so a retry of the
+ * same job reuses the row the earlier attempt wrote and queues no second copy
+ * — re-claiming its `notification.dispatch` job when the row is still `queued`
+ * (GR-003) — while an admin's deliberate resend — a NEW job with a new id —
+ * still sends for as many times as they like.
  *
  * Under Evolution the WhatsApp row goes out as free text. Under Meta or Twilio
  * it only delivers once an approved provider template is mapped on the
@@ -52,6 +57,7 @@ export async function sendInvoiceDocument(
   invoiceId: string,
   channels: InvoiceSendChannel[],
   companyId: string,
+  jobRequestId: string,
 ): Promise<InvoiceSendOutcome> {
   const db = companyClient(companyId);
 
@@ -203,34 +209,43 @@ export async function sendInvoiceDocument(
       continue;
     }
 
-    const row = await enqueueNotification({
-      type: "document_send",
-      channel,
-      audience: "tenant",
-      companyId,
-      locale,
-      tenantId: tenant.id,
-      invoiceId: invoice.id,
-      subject: channel === "email" ? subject : null,
-      body: channel === "email" ? htmlBody : textBody,
-      recipientAddress: recipient,
-      templateCode,
-      // A WhatsApp template binds payload keys, so carry every value the
-      // summary names in case a provider mapping is added later.
-      payload: {
-        recipient,
-        template_key: "invoice_document",
-        invoice_code: invoice.code,
-        period,
-        total: formatKwd(invoice.total, locale),
-        due_date: invoice.due_date,
-        tenant_name: tenant.name,
-        ...attachments,
-        // Marks a text-only send on the row itself, so the Notification Log
-        // shows the missing PDF instead of it passing for a complete send.
-        ...(pdf ? {} : { attachment_missing: [invoice.code] }),
-      },
-    });
+    const deliveryKey = documentDeliveryKey(jobRequestId, channel);
+    // إعادة محاولة لنفس المهمة تجد صف التسليم الذي كتبته المحاولة السابقة —
+    // بسياسة الاختيار نفسها التي يعيد بها معالج التقارير — فتُبلغ عنه بدل أن
+    // تكتب صفّاً ثانياً، وتُعيد حجز تصريفه إن كان لا يزال معلّقاً بلا مهمة
+    // إرسال (GR-003). الإرسال نفسه يملكه عامل الإشعارات وتصريف الإشعارات — صف
+    // فاشل يُعاد هناك، لا من هنا.
+    const row =
+      (await reuseExistingDocumentDelivery(db, deliveryKey)) ??
+      (await enqueueNotification({
+        type: "document_send",
+        channel,
+        audience: "tenant",
+        companyId,
+        locale,
+        tenantId: tenant.id,
+        invoiceId: invoice.id,
+        subject: channel === "email" ? subject : null,
+        body: channel === "email" ? htmlBody : textBody,
+        recipientAddress: recipient,
+        templateCode,
+        deliveryKey,
+        // A WhatsApp template binds payload keys, so carry every value the
+        // summary names in case a provider mapping is added later.
+        payload: {
+          recipient,
+          template_key: "invoice_document",
+          invoice_code: invoice.code,
+          period,
+          total: formatKwd(invoice.total, locale),
+          due_date: invoice.due_date,
+          tenant_name: tenant.name,
+          ...attachments,
+          // Marks a text-only send on the row itself, so the Notification Log
+          // shows the missing PDF instead of it passing for a complete send.
+          ...(pdf ? {} : { attachment_missing: [invoice.code] }),
+        },
+      }));
     // A channel the admin ticked here is still refused when the template
     // excludes it or the tenant has no address — a dialog checkbox is
     // presentation, not a control. The allowed channels still go out, so
@@ -273,7 +288,7 @@ export function createInvoiceSendHandler(): JobHandler {
     const { invoiceId, channel } = ctx.payload as JobPayload<"invoice.send">;
     const outcome = await runWithRequestCompany(
       { id: ctx.companyId, slug: "", status: "active", host: "" },
-      () => sendInvoiceDocument(invoiceId, [channel], ctx.companyId),
+      () => sendInvoiceDocument(invoiceId, [channel], ctx.companyId, ctx.jobRequestId),
     );
     return { invoiceId, channel, ...outcome };
   };

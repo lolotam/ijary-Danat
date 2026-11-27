@@ -129,7 +129,17 @@ export const JOB_CATALOG = {
     z.object({ period: month }).strict(),
   ),
   "salaries.generate": spec("bulk", "employees", "none", z.object({ month }).strict()),
-  "company.export": spec("sync", null, "requester", z.object({ requestId: id }).strict()),
+  // `requestId` is optional because a scheduled run has no request behind it:
+  // the nightly fan-out files an empty payload, and the handler treats the
+  // field's absence as "the nightly backup", while a staff request always
+  // mints one (see `src/fns/backup.ts`). The request path is unchanged — its
+  // payload still carries the request id — so the optionality weakens nothing.
+  "company.export": spec(
+    "sync",
+    null,
+    "requester",
+    z.object({ requestId: id.optional() }).strict(),
+  ),
   "company.restore": spec("sync", null, "platform", z.object({ requestId: id }).strict()),
   "whatsapp.history.sync": spec(
     "sync",

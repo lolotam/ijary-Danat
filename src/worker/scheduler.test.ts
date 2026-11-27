@@ -180,6 +180,38 @@ describe("the scheduler's fan-out", () => {
     ]);
   });
 
+  test("the nightly export files one row per active, unpaused company with the day slot key", async () => {
+    const pausedCompanyIds = vi.fn().mockResolvedValue([COMPANY_B]);
+    const { db, rows } = fakeDatabase({
+      listCompanies: vi.fn().mockResolvedValue([
+        { id: COMPANY_A, status: "active" },
+        { id: COMPANY_B, status: "active" },
+        { id: SUSPENDED_COMPANY, status: "suspended" },
+      ]),
+      pausedCompanyIds,
+    });
+
+    const filed = await fanOut(scheduleFor("company.export"), db, FIRED_AT);
+
+    // The pause switch the fan-out reads is the backup workflow's own, so an
+    // admin who paused backups gets no nightly export.
+    expect(pausedCompanyIds).toHaveBeenCalledWith("backup");
+    expect(filed).toBe(1);
+    expect(rows).toEqual([
+      {
+        companyId: COMPANY_A,
+        kind: "company.export",
+        // A backup is a snapshot of the moment it runs, so the row carries no
+        // reference date — the day lives in the dedupe slot alone.
+        payload: {},
+        dedupeKey: `company.export__${COMPANY_A}__2026-11-28`,
+      },
+    ]);
+
+    await fanOut(scheduleFor("company.export"), db, FIRED_AT);
+    expect(rows).toHaveLength(1);
+  });
+
   test.each(SCHEDULES)(
     "the $kind row carries a payload the catalogue accepts",
     async (schedule) => {

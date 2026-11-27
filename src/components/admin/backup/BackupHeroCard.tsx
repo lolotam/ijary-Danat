@@ -5,7 +5,6 @@ import { DatabaseZap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/provider";
 import { formatBytes, type BackupRecord, useCreateBackup } from "@/hooks/useBackups";
 
@@ -74,22 +73,25 @@ function LastBackupSummary({ last }: { last: BackupRecord }) {
 
 /**
  * بطاقة «أنشئ نسخة احتياطية الآن»: زر كبير، وملاحظة عما تشمله النسخة وما لا تشمله،
- * وحقل ملاحظة اختياري، وملخص النسخة الأخيرة.
+ * وملخص النسخة الأخيرة.
  *
  * The content-exclusion note (no files, no passwords) is a product requirement,
  * not decoration — a user who believes their property images are in the backup
  * is being misled. It must be present and prominent.
+ *
+ * The backup is created by the worker now, so the button reports the job as
+ * queued; the note field that used to sit here is gone because the job payload
+ * carries ids only (contracts/jobs.md section 1) and a field the worker never
+ * sees must not be asked for.
  */
 export function BackupHeroCard({ latestBackup }: { latestBackup: BackupRecord | undefined }) {
   const { t } = useI18n();
   const createBackup = useCreateBackup();
-  const [note, setNote] = useState("");
 
   async function handleBackup() {
     try {
-      await createBackup.mutateAsync(note.trim() || undefined);
-      toast.success(t("settings.backup.hero.success"));
-      setNote("");
+      await createBackup.mutateAsync();
+      toast.success(t("settings.backup.hero.queued"));
     } catch (error) {
       toast.error(t("settings.backup.hero.error"), {
         description: error instanceof Error ? error.message : undefined,
@@ -127,14 +129,6 @@ export function BackupHeroCard({ latestBackup }: { latestBackup: BackupRecord | 
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
           {t("settings.backup.hero.contentNote")}
         </div>
-
-        {/* Optional note */}
-        <Input
-          placeholder={t("settings.backup.hero.notePlaceholder")}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          disabled={createBackup.isPending}
-        />
 
         <Button
           size="lg"

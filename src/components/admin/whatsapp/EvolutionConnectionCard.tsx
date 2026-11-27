@@ -37,10 +37,6 @@ export function EvolutionConnectionCard({ enabled, dateFormatter }: EvolutionCon
   const disconnect = useDisconnectEvolutionSession();
   const historySync = useRunEvolutionHistorySync();
   const avatarSync = useSyncEvolutionAvatars();
-  // Where the last partial avatar sweep stopped. Kept in component state, not
-  // the URL or the server: it is a convenience for the admin clicking twice in
-  // a row, and starting over from the top is a correct (just slower) outcome.
-  const [avatarCursor, setAvatarCursor] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [initialQr, setInitialQr] = useState<string | null>(null);
 
@@ -70,36 +66,24 @@ export function EvolutionConnectionCard({ enabled, dateFormatter }: EvolutionCon
 
   async function onHistorySync() {
     try {
-      const result = await historySync.mutateAsync();
-      const summary = `${result.messagesImported} ${t("settings.integrations.evolutionSyncMessages")}, ${result.contactsImported} ${t("settings.integrations.evolutionSyncContacts")}`;
-      if (result.complete)
-        toast.success(`${t("settings.integrations.evolutionSyncDone")} — ${summary}`);
-      else toast.message(`${t("settings.integrations.evolutionSyncPartial")} — ${summary}`);
-      if (result.chatsAwaitingLid > 0) {
-        toast.message(
-          `${result.chatsAwaitingLid} ${t("settings.integrations.evolutionSyncLidPending")}`,
-        );
-      }
+      await historySync.mutateAsync();
+      toast.success(t("settings.integrations.evolutionSyncQueued"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("common.error"));
     }
   }
 
   /**
-   * يشغّل مزامنة الصور ويعرض حصيلتها، ويحفظ موضع التوقف للنقرة التالية.
+   * يحجز مزامنة الصور في العامل ويؤكد ذلك للمستخدم.
    *
-   * The sweep is bounded server-side, so a large directory needs more than one
-   * click; carrying `nextCursor` back is what stops the second click from
-   * re-checking the same numbers the first one just did.
+   * The sweep runs in the background now (`whatsapp.avatars.sync`): the click
+   * queues the job and the worker walks the whole directory, so there is no
+   * per-click cursor to carry any more.
    */
   async function onAvatarSync() {
     try {
-      const result = await avatarSync.mutateAsync(avatarCursor);
-      const summary = `${result.updated}/${result.checked}`;
-      setAvatarCursor(result.nextCursor);
-      if (result.complete)
-        toast.success(`${t("settings.integrations.evolutionAvatarsDone")} — ${summary}`);
-      else toast.message(`${t("settings.integrations.evolutionSyncPartial")} — ${summary}`);
+      await avatarSync.mutateAsync();
+      toast.success(t("settings.integrations.evolutionSyncQueued"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("common.error"));
     }

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { JOB_CATALOG } from "@/jobs/catalog";
+
 vi.mock("@tanstack/react-start", () => {
   const fn: {
     (input: { data: unknown; context: unknown }): unknown;
@@ -26,6 +28,7 @@ vi.mock("@tanstack/react-start", () => {
 
 const from = vi.fn();
 const enqueue = vi.fn();
+const enqueueJobRpc = vi.fn();
 const buildFinalMessage = vi.fn();
 const writeAudit = vi.fn();
 
@@ -44,6 +47,7 @@ vi.mock("@/company/requestCompany.server", () => ({
 vi.mock("@/company/companyClient.server", () => ({
   companyClient: () => ({
     from: (...args: unknown[]) => from(...args),
+    rpc: (...args: unknown[]) => enqueueJobRpc(...args),
   }),
 }));
 
@@ -81,11 +85,10 @@ const context = {
 function callBulk(data: unknown) {
   return (
     sendBulkNotification as unknown as (a: { data: unknown; context: unknown }) => Promise<{
-      queued: number;
+      queued: true;
+      jobRequestId: string;
+      staged: number;
       skipped: Array<{ tenantId: string; reason: string }>;
-      drainCapacity: number;
-      exceedsDrainCapacity: boolean;
-      batchId: string;
     }>
   )({ data, context });
 }
@@ -116,6 +119,7 @@ function tenantRow(
 beforeEach(() => {
   vi.clearAllMocks();
   writeAudit.mockResolvedValue({ data: null, error: null });
+  enqueueJobRpc.mockResolvedValue({ data: "job-1", error: null });
   enqueue.mockImplementation(async (row: { tenantId?: string }) => ({
     id: `notif-${row.tenantId}`,
     state: "queued",
@@ -252,7 +256,7 @@ describe("estimatedDrainCapacityWithinStaleWindow", () => {
 });
 
 describe("sendBulkNotification", () => {
-  it("queues one notification per eligible tenant", async () => {
+  it("stages one notification per eligible tenant and enqueues exactly one fan-out job", async () => {
     const result = await callBulk({
       audience: "all",
       channel: "email",
@@ -260,8 +264,25 @@ describe("sendBulkNotification", () => {
       templateCode: "overdue-reminder-ar",
       respectRemindersEnabled: true,
     });
-    expect(result.queued).toBe(2);
+    expect(result.staged).toBe(2);
     expect(enqueue).toHaveBeenCalledTimes(2);
+
+    // The request does no bulk work beyond staging: one outbox row carries
+    // the batch id to the worker, which fans the rows out in chunks of 200.
+    const jobs = enqueueJobRpc.mock.calls.map(
+      (call) =>
+        call[1] as {
+          _kind: string;
+          _payload: { requestId: string };
+          _dedupe_key: string;
+        },
+    );
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]._kind).toBe("notification.bulk");
+    expect(() => JOB_CATALOG["notification.bulk"].payload.parse(jobs[0]._payload)).not.toThrow();
+    expect(jobs[0]._dedupe_key).toBe(`notification.bulk:${jobs[0]._payload.requestId}`);
+    expect(result.jobRequestId).toBe("job-1");
+    expect(result.queued).toBe(true);
   });
 
   it("skips tenants with reminders disabled by default", async () => {
@@ -350,7 +371,7 @@ describe("sendBulkNotification", () => {
       templateCode: "overdue-reminder-ar",
       respectRemindersEnabled: false,
     });
-    expect(result.queued).toBe(3);
+    expect(result.staged).toBe(3);
   });
 
   /**
@@ -484,16 +505,26 @@ describe("sendBulkNotification", () => {
     );
   });
 
-  it("reports drain capacity so the UI can warn", async () => {
-    const result = await callBulk({
+  it("reports the batch and its drain capacity to the audit trail", async () => {
+    // The capacity figures moved with the report: the dialog warns before
+    // sending from its own client-side estimate, and the batch's own record
+    // lives in the audit row the request writes.
+    await callBulk({
       audience: "all",
       channel: "email",
       locale: "ar",
       templateCode: "overdue-reminder-ar",
       respectRemindersEnabled: true,
     });
-    expect(result.drainCapacity).toBe(300);
-    expect(result.exceedsDrainCapacity).toBe(false);
-    expect(result.batchId).toBeTruthy();
+    expect(context.supabase.rpc).toHaveBeenCalledWith(
+      "write_audit",
+      expect.objectContaining({
+        p_after: expect.objectContaining({
+          batch_id: expect.any(String),
+          drain_capacity: 300,
+          exceeds_drain_capacity: false,
+        }),
+      }),
+    );
   });
 });

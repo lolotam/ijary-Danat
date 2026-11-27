@@ -282,6 +282,7 @@ export const contractBuilder: Record<string, string> = {
   "settings.integrations.evolutionSyncAvatars": "مزامنة الصور",
   "settings.integrations.evolutionAvatarsDone": "تمت مزامنة الصور",
   "settings.integrations.evolutionSyncDone": "اكتملت مزامنة سجل المحادثات.",
+  "settings.integrations.evolutionSyncQueued": "تم حجز المزامنة وستنفَّذ في الخلفية.",
   "settings.integrations.evolutionSyncPartial":
     "تمت مزامنة جزء من السجل — اضغط مزامنة السجل مرة أخرى للمتابعة.",
   "settings.integrations.evolutionSyncMessages": "رسالة",
@@ -388,6 +389,7 @@ export const contractBuilder: Record<string, string> = {
   "settings.backup.hero.backupNow": "أنشئ نسخة احتياطية الآن",
   "settings.backup.hero.backing": "جارٍ الإنشاء…",
   "settings.backup.hero.success": "تم إنشاء النسخة الاحتياطية بنجاح.",
+  "settings.backup.hero.queued": "تم حجز النسخة الاحتياطية وستُنشأ في الخلفية.",
   "settings.backup.hero.error": "تعذّر إنشاء النسخة الاحتياطية.",
   "settings.backup.auto.title": "النسخ الاحتياطي التلقائي",
   "settings.backup.auto.description": "يحتفظ النظام بأحدث ١٠ نسخ احتياطية.",
@@ -450,6 +452,9 @@ export const contractBuilder: Record<string, string> = {
   "settings.backup.restore.confirming": "جارٍ الاستعادة…",
   "settings.backup.restore.cancel": "إلغاء",
   "settings.backup.restore.success": "تمت الاستعادة بنجاح.",
+  "settings.backup.restore.queued": "تم حجز الاستعادة",
+  "settings.backup.restore.queuedHint":
+    "ستنفَّذ الاستعادة في الخلفية وتصلك نتيجة تقريرها في الإشعارات.",
   "settings.backup.restore.report": "تقرير الاستعادة",
   "settings.backup.restore.reportDeleted": "محذوفة",
   "settings.backup.restore.reportInserted": "مُدرجة",

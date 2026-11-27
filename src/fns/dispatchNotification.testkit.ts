@@ -17,13 +17,13 @@ export const db = {
   template: null as Record<string, unknown> | null,
   tenant: null as Record<string, unknown> | null,
   update: null as Record<string, unknown> | null,
-  /** evolution_connections singleton row (null = never paired). */
+  /** the company's active `evolution_qr` connection row (null = never paired). */
   connection: null as Record<string, unknown> | null,
   /** Attachment bytes served by the storage fake, keyed by object path. */
   attachments: {} as Record<string, { bytes: Uint8Array; type: string }>,
   /** Object paths written by the storage fake, in order. */
   uploads: [] as string[],
-  /** evolution_connections updates, in order. */
+  /** whatsapp_connections updates, in order. */
   connectionUpdates: [] as Record<string, unknown>[],
 };
 
@@ -65,8 +65,12 @@ export function companyClientModule() {
   function builder(table: string) {
     const chain: any = {
       _update: null,
+      _filters: [] as Array<[string, unknown]>,
       select: () => chain,
-      eq: () => chain,
+      eq: (column: string, value: unknown) => {
+        chain._filters.push([column, value]);
+        return chain;
+      },
       in: () => chain,
       // Pass-through like `eq`: the claim's lease condition
       // (`dispatch_claimed_at is null or … expired`) is exercised for real in
@@ -109,9 +113,17 @@ export function companyClientModule() {
             error: null,
           };
         }
-        if (table === "evolution_connections") {
+        if (table === "whatsapp_connections") {
           if (chain._update) db.connectionUpdates.push(chain._update);
-          return { data: db.connection, error: null };
+          // The row is only reachable through the filters the query wrote, so
+          // another company's connection stays invisible here too.
+          const row = db.connection;
+          const matched =
+            row &&
+            chain._filters.every(([column, value]: [string, unknown]) => row[column] === value)
+              ? row
+              : null;
+          return { data: matched, error: null };
         }
         throw new Error(`Unexpected table in test: ${table}`);
       },
@@ -250,7 +262,14 @@ export function resetDispatchFixtures() {
   vi.stubEnv("EVOLUTION_API_KEY", "evo-global-key");
 
   db.notification = notification();
-  db.connection = { instance_name: "danat", last_connection_state: "open" };
+  db.connection = {
+    id: "33333333-3333-4333-8333-333333333333",
+    company_id: TEST_COMPANY.id,
+    method: "evolution_qr",
+    is_active: true,
+    status: "connected",
+    instance_name: "danat",
+  };
   db.attachments = {};
   db.uploads = [];
   db.connectionUpdates = [];

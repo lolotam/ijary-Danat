@@ -1,22 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  beginEvolutionSession,
-  disconnectEvolutionSession,
-  getEvolutionQrStatus,
-} from "@/fns/evolutionSession";
 import { syncEvolutionAvatars } from "@/fns/evolutionAvatars";
 import { runEvolutionHistorySync } from "@/fns/evolutionHistorySync";
-import { WHATSAPP_SESSION_HEALTH_QUERY_KEY } from "@/hooks/useWhatsappSessionHealth";
 import { supabase } from "@/integrations/supabase/client";
+import type { WhatsappConnectionStatus } from "@/integrations/supabase/database.types";
 
 /**
- * حِزم React Query لجلسة واتساب QR (بطاقة الإعدادات وحوار المسح).
+ * حِزم React Query لحالة اتصال واتساب QR الخاص بالشركة.
  *
  * The status row is read straight from PostgREST with exactly the columns the
- * `authenticated` grant exposes (migration 179) — webhook_secret and last_qr
- * are absent from that grant on purpose, so the QR only ever travels through
- * the admin-gated server fn, and its query below is never cached (gcTime 0).
+ * `authenticated` grant exposes (migration 333) — `last_qr` is absent from
+ * that grant on purpose, so the pairing QR only ever travels through the
+ * admin-gated server function.
  */
 
 async function sessionHeaders(): Promise<Record<string, string>> {
@@ -27,19 +22,22 @@ async function sessionHeaders(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${session.access_token}` };
 }
 
+/** حالة اتصال واتساب كما يعرضها صندوق الوارد. */
 export interface EvolutionConnectionStatus {
-  id: number;
-  instance_name: string;
-  connected_number: string | null;
-  last_connection_state: string | null;
-  connected_at: string | null;
+  id: string;
+  status: WhatsappConnectionStatus;
+  connectedNumber: string | null;
+  connectedAt: string | null;
 }
 
-const CONNECTION_COLUMNS =
-  "id, instance_name, connected_number, last_connection_state, connected_at";
+const CONNECTION_COLUMNS = "id, status, connected_number, connected_at";
 
 /**
- * يقرأ حالة الاقتران المعروضة في بطاقة الإعدادات.
+ * يقرأ حالة اتصال واتساب النشط للشركة كما يعرضها صندوق الوارد.
+ *
+ * The company's ACTIVE `evolution_qr` connection is the one that carries the
+ * paired session; a Cloud API row is a different link and says nothing about
+ * the QR session.
  */
 export function useEvolutionConnection(enabled = true) {
   return useQuery({
@@ -47,69 +45,20 @@ export function useEvolutionConnection(enabled = true) {
     enabled,
     queryFn: async (): Promise<EvolutionConnectionStatus | null> => {
       const { data, error } = await supabase
-        .from("evolution_connections")
+        .from("whatsapp_connections")
         .select(CONNECTION_COLUMNS)
-        .limit(1)
+        .eq("method", "evolution_qr")
+        .eq("is_active", true)
         .maybeSingle();
       if (error) throw error;
-      return (data as EvolutionConnectionStatus | null) ?? null;
+      if (!data) return null;
+      return {
+        id: data.id,
+        status: data.status,
+        connectedNumber: data.connected_number,
+        connectedAt: data.connected_at,
+      };
     },
-  });
-}
-
-/**
- * يبدأ جلسة الاقتران ويعيد أول رمز QR للحوار.
- */
-export function useBeginEvolutionSession() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const headers = await sessionHeaders();
-      return beginEvolutionSession({ headers });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["evolution-connection"] });
-      void queryClient.invalidateQueries({ queryKey: WHATSAPP_SESSION_HEALTH_QUERY_KEY });
-    },
-  });
-}
-
-/**
- * استطلاع حالة الاقتران داخل حوار المسح (كل ثانيتين، دون تخزين للرمز).
- *
- * gcTime 0: the QR is a pairing credential; nothing may keep it after the
- * dialog closes. `refreshQr` re-requests a fresh code after the 45s expiry.
- */
-export function useEvolutionQrStatus(enabled: boolean) {
-  const queryClient = useQueryClient();
-  return useQuery({
-    queryKey: ["evolution-qr-status"],
-    enabled,
-    gcTime: 0,
-    staleTime: 0,
-    refetchInterval: enabled ? 2_000 : false,
-    queryFn: async () => {
-      const headers = await sessionHeaders();
-      const status = await getEvolutionQrStatus({ data: { refreshQr: false }, headers });
-      if (status.state === "open") {
-        void queryClient.invalidateQueries({ queryKey: WHATSAPP_SESSION_HEALTH_QUERY_KEY });
-      }
-      return status;
-    },
-  });
-}
-
-/**
- * يطلب رمز QR جديداً بعد انتهاء صلاحية الرمز المعروض.
- */
-export function useRefreshEvolutionQr() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const headers = await sessionHeaders();
-      return getEvolutionQrStatus({ data: { refreshQr: true }, headers });
-    },
-    onSuccess: (data) => queryClient.setQueryData(["evolution-qr-status"], data),
   });
 }
 
@@ -153,24 +102,6 @@ export function useSyncEvolutionAvatars() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["whatsapp-chats"] });
       void queryClient.invalidateQueries({ queryKey: ["whatsapp-contacts"] });
-    },
-  });
-}
-
-/**
- * يفصل الجلسة من بطاقة الإعدادات.
- */
-export function useDisconnectEvolutionSession() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const headers = await sessionHeaders();
-      return disconnectEvolutionSession({ headers });
-    },
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey: ["evolution-qr-status"] });
-      void queryClient.invalidateQueries({ queryKey: ["evolution-connection"] });
-      void queryClient.invalidateQueries({ queryKey: WHATSAPP_SESSION_HEALTH_QUERY_KEY });
     },
   });
 }

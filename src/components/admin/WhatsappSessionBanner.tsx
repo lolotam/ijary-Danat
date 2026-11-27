@@ -12,7 +12,7 @@ import { whatsappSessionBannerState } from "@/lib/whatsappSessionBanner";
  * شريط تحذير دائم في غلاف الإدارة عند تعذّر إرسال واتساب عبر جلسة QR.
  *
  * Non-dismissible and visible to every staff role (even roles without
- * `settings.integrations` that see zero rows on `evolution_connections`),
+ * `settings.integrations` that cannot read the `whatsapp_connections` row),
  * directing integrators to reconnect and collectors/accountants to notify admin.
  */
 export function WhatsappSessionBanner() {

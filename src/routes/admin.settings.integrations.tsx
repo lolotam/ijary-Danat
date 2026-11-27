@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { ModuleHeader } from "@/components/admin/Phase2Ui";
 import { PaymentGatewayCard } from "@/components/admin/settings/PaymentGatewayCard";
-import { EvolutionConnectionCard } from "@/components/admin/whatsapp/EvolutionConnectionCard";
+import { WhatsAppCard } from "@/components/admin/settings/WhatsAppCard";
 import { Badge } from "@/components/ui/badge";
 import { LtrText } from "@/components/ui/ltr-text";
 import { Button } from "@/components/ui/button";
@@ -182,10 +182,7 @@ function IntegrationsPage() {
       </Card>
 
       <PaymentGatewayCard />
-      <EvolutionConnectionCard
-        enabled={!permissions.isLoading && canManage}
-        dateFormatter={dateFormatter}
-      />
+      <WhatsAppCard enabled={!permissions.isLoading && canManage} dateFormatter={dateFormatter} />
     </div>
   );
 }

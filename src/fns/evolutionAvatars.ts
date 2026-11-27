@@ -1,10 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { companyClient } from "@/company/companyClient.server";
 import { getRequestCompany, requireRequestCompany } from "@/company/requestCompany.server";
-import { loadEvolutionProviderConfig } from "@/fns/evolutionSession";
+import {
+  type EvolutionQrConnection,
+  loadEvolutionProviderConfig,
+  loadQrConnection,
+  NO_OPEN_SESSION_MESSAGE,
+} from "@/fns/evolutionSession";
 import { loadOpenEvolutionConnection } from "@/fns/evolutionHistorySync";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/database.types";
 import { enqueueJob } from "@/jobs/enqueue";
 import type { QueuedSyncJob } from "@/jobs/handlers/sync";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
@@ -107,17 +115,26 @@ async function syncOne(
 }
 
 /**
+ * يقرأ اتصال واتساب النشط للشركة إن كانت جلسته مفتوحة، وإلا null.
+ *
+ * The row is the company's ACTIVE `evolution_qr` connection; a row that is not
+ * `connected` has no live session to ask Evolution for a picture.
+ */
+async function openConnection(
+  client: SupabaseClient<Database>,
+  companyId: string,
+): Promise<EvolutionQrConnection | null> {
+  const row = await loadQrConnection(client, companyId);
+  if (!row || row.status !== "connected" || !row.instance_name) return null;
+  return row;
+}
+
+/**
  * يقرأ اسم النسخة المقترنة، أو null إذا لم تكن هناك جلسة مفتوحة.
  */
 async function openInstanceName(companyId: string): Promise<string | null> {
-  const connection = await companyClient(companyId)
-    .from("evolution_connections")
-    .select("instance_name, last_connection_state")
-    .eq("id", 1)
-    .maybeSingle();
-  if (connection.error) throw new Error(connection.error.message);
-  if (!connection.data || connection.data.last_connection_state !== "open") return null;
-  return connection.data.instance_name;
+  const row = await openConnection(companyClient(companyId), companyId);
+  return row?.instance_name ?? null;
 }
 
 /** الصورة المخزّنة لرقم في كل من الجدولين، بعد استبعاد الروابط المنتهية. */
@@ -309,7 +326,7 @@ export async function runEvolutionAvatarSweep(input: {
 }): Promise<EvolutionAvatarSyncResult> {
   const { companyId, connectionId, after } = input;
   const db = companyClient(companyId);
-  const { instanceName } = await loadOpenEvolutionConnection(db, connectionId);
+  const { instanceName } = await loadOpenEvolutionConnection(db, companyId, connectionId);
   const client = evolutionClientFromConfig((await loadEvolutionProviderConfig(companyId)).config);
 
   const numbers = (await numbersToSweep(companyId)).filter((number) => !after || number > after);
@@ -354,20 +371,18 @@ export const syncEvolutionAvatars = createServerFn({ method: "POST" })
     });
 
     const companyId = requireRequestCompany().id;
-    const instanceName = await openInstanceName(companyId);
-    if (!instanceName) {
-      throw new Error(
-        "No open WhatsApp session. Scan the QR code in Settings → Integrations first.",
-      );
+    const db = companyClient(companyId);
+    const connection = await openConnection(db, companyId);
+    if (!connection) {
+      throw new Error(NO_OPEN_SESSION_MESSAGE);
     }
 
-    const db = companyClient(companyId);
     const day = companyMoment(new Date()).date;
     const { jobId } = await enqueueJob(
       db,
       "whatsapp.avatars.sync",
-      { connectionId: companyId },
-      { dedupeKey: `whatsapp.avatars.sync:${companyId}:${day}` },
+      { connectionId: connection.id },
+      { dedupeKey: `whatsapp.avatars.sync:${connection.id}:${day}` },
     );
 
     return { queued: true, jobRequestId: jobId };

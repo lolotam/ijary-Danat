@@ -5,7 +5,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { buildIngestRow } from "@/fns/evolutionWebhook";
-import { loadEvolutionProviderConfig } from "@/fns/evolutionSession";
+import {
+  loadEvolutionProviderConfig,
+  loadQrConnection,
+  NO_OPEN_SESSION_MESSAGE,
+} from "@/fns/evolutionSession";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 import { enqueueJob } from "@/jobs/enqueue";
@@ -149,26 +153,20 @@ export interface EvolutionHistorySyncResult {
 /**
  * يقرأ جلسة واتساب المفتوحة للوصلة المطلوبة، أو يرفض إن لم تكن هناك جلسة.
  *
- * The connection is the per-company singleton of migration 179 (its row is
- * `(company_id, id = 1)`), so `connectionId` is that connection's stable
- * company-scoped id until `whatsapp_connections` (T160) replaces the singleton.
- * Scoping the read by it is what makes another company's id find nothing.
+ * The connection is one row of `whatsapp_connections` (migration 333): the
+ * company's ACTIVE `evolution_qr` link, read through the company's own client
+ * and filtered by the company id, so another company's id finds nothing.
  */
 export async function loadOpenEvolutionConnection(
   db: SupabaseClient<Database>,
+  companyId: string,
   connectionId: string,
 ): Promise<{ instanceName: string }> {
-  const connection = await db
-    .from("evolution_connections")
-    .select("instance_name, last_connection_state")
-    .eq("company_id", connectionId)
-    .eq("id", 1)
-    .maybeSingle();
-  if (connection.error) throw new Error(connection.error.message);
-  if (!connection.data || connection.data.last_connection_state !== "open") {
-    throw new Error("No open WhatsApp session. Scan the QR code in Settings → Integrations first.");
+  const row = await loadQrConnection(db, companyId, { connectionId });
+  if (!row || row.status !== "connected" || !row.instance_name) {
+    throw new Error(NO_OPEN_SESSION_MESSAGE);
   }
-  return { instanceName: connection.data.instance_name };
+  return { instanceName: row.instance_name };
 }
 
 /**
@@ -185,7 +183,7 @@ export async function runEvolutionHistorySweep(input: {
   const { companyId, connectionId } = input;
   const db = companyClient(companyId);
 
-  const { instanceName } = await loadOpenEvolutionConnection(db, connectionId);
+  const { instanceName } = await loadOpenEvolutionConnection(db, companyId, connectionId);
   const providerConfig = await loadEvolutionProviderConfig(companyId);
   const client = evolutionClientFromConfig(providerConfig.config);
   const deadline = Date.now() + BUDGET_MS;
@@ -313,14 +311,17 @@ export const runEvolutionHistorySync = createServerFn({ method: "POST" })
     const companyId = requireRequestCompany().id;
     const db = companyClient(companyId);
 
-    await loadOpenEvolutionConnection(db, companyId);
+    const connection = await loadQrConnection(db, companyId);
+    if (!connection || connection.status !== "connected") {
+      throw new Error(NO_OPEN_SESSION_MESSAGE);
+    }
 
     const day = companyMoment(new Date()).date;
     const { jobId } = await enqueueJob(
       db,
       "whatsapp.history.sync",
-      { connectionId: companyId },
-      { dedupeKey: `whatsapp.history.sync:${companyId}:${day}` },
+      { connectionId: connection.id },
+      { dedupeKey: `whatsapp.history.sync:${connection.id}:${day}` },
     );
 
     return { queued: true, jobRequestId: jobId };

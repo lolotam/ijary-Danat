@@ -25,6 +25,8 @@ import { platformOverviewUsage } from "./ar/platformOverviewUsage";
 import { importLimits } from "./ar/importLimits";
 import { platformDomains } from "./ar/platformDomains";
 import { emailSender } from "./ar/emailSender";
+import { whatsappSettings } from "./ar/whatsappSettings";
+import { supportSession } from "./ar/supportSession";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -67,4 +69,6 @@ export const ar: Record<string, string> = {
   ...importLimits,
   ...platformDomains,
   ...emailSender,
+  ...whatsappSettings,
+  ...supportSession,
 };

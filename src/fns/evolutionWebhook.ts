@@ -1,35 +1,48 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
+
 import { companyClient } from "@/company/companyClient.server";
-import { requireRequestCompany } from "@/company/requestCompany.server";
 import { backfillChatAvatarsInBackground } from "@/fns/evolutionAvatars";
 import { confirmSessionDisconnect } from "@/fns/evolutionSessionWatch";
-import type { Json } from "@/integrations/supabase/database.types";
+import { decodeByteaHex } from "@/gateways/connectionStore.server";
+import type {
+  Database,
+  Json,
+  WhatsappConnectionStatus,
+} from "@/integrations/supabase/database.types";
 import {
   addressableJid,
   maskJid,
   normalizeEvolutionEvent,
   remoteNumberFor,
 } from "@/lib/evolution/client";
-import { EVOLUTION_WEBHOOK_HEADER } from "@/fns/evolutionSession";
 import {
   inboxStatusForAck,
   isMessageKeyId,
   normalizeAckStatus,
   WHATSAPP_REJECTED_AFTER_SEND,
 } from "@/lib/evolution/messageAck";
+import { decryptSecret } from "@/lib/secrets.server";
+import {
+  lookupWhatsappConnectionById,
+  type WhatsappConnectionOwner,
+} from "@/platform/whatsappConnectionLookup.server";
+import { EVOLUTION_WEBHOOK_HEADER } from "@/whatsapp/evolutionInstance";
 
 /**
- * مستقبل ويبهوك Evolution: يوثّق بالسر المشترك ثم يبتلع أحداث الرسائل
- * والاتصال ورموز QR في صفقة واحدة مقاومة للتكرار.
+ * مستقبل ويبهوك Evolution: يوجّه كل حدث إلى شركة الاتصال الذي أنتجه، ثم
+ * يبتلع أحداث الرسائل والاتصال ورموز QR في صفقة واحدة مقاومة للتكرار.
  *
- * Security model: a static per-instance secret configured on Evolution at
- * pairing time, compared in constant time (with the previous secret accepted
- * during rotation). Replay of a message event is harmless — ingestion is
+ * Security model: a per-connection secret, compared in constant time (the
+ * previous version is accepted during rotation). The company comes from the
+ * connection id in the URL and never from the payload — a payload is the
+ * attacker's to write. Replay of a message event is harmless — ingestion is
  * idempotent on message_id inside the SQL RPC — and state events only move
- * forward because updates are conditional. The endpoint answers 200 for every
- * authenticated, parseable request so Evolution does not retry-storm us over
- * rows we chose to skip.
+ * forward because the updates are conditional. The endpoint answers 200 for
+ * every authenticated, parseable request so Evolution does not retry-storm us
+ * over rows we chose to skip.
  */
 
 /** Reject bodies above this before JSON.parse — webhooks are small. */
@@ -42,6 +55,11 @@ const HANDLED_EVENTS = new Set([
   "QRCODE_UPDATED",
 ]);
 
+/** عدد إصدارات سرّ الويبهوك المقبولة (الحالي والسابق أثناء التدوير). */
+const ACCEPTED_SECRET_VERSIONS = 2;
+
+const uuidSchema = z.string().uuid();
+
 /** يبني استجابة JSON برمز الحالة المحدّد. */
 function json(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -53,8 +71,7 @@ function json(status: number, body: Record<string, unknown>): Response {
 /**
  * مقارنة ثابتة الزمن عبر تلبيد الطرفين، فلا يتسرّب طول السر ولا محتواه.
  */
-function secretsMatch(candidate: string, expected: string | null): boolean {
-  if (!expected) return false;
+function secretsMatch(candidate: string, expected: string): boolean {
   const a = createHash("sha256").update(candidate).digest();
   const b = createHash("sha256").update(expected).digest();
   return timingSafeEqual(a, b);
@@ -173,12 +190,16 @@ export function buildIngestRow(
 }
 
 /** يبتلع دفعة الرسائل الواردة/الصادرة من حدث MESSAGES_UPSERT عبر دالة القاعدة ويطلق جلب الصور في الخلفية. */
-async function handleMessagesUpsert(companyId: string, body: Rec): Promise<void> {
+async function handleMessagesUpsert(
+  db: SupabaseClient<Database>,
+  companyId: string,
+  body: Rec,
+): Promise<void> {
   const rows = messageItems(body)
     .map((item) => buildIngestRow(item))
     .filter((row): row is Rec => row !== null);
   if (!rows.length) return;
-  const result = await companyClient(companyId).rpc("ingest_whatsapp_messages", {
+  const result = await db.rpc("ingest_whatsapp_messages", {
     p_rows: rows as unknown as Json,
   });
   if (result.error) throw new Error(result.error.message);
@@ -208,8 +229,7 @@ async function handleMessagesUpsert(companyId: string, body: Rec): Promise<void>
  * a late ack cannot un-cancel a row an admin already handled. The 2026-09-02
  * overdue reminder to one tenant sat `sent` all day this way.
  */
-async function handleMessagesUpdate(companyId: string, body: Rec): Promise<void> {
-  const db = companyClient(companyId);
+async function handleMessagesUpdate(db: SupabaseClient<Database>, body: Rec): Promise<void> {
   for (const item of messageItems(body)) {
     const key = asRecord(item.key);
     const update = asRecord(item.update);
@@ -244,27 +264,71 @@ async function handleMessagesUpdate(companyId: string, body: Rec): Promise<void>
 }
 
 /**
- * يحدّث حالة اتصال الجلسة الواردة من الويبهوك ويطلق تأكيد الانقطاع غير المنتظر للحالات غير المتصلة.
+ * يحوّل حالة جلسة Evolution إلى حالة اتصال واتساب المخزّنة.
  *
- * Non-open/non-connecting states (`close`, `refused`, …) trigger a live probe in
- * the background so the webhook still returns 200 immediately without risking an
- * unhandled rejection.
+ * `refused` and the other failure states are all "error": the panel shows the
+ * connection as broken, and the disconnect watcher treats every state that is
+ * not "connected" the same way.
  */
-async function handleConnectionUpdate(companyId: string, body: Rec): Promise<void> {
+function connectionStatusFor(state: string): WhatsappConnectionStatus {
+  if (state === "open") return "connected";
+  if (state === "connecting") return "pairing";
+  if (state === "close" || state === "disconnected") return "disconnected";
+  return "error";
+}
+
+/**
+ * يبني تحديث حالة الاتصال من حالة جلسة Evolution.
+ *
+ * Leaving "connected" stamps `disconnected_at` once, and entering it re-arms
+ * the disconnect alert: the same episode rule the SQL trigger used to enforce
+ * on the singleton connection, applied here because the per-company table has
+ * no trigger of its own yet.
+ */
+function connectionStatusUpdates(
+  status: WhatsappConnectionStatus,
+  previousStatus: WhatsappConnectionStatus,
+): Database["public"]["Tables"]["whatsapp_connections"]["Update"] {
+  const updates: Database["public"]["Tables"]["whatsapp_connections"]["Update"] = {
+    status,
+    last_seen_at: new Date().toISOString(),
+  };
+  if (status === "connected") {
+    updates.disconnected_at = null;
+    updates.disconnect_alert_armed = true;
+  } else if (previousStatus === "connected") {
+    updates.disconnected_at = new Date().toISOString();
+  }
+  return updates;
+}
+
+/**
+ * يحدّث حالة اتصال الجلسة من حدث ويبهوك ويطلق تأكيد الانقطاع للحالات غير المتصلة.
+ *
+ * Non-connected states trigger a live probe in the background so the webhook
+ * still returns 200 immediately without risking an unhandled rejection.
+ */
+async function handleConnectionUpdate(
+  db: SupabaseClient<Database>,
+  owner: WhatsappConnectionOwner,
+  body: Rec,
+): Promise<void> {
   const data = asRecord(body.data);
   const state = String(data?.state ?? data?.connection ?? data?.status ?? "").toLowerCase();
   if (!state) return;
-  const updates: { last_connection_state: string; last_qr?: null } =
-    state === "open"
-      ? { last_connection_state: state, last_qr: null }
-      : { last_connection_state: state };
-  const result = await companyClient(companyId)
-    .from("evolution_connections")
-    .update(updates)
-    .eq("id", 1);
+
+  const status = connectionStatusFor(state);
+  const result = await db
+    .from("whatsapp_connections")
+    .update(connectionStatusUpdates(status, owner.status))
+    .eq("id", owner.id);
   if (result.error) throw new Error(result.error.message);
-  if (state !== "open" && state !== "connecting") {
-    void confirmSessionDisconnect().catch((error) => {
+
+  if (status !== "connected" && status !== "pairing") {
+    void confirmSessionDisconnect({
+      companyId: owner.company_id,
+      connectionId: owner.id,
+    }).catch((error) => {
       console.error(
         "[evolution-webhook] disconnect check failed",
         error instanceof Error ? error.message : String(error),
@@ -274,81 +338,170 @@ async function handleConnectionUpdate(companyId: string, body: Rec): Promise<voi
 }
 
 /**
- * يحفظ رمز QR المحدّث في صف الاقتران ويضع الحالة على `connecting`.
+ * يحفظ رمز QR المحدّث في صف الاقتران ويضع الحالة على `pairing`.
+ *
+ * A late QR event must not knock a paired connection back to `pairing`: the
+ * disconnect watcher reads that status, and a connected session that looked
+ * unpaired would raise a false disconnect alert.
  */
-async function handleQrUpdate(companyId: string, body: Rec): Promise<void> {
+async function handleQrUpdate(
+  db: SupabaseClient<Database>,
+  connectionId: string,
+  body: Rec,
+): Promise<void> {
   const data = asRecord(body.data);
   const qrcode = asRecord(data?.qrcode);
   const qr = qrcode?.base64 ?? qrcode?.code ?? data?.base64 ?? data?.code ?? null;
   if (typeof qr !== "string" || !qr) return;
-  const result = await companyClient(companyId)
-    .from("evolution_connections")
-    .update({ last_qr: qr, last_connection_state: "connecting" })
-    .eq("id", 1);
+  const result = await db
+    .from("whatsapp_connections")
+    .update({ last_qr: qr, status: "pairing" })
+    .eq("id", connectionId)
+    .neq("status", "connected");
   if (result.error) throw new Error(result.error.message);
 }
 
 /**
- * نقطة دخول الويبهوك؛ تُستدعى من مسار /api/public/evolution-webhook.
+ * يحلّل جسم الويبهوك إلى سجل مفاتيح، أو null إن لم يكن JSON صالحاً.
  */
-export async function respondToEvolutionWebhook(request: Request): Promise<Response> {
+function parseWebhookBody(rawBody: string): Rec | null {
+  try {
+    const parsed: unknown = JSON.parse(rawBody);
+    return asRecord(parsed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * يقرأ سرّ الويبهوك الخاص بالاتصال: أحدث إصدارين، الحالي والسابق أثناء التدوير.
+ *
+ * The secret lives encrypted in `company_secrets` under the connection's id.
+ * Evolution is configured with the new secret before it is stored, so a
+ * delivery signed with the previous one must keep landing during that window.
+ */
+async function loadWebhookSecrets(
+  db: SupabaseClient<Database>,
+  connectionId: string,
+): Promise<string[]> {
+  const { data, error } = await db
+    .from("company_secrets")
+    .select("ciphertext, iv, auth_tag, key_version")
+    .eq("owner_kind", "whatsapp")
+    .eq("owner_id", connectionId)
+    .eq("name", "webhook_secret")
+    .order("version", { ascending: false })
+    .limit(ACCEPTED_SECRET_VERSIONS);
+  if (error) {
+    throw new Error(`Failed to load WhatsApp webhook secret: ${error.message}`);
+  }
+  return (data ?? []).map((row) =>
+    decryptSecret({
+      ciphertext: decodeByteaHex(row.ciphertext),
+      iv: decodeByteaHex(row.iv),
+      authTag: decodeByteaHex(row.auth_tag),
+      keyVersion: row.key_version,
+    }),
+  );
+}
+
+/**
+ * يتحقق أن الحدثomir من نسخة Evolution هذه.
+ *
+ * The secret authenticates the connection, not an arbitrary instance name
+ * riding in the body: a captured secret replayed against another instance must
+ * not land in this company's inbox.
+ */
+function instanceMatches(body: Rec, instanceName: string | null): boolean {
+  if (!instanceName) return true;
+  const claimed = body.instance ?? body.instanceName;
+  return typeof claimed === "string" && claimed === instanceName;
+}
+
+/**
+ * يوجّه حدث Evolution إلى معالجه داخل شركة الاتصال صاحبه.
+ */
+async function dispatchEvolutionEvent(
+  event: string,
+  db: SupabaseClient<Database>,
+  owner: WhatsappConnectionOwner,
+  body: Rec,
+): Promise<void> {
+  if (event === "MESSAGES_UPSERT") {
+    await handleMessagesUpsert(db, owner.company_id, body);
+    return;
+  }
+  if (event === "MESSAGES_UPDATE") {
+    await handleMessagesUpdate(db, body);
+    return;
+  }
+  if (event === "CONNECTION_UPDATE") {
+    await handleConnectionUpdate(db, owner, body);
+    return;
+  }
+  await handleQrUpdate(db, owner.id, body);
+}
+
+/**
+ * نقطة دخول الويبهوك؛ تُستدعى من مسار /api/public/webhooks/evolution/$connectionId.
+ *
+ * The connection id in the URL is the only thing that says which company the
+ * event belongs to. An unknown or inactive connection is refused with a 404
+ * that reveals nothing, and the secret is read from the connection's own
+ * company before a single row is written.
+ */
+export async function respondToEvolutionWebhook(
+  request: Request,
+  connectionId: string,
+): Promise<Response> {
+  try {
+    return await routeEvolutionDelivery(request, connectionId);
+  } catch (error) {
+    // A storage failure must surface as 5xx so Evolution redelivers; the
+    // ingestion RPC makes the redelivery idempotent.
+    console.error(
+      "[evolution-webhook] delivery failed",
+      error instanceof Error ? error.message : error,
+    );
+    return json(500, { error: "Event handling failed" });
+  }
+}
+
+/**
+ * يوجّه التسليم: يتحقق من الاتصال والسرّ ثم يعالج الحدث داخل شركة صاحبه.
+ */
+async function routeEvolutionDelivery(request: Request, connectionId: string): Promise<Response> {
   if (request.method !== "POST") return json(405, { error: "Method not allowed" });
+  if (!uuidSchema.safeParse(connectionId).success) return json(404, { error: "Not found." });
 
   const rawBody = await request.text();
   if (rawBody.length > MAX_BODY_BYTES) return json(413, { error: "Payload too large" });
 
-  let body: Rec;
-  try {
-    const parsed: unknown = JSON.parse(rawBody);
-    const record = asRecord(parsed);
-    if (!record) return json(400, { error: "Invalid JSON" });
-    body = record;
-  } catch {
-    return json(400, { error: "Invalid JSON" });
-  }
+  const body = parseWebhookBody(rawBody);
+  if (!body) return json(400, { error: "Invalid JSON" });
 
   const secret = request.headers.get(EVOLUTION_WEBHOOK_HEADER);
   if (!secret) return json(401, { error: "Unauthorized" });
 
-  const companyId = requireRequestCompany().id;
-  const connection = await companyClient(companyId)
-    .from("evolution_connections")
-    .select("instance_name, webhook_secret, previous_webhook_secret")
-    .eq("id", 1)
-    .maybeSingle();
-  if (connection.error) return json(500, { error: "Connection lookup failed" });
-  if (!connection.data) return json(401, { error: "Unauthorized" });
+  const owner = await lookupWhatsappConnectionById(connectionId);
+  if (!owner || !owner.is_active || owner.method !== "evolution_qr") {
+    return json(404, { error: "Not found." });
+  }
 
-  const authorized =
-    secretsMatch(secret, connection.data.webhook_secret) ||
-    secretsMatch(secret, connection.data.previous_webhook_secret);
-  if (!authorized) return json(401, { error: "Unauthorized" });
-
-  // The instance in the payload must be OUR instance: the secret authenticates
-  // the gateway, not an arbitrary instance name riding in the body.
-  const instanceName = body.instance ?? body.instanceName;
-  if (typeof instanceName !== "string" || instanceName !== connection.data.instance_name) {
+  const db = companyClient(owner.company_id);
+  const expectedSecrets = await loadWebhookSecrets(db, connectionId);
+  if (!expectedSecrets.length) return json(503, { error: "Webhook secret is not configured." });
+  if (!expectedSecrets.some((expected) => secretsMatch(secret, expected))) {
+    return json(401, { error: "Unauthorized" });
+  }
+  if (!instanceMatches(body, owner.instance_name)) {
     return json(401, { error: "Unauthorized" });
   }
 
   const event = normalizeEvolutionEvent(body.event);
   if (!HANDLED_EVENTS.has(event)) return json(200, { received: true, ignored: true });
 
-  try {
-    if (event === "MESSAGES_UPSERT") await handleMessagesUpsert(companyId, body);
-    else if (event === "MESSAGES_UPDATE") await handleMessagesUpdate(companyId, body);
-    else if (event === "CONNECTION_UPDATE") await handleConnectionUpdate(companyId, body);
-    else await handleQrUpdate(companyId, body);
-  } catch (error) {
-    // A storage failure must surface as 5xx so Evolution redelivers; the
-    // ingestion RPC makes the redelivery idempotent.
-    console.error(
-      "[evolution-webhook] event handling failed",
-      event,
-      error instanceof Error ? error.message : error,
-    );
-    return json(500, { error: "Event handling failed" });
-  }
+  await dispatchEvolutionEvent(event, db, owner, body);
 
   return json(200, { received: true });
 }

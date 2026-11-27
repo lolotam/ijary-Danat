@@ -10,17 +10,20 @@ import {
 } from "@/fns/adminEmailNotification";
 import { enqueueNotification, resolveNotificationRecipients } from "@/fns/enqueueNotification";
 import { runEventWorkflow } from "@/fns/workflowRegistry";
-import type { Database } from "@/integrations/supabase/database.types";
+import type { Database, WhatsappConnectionStatus } from "@/integrations/supabase/database.types";
 import type { EmailLocale } from "@/lib/emailTemplates";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
 
 export type DisconnectAlertSource = "webhook" | "send";
 type AlertDb = SupabaseClient<Database>;
 
-interface ClaimedSessionRow {
-  instance_name: string;
+/** صفّ اتصال واتساب الذي تُراقَب جلسته، كما تقرؤه قاعدة البيانات. */
+interface WatchedConnection {
+  id: string;
+  instance_name: string | null;
   connected_number: string | null;
-  last_connection_state: string | null;
+  status: WhatsappConnectionStatus;
+  disconnect_alert_armed: boolean;
   disconnected_at: string | null;
 }
 
@@ -39,15 +42,36 @@ function formatKuwaitDisconnectTime(iso: string | null, locale: EmailLocale): st
 }
 
 /**
- * يعيد تسليح حلقة التنبيه عند تعذّر إدراج البريد ما دامت الجلسة مقترنة وغير مفتوحة وغير جارية الفصل.
+ * يقرأ صفّ اتصال واتساب الذي تُراقَب جلسته: الاتصال المطلوب صراحةً، أو
+ * النشط بطريقة QR في الشركة.
+ *
+ * A company has one QR connection per company and method, so the active one
+ * is the only session that can drop while the company is sending.
  */
-async function rearmDisconnectAlert(db: AlertDb): Promise<void> {
+async function readWatchedConnection(
+  db: AlertDb,
+  connectionId: string | null,
+): Promise<{ data: WatchedConnection | null; error: { message: string } | null }> {
+  const query = db
+    .from("whatsapp_connections")
+    .select("id, instance_name, connected_number, status, disconnect_alert_armed, disconnected_at")
+    .eq("method", "evolution_qr");
+  const result = connectionId
+    ? await query.eq("id", connectionId).maybeSingle()
+    : await query.eq("is_active", true).maybeSingle();
+  return { data: result.data ?? null, error: result.error };
+}
+
+/**
+ * يعيد تسليح حلقة التنبيه عند تعذّر إدراج البريد ما دامت الجلسة مقترنة وغير متصلة.
+ */
+async function rearmDisconnectAlert(db: AlertDb, connectionId: string): Promise<void> {
   try {
     const rearmResult = await db
-      .from("evolution_connections")
+      .from("whatsapp_connections")
       .update({ disconnect_alert_armed: true })
-      .eq("id", 1)
-      .not("last_connection_state", "in", "(open,disconnecting)")
+      .eq("id", connectionId)
+      .neq("status", "connected")
       .or("connected_number.not.is.null,connected_at.not.is.null");
     if (rearmResult.error) {
       console.error("[notifyWhatsappSessionDisconnected] re-arm failed", rearmResult.error.message);
@@ -93,6 +117,7 @@ async function countParkedWhatsappMessages(db: AlertDb): Promise<number> {
 async function claimAndEnqueueAlert(
   db: AlertDb,
   companyId: string,
+  connection: WatchedConnection,
   source: DisconnectAlertSource,
   targets: WorkflowRecipientTarget[],
 ): Promise<AdminNotificationResult> {
@@ -102,17 +127,17 @@ async function claimAndEnqueueAlert(
   }
 
   const claim = await db
-    .from("evolution_connections")
+    .from("whatsapp_connections")
     .update({ disconnect_alert_armed: false })
-    .eq("id", 1)
+    .eq("id", connection.id)
     .eq("disconnect_alert_armed", true)
-    .neq("last_connection_state", "open")
-    .select("instance_name, connected_number, last_connection_state, disconnected_at");
+    .neq("status", "connected")
+    .select("id, instance_name, connected_number, status, disconnected_at");
   if (claim.error) {
     return { skipped: true, reason: claim.error.message };
   }
 
-  const claimed = (claim.data as ClaimedSessionRow[] | null)?.[0];
+  const claimed = (claim.data as WatchedConnection[] | null)?.[0];
   if (!claimed) {
     return { skipped: true, reason: "Already alerted for this outage.", benign: true };
   }
@@ -121,8 +146,9 @@ async function claimAndEnqueueAlert(
     const { locale } = await loadCompanyDefaults(companyId);
     const parkedCount = await countParkedWhatsappMessages(db);
     const settingsUrl = `${await companyOriginById(db, companyId)}/admin/settings/integrations`;
-    const observedState = claimed.last_connection_state ?? "unknown";
+    const observedState = claimed.status ?? "unknown";
     const connectedNumber = claimed.connected_number ?? "-";
+    const instanceName = claimed.instance_name ?? "-";
     const disconnectedAt = formatKuwaitDisconnectTime(claimed.disconnected_at, locale);
 
     const copy = await renderAdminEmailCopy({
@@ -130,7 +156,7 @@ async function claimAndEnqueueAlert(
       locale,
       variables: {
         connected_number: connectedNumber,
-        instance_name: claimed.instance_name,
+        instance_name: instanceName,
         state: observedState,
         disconnected_at: disconnectedAt,
         parked_count: String(parkedCount),
@@ -138,8 +164,8 @@ async function claimAndEnqueueAlert(
       },
       fallbackSubject:
         locale === "ar"
-          ? `تنبيه: انقطعت جلسة واتساب (${claimed.instance_name})`
-          : `Alert: WhatsApp session disconnected (${claimed.instance_name})`,
+          ? `تنبيه: انقطعت جلسة واتساب (${instanceName})`
+          : `Alert: WhatsApp session disconnected (${instanceName})`,
       fallbackBody: (safe) =>
         locale === "ar"
           ? `<p>انقطعت جلسة واتساب QR وتوقّف إرسال رسائل واتساب مؤقتاً حتى يُعاد مسح رمز QR.</p><ul><li><strong>النسخة:</strong> ${safe.instance_name}</li><li><strong>الرقم المربوط:</strong> ${safe.connected_number}</li><li><strong>الحالة المرصودة:</strong> ${safe.state}</li><li><strong>وقت الانقطاع:</strong> ${safe.disconnected_at}</li><li><strong>الرسائل المعلّقة:</strong> ${safe.parked_count}</li></ul><p><a href="${safe.settings_url}">فتح إعدادات التكامل لإعادة الربط</a></p>`
@@ -165,13 +191,13 @@ async function claimAndEnqueueAlert(
     });
 
     if (!notification) {
-      await rearmDisconnectAlert(db);
+      await rearmDisconnectAlert(db, connection.id);
       return { skipped: true, reason: `Template ${copy.code} excludes the email channel.` };
     }
 
     return { skipped: false, notification };
   } catch (error) {
-    await rearmDisconnectAlert(db);
+    await rearmDisconnectAlert(db, connection.id);
     return {
       skipped: true,
       reason: error instanceof Error ? error.message : "Failed to enqueue session alert.",
@@ -185,28 +211,25 @@ async function claimAndEnqueueAlert(
 export async function notifyWhatsappSessionDisconnected(input: {
   source: DisconnectAlertSource;
   companyId?: string;
+  connectionId?: string;
 }): Promise<AdminNotificationResult> {
   try {
     const companyId = input.companyId ?? requireRequestCompany().id;
     const db = companyClient(companyId);
 
-    const preRead = await db
-      .from("evolution_connections")
-      .select("disconnect_alert_armed, last_connection_state")
-      .eq("id", 1)
-      .maybeSingle();
-    if (preRead.error) {
+    const read = await readWatchedConnection(db, input.connectionId ?? null);
+    if (read.error) {
       console.error(
         "[notifyWhatsappSessionDisconnected] failed to read session state",
-        preRead.error.message,
+        read.error.message,
       );
-      return { skipped: true, reason: preRead.error.message };
+      return { skipped: true, reason: read.error.message };
     }
-    if (
-      !preRead.data ||
-      !preRead.data.disconnect_alert_armed ||
-      preRead.data.last_connection_state === "open"
-    ) {
+    const connection = read.data;
+    if (!connection) {
+      return { skipped: true, reason: "No WhatsApp connection is active.", benign: true };
+    }
+    if (!connection.disconnect_alert_armed || connection.status === "connected") {
       return { skipped: true, reason: "Session alert not armed.", benign: true };
     }
 
@@ -229,7 +252,7 @@ export async function notifyWhatsappSessionDisconnected(input: {
     return await runEventWorkflow<AdminNotificationResult>({
       key: "whatsapp-session-disconnected",
       whenPaused: () => ({ skipped: true, reason: "Workflow is paused.", benign: true }),
-      run: (targets) => claimAndEnqueueAlert(db, companyId, input.source, targets),
+      run: (targets) => claimAndEnqueueAlert(db, companyId, connection, input.source, targets),
       outcomeOf: (result) =>
         result.skipped
           ? { status: "skipped", error: result.reason }

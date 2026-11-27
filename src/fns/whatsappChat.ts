@@ -4,7 +4,7 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { deliverEvolutionNotification } from "@/fns/evolutionDelivery";
-import { companyInstanceName } from "@/fns/evolutionSession";
+import { loadQrConnection, NO_QR_SESSION_MESSAGE } from "@/fns/evolutionSession";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import { toInternationalDigits } from "@/lib/providers/types";
@@ -196,9 +196,13 @@ export const deleteWhatsAppMessage = createServerFn({ method: "POST" })
         const config = await requireEnabledEvolutionConfig();
         const client = evolutionClientFromConfig(config.config);
         // Never a name from config or a literal: either could be another
-        // company's instance on the shared Evolution server (T052s).
-        const instanceName = companyInstanceName(companyId);
-        await client.deleteMessageForEveryone(instanceName, {
+        // company's instance on the shared Evolution server (T052s). The row
+        // carries the instance this company paired.
+        const connection = await loadQrConnection(db, companyId);
+        if (!connection?.instance_name) {
+          throw new Error(NO_QR_SESSION_MESSAGE);
+        }
+        await client.deleteMessageForEveryone(connection.instance_name, {
           id: row.data.message_id,
           remoteJid: `${toInternationalDigits(row.data.chat_number)}@s.whatsapp.net`,
           fromMe: true,

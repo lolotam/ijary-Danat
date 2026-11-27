@@ -276,6 +276,48 @@ describe("migration 333 - whatsapp_connections isolation and constraints (T156)"
     });
   });
 
+  test("inbox staff with notifications.read see the active connection, never its QR (migration 334)", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      const connA = await seedWhatsappConnection(client, A.id, {
+        method: "evolution_qr",
+        isActive: true,
+        status: "connected",
+        connectedNumber: "+96550004444",
+      });
+      await actAsSuperuser(client);
+      await client.query(
+        `delete from public.role_permissions
+          where company_id = $1 and role = 'readonly'
+            and permission_code in ('notifications.read', 'settings.integrations')`,
+        [A.id],
+      );
+
+      const readConnection = () =>
+        runAsUser(client, A.users.readonly, async () => {
+          const { rows } = await client.query(
+            `select id from public.whatsapp_connections where id = $1`,
+            [connA],
+          );
+          return rows;
+        });
+      expect(await readConnection()).toHaveLength(0);
+
+      await actAsSuperuser(client);
+      await client.query(
+        `insert into public.role_permissions (company_id, role, permission_code)
+         values ($1, 'readonly', 'notifications.read')`,
+        [A.id],
+      );
+      expect(await readConnection()).toHaveLength(1);
+
+      const qrRead = await runAsUser(client, A.users.readonly, () =>
+        captureRaise(client, () => client.query(`select last_qr from public.whatsapp_connections`)),
+      );
+      expect(qrRead).toMatch(/permission denied/);
+    });
+  });
+
   test.each<WhatsappChildTable>([
     "whatsapp_chats",
     "whatsapp_contacts",

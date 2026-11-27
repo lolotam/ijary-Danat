@@ -1,14 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-import {
-  deleteWhatsAppContact,
-  exportWhatsAppContactsCsv,
-  saveWhatsAppContact,
-} from "@/fns/whatsappChat";
+import { deleteWhatsAppContact, saveWhatsAppContact } from "@/fns/whatsappChat";
 import { supabase } from "@/integrations/supabase/client";
-import type { WhatsappContactRow } from "@/integrations/supabase/database.types";
+import type { Database, WhatsappContactRow } from "@/integrations/supabase/database.types";
 
-import { sessionHeaders } from "./whatsappSession";
+import { sessionHeaders, useActiveWhatsAppConnectionId } from "./whatsappSession";
 
 /**
  * حِزم دليل جهات اتصال واتساب: القراءة والحفظ والحذف والتصدير وخيارات الربط.
@@ -42,70 +39,85 @@ export type WhatsAppContactWithContracts = WhatsappContactRow & {
 };
 
 /**
- * يقرأ دليل جهات الاتصال مع عقود كل جهة والمستأجر المرتبط بها.
+ * يجلب دليل جهات الاتصال مقيّداً بمعرّف الاتصال النشط مع عقود كل جهة والمستأجر المرتبط بها.
  *
  * Three bounded queries rather than one embedded join: the link table carries
  * no PostgREST relationship metadata worth teaching for a 500-row list, and the
  * tenant is a plain FK the table renders as a link.
  */
+export async function fetchWhatsAppContacts(
+  client: SupabaseClient<Database>,
+  connectionId: string | null,
+  search: string,
+): Promise<WhatsAppContactWithContracts[]> {
+  if (!connectionId) return [];
+
+  let query = client
+    .from("whatsapp_contacts")
+    .select("*")
+    .eq("connection_id", connectionId)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (search.trim()) {
+    const term = search.trim().replace(/[%_]/g, "");
+    query = query.or(`phone.ilike.%${term}%,name.ilike.%${term}%`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  const contacts = data ?? [];
+  if (!contacts.length) return [];
+
+  // Two bounded queries instead of an embedded join: the links table has
+  // no PostgREST relationship metadata worth teaching for a 500-row list.
+  const links = await client
+    .from("whatsapp_contact_contracts")
+    .select("contact_id, contract_id")
+    .eq("connection_id", connectionId)
+    .in(
+      "contact_id",
+      contacts.map((contact) => contact.id),
+    );
+  if (links.error) throw links.error;
+  const contractIds = [...new Set((links.data ?? []).map((link) => link.contract_id))];
+  const contracts = contractIds.length
+    ? await client.from("contracts").select("id, code").in("id", contractIds)
+    : { data: [], error: null };
+  if (contracts.error) throw contracts.error;
+  const codeById = new Map((contracts.data ?? []).map((row) => [row.id, row.code]));
+
+  // Third bounded query, same reasoning as the contracts one above: the
+  // linked tenant is a plain FK on the contact, and the table shows its
+  // name as a link to the tenant page.
+  const tenantIds = [
+    ...new Set(contacts.map((contact) => contact.tenant_id).filter(Boolean)),
+  ] as string[];
+  const tenants = tenantIds.length
+    ? await client.from("tenants").select("id, name, name_en").in("id", tenantIds)
+    : { data: [], error: null };
+  if (tenants.error) throw tenants.error;
+  const tenantById = new Map((tenants.data ?? []).map((row) => [row.id, row]));
+
+  return contacts.map((contact) => ({
+    ...contact,
+    contracts: (links.data ?? [])
+      .filter((link) => link.contact_id === contact.id)
+      .map((link) => ({ id: link.contract_id, code: codeById.get(link.contract_id) ?? "—" })),
+    tenant: (contact.tenant_id
+      ? (tenantById.get(contact.tenant_id) ?? null)
+      : null) as ContactTenantLink | null,
+  }));
+}
+
+/**
+ * يقرأ دليل جهات الاتصال للاتصال النشط مع عقود كل جهة والمستأجر المرتبط بها.
+ */
 export function useWhatsAppContacts(enabled: boolean, search: string) {
+  const connectionQuery = useActiveWhatsAppConnectionId(enabled);
+  const connectionId = connectionQuery.data ?? null;
   return useQuery({
-    queryKey: ["whatsapp-contacts", search],
-    enabled,
-    queryFn: async (): Promise<WhatsAppContactWithContracts[]> => {
-      let query = supabase
-        .from("whatsapp_contacts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(500);
-      if (search.trim()) {
-        const term = search.trim().replace(/[%_]/g, "");
-        query = query.or(`phone.ilike.%${term}%,name.ilike.%${term}%`);
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      const contacts = data ?? [];
-      if (!contacts.length) return [];
-
-      // Two bounded queries instead of an embedded join: the links table has
-      // no PostgREST relationship metadata worth teaching for a 500-row list.
-      const links = await supabase
-        .from("whatsapp_contact_contracts")
-        .select("contact_id, contract_id")
-        .in(
-          "contact_id",
-          contacts.map((contact) => contact.id),
-        );
-      if (links.error) throw links.error;
-      const contractIds = [...new Set((links.data ?? []).map((link) => link.contract_id))];
-      const contracts = contractIds.length
-        ? await supabase.from("contracts").select("id, code").in("id", contractIds)
-        : { data: [], error: null };
-      if (contracts.error) throw contracts.error;
-      const codeById = new Map((contracts.data ?? []).map((row) => [row.id, row.code]));
-
-      // Third bounded query, same reasoning as the contracts one above: the
-      // linked tenant is a plain FK on the contact, and the table shows its
-      // name as a link to the tenant page.
-      const tenantIds = [
-        ...new Set(contacts.map((contact) => contact.tenant_id).filter(Boolean)),
-      ] as string[];
-      const tenants = tenantIds.length
-        ? await supabase.from("tenants").select("id, name, name_en").in("id", tenantIds)
-        : { data: [], error: null };
-      if (tenants.error) throw tenants.error;
-      const tenantById = new Map((tenants.data ?? []).map((row) => [row.id, row]));
-
-      return contacts.map((contact) => ({
-        ...contact,
-        contracts: (links.data ?? [])
-          .filter((link) => link.contact_id === contact.id)
-          .map((link) => ({ id: link.contract_id, code: codeById.get(link.contract_id) ?? "—" })),
-        tenant: (contact.tenant_id
-          ? (tenantById.get(contact.tenant_id) ?? null)
-          : null) as ContactTenantLink | null,
-      }));
-    },
+    queryKey: ["whatsapp-contacts", search, connectionId],
+    enabled: enabled && connectionQuery.isFetched,
+    queryFn: () => fetchWhatsAppContacts(supabase, connectionId, search),
   });
 }
 

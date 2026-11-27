@@ -4,6 +4,7 @@ import { serverCompanyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { companyStoragePath } from "@/company/storagePath";
 import { backfillChatAvatarsInBackground } from "@/fns/evolutionAvatars";
+import { loadQrConnection, NO_QR_SESSION_MESSAGE } from "@/fns/evolutionSession";
 import { reportSendSessionDisconnected } from "@/fns/evolutionSessionWatch";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 import { extractState } from "@/lib/evolution/client";
@@ -26,10 +27,10 @@ import { toInternationalDigits } from "@/lib/providers/types";
  *
  * Both callers — the notification dispatcher and the inbox composer — go
  * through here so delivery policy cannot diverge: one instance-name source
- * (the evolution_connections singleton), one session check, one send path,
- * one inbox record shape, one media cache. Keeping it in src/fns (not
- * src/lib/providers) because it needs the service-role client, which the
- * provider adapters deliberately do not import.
+ * (the company's active `whatsapp_connections` row), one session check, one
+ * send path, one inbox record shape, one media cache. Keeping it in src/fns
+ * (not src/lib/providers) because it needs the company-scoped client, which
+ * the provider adapters deliberately do not import.
  */
 
 /** Private bucket holding every chat file, sent or received (migration 182). */
@@ -68,37 +69,19 @@ export function whatsappMediaPath(
   return companyStoragePath(companyId, `chat/${chatNumber}/${messageId}/${fileName}`);
 }
 
-type ConnectionRow = { instance_name: string; last_connection_state: string | null };
-
 /**
- * يقرأ صف الاقتران الخاص بالشركة؛ غيابه يعني أن أحداً لم يمسح رمز QR قط.
+ * خطأ "لا جلسة مقترنة": الإجراء بشري، فلا تنفع إعادة المحاولة.
  *
- * A missing row is the same terminal condition as a logged-out session, so it
- * carries the same `session_disconnected` code and the drain job parks the
- * notification for the same human fix.
+ * A missing connection row is the same terminal condition as a logged-out
+ * session, so it carries the same `session_disconnected` code and the drain job
+ * parks the notification for the same human fix.
  */
-async function loadConnectionRow(
-  client: SupabaseClient<Database>,
-  companyId: string,
-): Promise<ConnectionRow> {
-  const result = await client
-    .from("evolution_connections")
-    .select("instance_name, last_connection_state")
-    .eq("company_id", companyId)
-    .maybeSingle();
-  if (result.error) throw new Error(result.error.message);
-  if (!result.data) {
-    throw new EvolutionProviderError(
-      "No WhatsApp QR session has been paired. Scan the QR code in Settings → Integrations.",
-      "session_disconnected",
-      false,
-    );
-  }
-  return result.data;
+function notPairedError(): EvolutionProviderError {
+  return new EvolutionProviderError(NO_QR_SESSION_MESSAGE, "session_disconnected", false);
 }
 
 /**
- * يقرأ اسم النسخة المقترنة من صف evolution_connections الخاص بالشركة.
+ * يقرأ اسم النسخة المقترنة من اتصال واتساب النشط للشركة.
  *
  * Existence only — used by the media fetch path, which reads from Evolution's
  * store and does not need a live session. Sends go through
@@ -106,34 +89,60 @@ async function loadConnectionRow(
  */
 export async function loadEvolutionInstanceName(explicitCompanyId?: string): Promise<string> {
   const { companyId, client } = serverCompanyClient(explicitCompanyId);
-  return (await loadConnectionRow(client, companyId)).instance_name;
+  const row = await loadQrConnection(client, companyId);
+  if (!row?.instance_name) throw notPairedError();
+  return row.instance_name;
+}
+
+/**
+ * يشفي صف الاتصال بعد أن يؤكّد فحص حيّ واحد أن الجلسة مفتوحة.
+ *
+ * The row is the company's own, so the update is keyed by its id: a status
+ * that says "connected" while the row belongs to somebody else would be a
+ * lie about another company's session.
+ */
+async function healConnectionRow(
+  client: SupabaseClient<Database>,
+  connectionId: string,
+): Promise<void> {
+  const heal = await client
+    .from("whatsapp_connections")
+    .update({ status: "connected", last_seen_at: new Date().toISOString() })
+    .eq("id", connectionId);
+  if (heal.error) {
+    console.error("[evolutionDelivery] failed to record the healed session state", heal.error);
+  }
 }
 
 /**
  * يتأكد أن الجلسة مفتوحة قبل الإرسال؛ يشفي سجلاً بالياً بفحص حيّ واحد.
+ *
+ * The company's ACTIVE `evolution_qr` row in `whatsapp_connections` is the
+ * source of truth, and the cases are:
+ *   - no row: the company never paired a number → not paired;
+ *   - row `connected`: the session is open → send;
+ *   - row not connected: probe Evolution once — a live `open` heals the row
+ *     (a webhook that never arrived must not silence every WhatsApp until
+ *     someone opens the settings page), anything else parks the send.
  */
 async function requireOpenSession(
   client: SupabaseClient<Database>,
   companyId: string,
   config: Json,
 ): Promise<string> {
-  const row = await loadConnectionRow(client, companyId);
-  if (row.last_connection_state === "open") return row.instance_name;
+  const row = await loadQrConnection(client, companyId);
+  if (!row) throw notPairedError();
+  if (row.status === "connected" && row.instance_name) return row.instance_name;
+  if (!row.instance_name) throw sessionDisconnectedError(row.status);
 
   const evolutionClient = evolutionClientFromConfig(config);
   const live = await evolutionClient
     .connectionState(row.instance_name)
     .then(extractState)
     .catch(() => null);
-  if (live !== "open") throw sessionDisconnectedError(live ?? row.last_connection_state);
+  if (live !== "open") throw sessionDisconnectedError(live ?? row.status);
 
-  const heal = await client
-    .from("evolution_connections")
-    .update({ last_connection_state: "open" })
-    .eq("company_id", companyId);
-  if (heal.error) {
-    console.error("[evolutionDelivery] failed to record the healed session state", heal.error);
-  }
+  await healConnectionRow(client, row.id);
   return row.instance_name;
 }
 

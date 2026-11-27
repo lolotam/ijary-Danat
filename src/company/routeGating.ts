@@ -125,7 +125,7 @@ export function suspendedRouteDecision(
 
 /**
  * يحسم إقفال المسارات على المضيفين: `/platform/*` للوحة المشرف العام فقط،
- * و`/admin/*` و`/portal/*` لمضيفات الشركات فقط، والباقي يُمنع على المضيف المجهول.
+ * و`/admin/*` و`/portal/*` و`/support-session` لمضيفات الشركات فقط، والباقي يُمنع على المضيف المجهول.
  *
  * `ijary.app` is not hard-coded: the host kinds arrive already resolved from
  * config (`PLATFORM_ROOT_HOST` / `PLATFORM_ADMIN_HOST`) by `resolveHostCompany`.
@@ -139,7 +139,11 @@ export function isRouteAllowedForHost(resolution: HostResolution, rawPathname: s
   if (isUnderPathPrefix(pathname, "/platform")) {
     return resolution.kind === "platform_admin";
   }
-  if (isUnderPathPrefix(pathname, "/admin") || isUnderPathPrefix(pathname, "/portal")) {
+  if (
+    isUnderPathPrefix(pathname, "/admin") ||
+    isUnderPathPrefix(pathname, "/portal") ||
+    isUnderPathPrefix(pathname, "/support-session")
+  ) {
     return resolution.kind === "company";
   }
   return true;

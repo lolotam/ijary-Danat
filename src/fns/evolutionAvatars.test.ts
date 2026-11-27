@@ -32,15 +32,23 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth:
 // touch it, so the real client must never be built.
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 
+/** معرّف اتصال واتساب النشط للشركة في بيانات الاختبار. */
+const CONNECTION_ID = "33333333-3333-4333-8333-333333333333";
+
 const db = {
   /** whatsapp_chats rows the fake PostgREST answers `in()` selects with. */
   chats: [] as { chat_number: string; avatar_url: string | null }[],
   /** whatsapp_contacts rows, keyed by `phone` the way the real table is. */
   contacts: [] as { phone: string; avatar_url: string | null }[],
-  connection: { instance_name: "danat", last_connection_state: "open" } as Record<
-    string,
-    unknown
-  > | null,
+  /** the company's active `evolution_qr` connection row (null = never paired). */
+  connection: {
+    id: CONNECTION_ID,
+    company_id: "00000000-0000-4000-8000-000000000001",
+    method: "evolution_qr",
+    is_active: true,
+    status: "connected",
+    instance_name: "danat",
+  } as Record<string, unknown> | null,
   updates: [] as { table: string; values: Record<string, unknown>; filter: string }[],
   /** طلبات المهام المسجَّلة عبر `enqueue_job`. */
   jobs: [] as { kind: string; payload: Record<string, unknown>; dedupeKey: string | null }[],
@@ -70,10 +78,12 @@ vi.mock("@/company/companyClient.server", () => {
     const chain: Record<string, unknown> = {};
     let values: Record<string, unknown> | null = null;
     let filter = "";
+    const filters: Array<[string, unknown]> = [];
     Object.assign(chain, {
       select: () => chain,
-      eq: (_column: string, value: string) => {
-        filter = value;
+      eq: (column: string, value: unknown) => {
+        filters.push([column, value]);
+        filter = String(value);
         return chain;
       },
       in: () =>
@@ -81,7 +91,16 @@ vi.mock("@/company/companyClient.server", () => {
           data: table === "whatsapp_contacts" ? db.contacts : db.chats,
           error: null,
         }),
-      maybeSingle: () => Promise.resolve({ data: db.connection, error: null }),
+      maybeSingle: () =>
+        Promise.resolve({
+          data:
+            table === "whatsapp_connections" && db.connection
+              ? filters.every(([column, value]) => db.connection?.[column] === value)
+                ? db.connection
+                : null
+              : null,
+          error: null,
+        }),
       update(next: Record<string, unknown>) {
         values = next;
         return chain;
@@ -115,7 +134,10 @@ vi.mock("@/company/companyClient.server", () => {
   return { companyClient: () => client };
 });
 
-vi.mock("@/fns/evolutionSession", () => ({
+vi.mock("@/fns/evolutionSession", async (importOriginal) => ({
+  // Partial: the connection reader is the real one, so the query's own company
+  // and method filters are what the test observes.
+  ...(await importOriginal<Record<string, unknown>>()),
   loadEvolutionProviderConfig: vi.fn().mockResolvedValue({ config: {} }),
 }));
 
@@ -130,7 +152,14 @@ const { backfillChatAvatars, runEvolutionAvatarSweep, syncEvolutionAvatars } =
 beforeEach(() => {
   db.chats = [];
   db.contacts = [];
-  db.connection = { instance_name: "danat", last_connection_state: "open" };
+  db.connection = {
+    id: "33333333-3333-4333-8333-333333333333",
+    company_id: TEST_COMPANY.id,
+    method: "evolution_qr",
+    is_active: true,
+    status: "connected",
+    instance_name: "danat",
+  };
   db.updates = [];
   db.jobs = [];
   fetchProfilePictureUrl.mockReset();
@@ -233,7 +262,7 @@ describe("backfillChatAvatars", () => {
   it("does nothing while the WhatsApp session is closed", async () => {
     db.chats = [{ chat_number: "96551234567", avatar_url: null }];
     db.contacts = [{ phone: "96551234567", avatar_url: null }];
-    db.connection = { instance_name: "danat", last_connection_state: "close" };
+    db.connection = { ...db.connection, status: "disconnected" } as Record<string, unknown>;
 
     await backfillChatAvatars(["96551234567"]);
 
@@ -251,7 +280,7 @@ describe("runEvolutionAvatarSweep", () => {
 
     const result = await runEvolutionAvatarSweep({
       companyId: TEST_COMPANY.id,
-      connectionId: TEST_COMPANY.id,
+      connectionId: CONNECTION_ID,
       after: null,
     });
 
@@ -268,7 +297,7 @@ describe("runEvolutionAvatarSweep", () => {
 
     const result = await runEvolutionAvatarSweep({
       companyId: TEST_COMPANY.id,
-      connectionId: TEST_COMPANY.id,
+      connectionId: CONNECTION_ID,
       after: "96551234561",
     });
 
@@ -288,13 +317,15 @@ describe("syncEvolutionAvatars (the server function)", () => {
     expect(result).toEqual({ queued: true, jobRequestId: "job-1" });
     expect(db.jobs).toHaveLength(1);
     expect(db.jobs[0].kind).toBe("whatsapp.avatars.sync");
-    expect(db.jobs[0].payload).toEqual({ connectionId: TEST_COMPANY.id });
+    // The payload carries the connection id, so the worker walks THIS
+    // company's link and not the company id it used to carry.
+    expect(db.jobs[0].payload).toEqual({ connectionId: CONNECTION_ID });
     expect(() =>
       JOB_CATALOG["whatsapp.avatars.sync"].payload.parse(db.jobs[0].payload),
     ).not.toThrow();
     // Dedupe connection id + day (contracts/jobs.md section 5).
     expect(db.jobs[0].dedupeKey).toMatch(
-      new RegExp(`^whatsapp\\.avatars\\.sync:${TEST_COMPANY.id}:\\d{4}-\\d{2}-\\d{2}$`),
+      new RegExp(`^whatsapp\\.avatars\\.sync:${CONNECTION_ID}:\\d{4}-\\d{2}-\\d{2}$`),
     );
     // No slow work here: the gateway is never asked for a picture.
     expect(fetchProfilePictureUrl).not.toHaveBeenCalled();
@@ -302,7 +333,7 @@ describe("syncEvolutionAvatars (the server function)", () => {
   });
 
   it("refuses the click when the session is closed, before anything is queued", async () => {
-    db.connection = { instance_name: "danat", last_connection_state: "close" };
+    db.connection = { ...db.connection, status: "disconnected" } as Record<string, unknown>;
 
     await expect(syncEvolutionAvatars({})).rejects.toThrow(/scan the qr/i);
 

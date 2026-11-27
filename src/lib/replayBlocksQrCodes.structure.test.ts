@@ -64,7 +64,7 @@ describe("session replay", () => {
 
     expect(guarded).toEqual(
       expect.arrayContaining([
-        "components/admin/whatsapp/EvolutionQrDialog.tsx",
+        "components/admin/settings/WhatsAppCard.tsx",
         "components/portal/ApplePayQrDialog.tsx",
       ]),
     );

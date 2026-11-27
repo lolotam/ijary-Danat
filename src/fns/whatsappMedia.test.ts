@@ -31,7 +31,8 @@ const db = {
     from_whatsapp: null,
     config: { api_base: "http://evolution:8080", api_key_env: "EVOLUTION_API_KEY" },
   } as Record<string, unknown>,
-  connection: { instance_name: "danat", last_connection_state: "open" } as Record<string, unknown>,
+  /** the company's active `evolution_qr` connection row. */
+  connection: { instance_name: "danat", status: "connected" } as Record<string, unknown>,
   /** bucket path → stored file. */
   storage: {} as Record<string, { bytes: Buffer; type: string }>,
   uploads: [] as string[],
@@ -64,7 +65,7 @@ vi.mock("@/company/companyClient.server", () => {
           return Promise.resolve({ data: db.messages[chain._messageId!] ?? null, error: null });
         if (table === "provider_configs")
           return Promise.resolve({ data: db.provider, error: null });
-        if (table === "evolution_connections")
+        if (table === "whatsapp_connections")
           return Promise.resolve({ data: db.connection, error: null });
         throw new Error(`Unexpected maybeSingle on ${table}`);
       },

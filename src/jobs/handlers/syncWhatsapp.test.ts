@@ -24,6 +24,10 @@ const { createWhatsappAvatarsSyncHandler, createWhatsappHistorySyncHandler } =
 const COMPANY_A = "11111111-1111-4111-8111-111111111111";
 const COMPANY_B = "22222222-2222-4222-8222-222222222222";
 const JOB_ID = "33333333-3333-4333-8333-333333333333";
+// The job payload carries the WhatsApp connection id (migration 333), not the
+// company id the legacy singleton used to travel with.
+const CONNECTION_A = "44444444-4444-4444-8444-444444444444";
+const CONNECTION_B = "55555555-5555-4555-8555-555555555555";
 
 /** يوجّه استدعاءات fetch المُقلَّدة بحسب نهاية نقطة Evolution. */
 function stubEvolution(handlers: {
@@ -81,7 +85,7 @@ afterEach(() => {
 });
 
 describe("the whatsapp.history.sync handler", () => {
-  function runHistory(companyId = COMPANY_A, connectionId = COMPANY_A) {
+  function runHistory(companyId = COMPANY_A, connectionId = CONNECTION_A) {
     return createWhatsappHistorySyncHandler()({
       jobRequestId: JOB_ID,
       companyId,
@@ -91,7 +95,7 @@ describe("the whatsapp.history.sync handler", () => {
   }
 
   it("imports the history once, and a second run of the same job imports nothing twice", async () => {
-    seedEvolution(fake, COMPANY_A);
+    seedEvolution(fake, COMPANY_A, CONNECTION_A);
     const jid = "96550123456@s.whatsapp.net";
     stubEvolution({
       contacts: [{ remoteJid: jid, pushName: "أحمد" }],
@@ -110,15 +114,15 @@ describe("the whatsapp.history.sync handler", () => {
   });
 
   it("finds nothing in a connection that belongs to another company", async () => {
-    seedEvolution(fake, COMPANY_B);
+    seedEvolution(fake, COMPANY_B, CONNECTION_B);
 
-    await expect(runHistory(COMPANY_A, COMPANY_B)).rejects.toThrow(/open WhatsApp session/i);
+    await expect(runHistory(COMPANY_A, CONNECTION_B)).rejects.toThrow(/open WhatsApp session/i);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
 
 describe("the whatsapp.avatars.sync handler", () => {
-  function runAvatars(companyId = COMPANY_A, connectionId = COMPANY_A) {
+  function runAvatars(companyId = COMPANY_A, connectionId = CONNECTION_A) {
     return createWhatsappAvatarsSyncHandler()({
       jobRequestId: JOB_ID,
       companyId,
@@ -131,7 +135,7 @@ describe("the whatsapp.avatars.sync handler", () => {
     // The job replaces the dialog's click-by-click cursor: a directory larger
     // than one pass's ceiling is still finished by a single job, because the
     // handler feeds each pass's cursor into the next.
-    seedEvolution(fake, COMPANY_A);
+    seedEvolution(fake, COMPANY_A, CONNECTION_A);
     const rows = Array.from({ length: 61 }, (_, index) => ({
       company_id: COMPANY_A,
       chat_number: `9655000${String(index).padStart(4, "0")}`,
@@ -148,7 +152,7 @@ describe("the whatsapp.avatars.sync handler", () => {
   });
 
   it("a second run of the same jobRequestId stores the same state and creates no rows", async () => {
-    seedEvolution(fake, COMPANY_A);
+    seedEvolution(fake, COMPANY_A, CONNECTION_A);
     seedSyncTable(fake, "whatsapp_chats", [
       { company_id: COMPANY_A, chat_number: "965500000001", avatar_url: null },
     ]);
@@ -169,11 +173,11 @@ describe("the whatsapp.avatars.sync handler", () => {
   });
 
   it("finds nothing in a connection that belongs to another company", async () => {
-    seedEvolution(fake, COMPANY_B);
+    seedEvolution(fake, COMPANY_B, CONNECTION_B);
     seedSyncTable(fake, "whatsapp_chats", []);
     seedSyncTable(fake, "whatsapp_contacts", []);
 
-    await expect(runAvatars(COMPANY_A, COMPANY_B)).rejects.toThrow(/open WhatsApp session/i);
+    await expect(runAvatars(COMPANY_A, CONNECTION_B)).rejects.toThrow(/open WhatsApp session/i);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

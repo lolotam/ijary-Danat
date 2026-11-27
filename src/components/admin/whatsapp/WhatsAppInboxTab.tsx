@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { MessageSquareText, TriangleAlert, Users } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,6 +24,7 @@ import {
 } from "@/hooks/useWhatsAppInbox";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useI18n } from "@/i18n/provider";
+import { PERMISSIONS } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 interface WhatsAppInboxTabProps {
@@ -65,12 +67,13 @@ export function WhatsAppInboxTab({
 
   const connection = useEvolutionConnection(enabled);
   const chats = useWhatsAppChats(enabled && view === "chats", debouncedSearch);
-  const sessionOpen = connection.data?.last_connection_state === "open";
+  const sessionOpen = connection.data?.status === "connected";
   const [addContactDraft, setAddContactDraft] = useState<ContactDraft | null>(null);
   const deleteChat = useDeleteWhatsAppChat();
   const [deleteChatTarget, setDeleteChatTarget] = useState<string | null>(null);
   const permissions = usePermissions();
   const canDeleteChats = permissions.can("notifications.delete");
+  const canManageConnection = permissions.can(PERMISSIONS.SETTINGS_INTEGRATIONS);
 
   async function confirmDeleteChat() {
     if (!deleteChatTarget) return;
@@ -143,6 +146,15 @@ export function WhatsAppInboxTab({
           <span className="ms-auto flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
             <TriangleAlert className="size-3.5" />
             {t("inbox.whatsapp.disconnectedBanner")}
+            {/* Pairing lives on the integrations page now; the old dialog is gone. */}
+            {canManageConnection ? (
+              <Link
+                to="/admin/settings/integrations"
+                className="font-medium underline underline-offset-2"
+              >
+                {t("admin.whatsappBanner.reconnect")}
+              </Link>
+            ) : null}
           </span>
         ) : null}
       </div>

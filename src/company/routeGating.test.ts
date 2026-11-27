@@ -71,6 +71,14 @@ describe("isRouteAllowedForHost", () => {
     },
   );
 
+  // A support-session link carries a staff token; it must only open on the
+  // company host the token was minted for, never on the platform hosts.
+  it("support-session entry is a company-host page only", () => {
+    expect(isRouteAllowedForHost(COMPANY_RESOLUTION, "/support-session")).toBe(true);
+    expect(isRouteAllowedForHost(ADMIN_RESOLUTION, "/support-session")).toBe(false);
+    expect(isRouteAllowedForHost(ROOT_RESOLUTION, "/Support-Session")).toBe(false);
+  });
+
   it.each(["/platformx", "/platform-old"])(
     "look-alike %s is not gated as the panel on a company host",
     (pathname) => {

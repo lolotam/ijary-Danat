@@ -372,19 +372,19 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 ### Tests for User Story 9
 
 - [x] T156 [P] [US9] SQL tests: one active method per company, one number on one company, another company cannot read a connection, in `src/db/whatsapp/connections.sqltest.ts`
-- [ ] T157 [P] [US9] Routing tests: Evolution event by connection id and secret; Meta event by `phone_number_id`; unknown number dropped, in `src/whatsapp/routing.test.ts`
+- [x] T157 [P] [US9] Routing tests: Evolution event by connection id and secret; Meta event by `phone_number_id`; unknown number dropped, in `src/whatsapp/routing.test.ts`
 
 ### Implementation for User Story 9
 
 - [x] T158 [US9] Write migration `db/migrations/<next free number>_whatsapp_connections.sql` (295 is taken since the T052l split): `whatsapp_connections` replacing `evolution_connections`; `connection_id` on the four `whatsapp_*` tables (data-model.md: `whatsapp_connections.method`, `whatsapp_connections.status`, `whatsapp_connections.is_active`, `whatsapp_connections.connected_number`, `whatsapp_connections.phone_number_id`) (done as `333_whatsapp_connections.sql`)
-- [ ] T159 [US9] Per-company Evolution instance lifecycle in `src/whatsapp/evolutionInstance.ts`
-- [ ] T160 [US9] Route `src/routes/api/public/webhooks/evolution.$connectionId.ts` and connection lookup in `src/fns/evolutionWebhook.ts`; delete `src/routes/api/public/evolution-webhook.ts`
-- [ ] T161 [US9] Per-company disconnect detection and alert in `src/fns/evolutionSessionWatch.ts` and `src/fns/notifyWhatsappSessionDisconnected.ts`
-- [ ] T162 [US9] `whatsappStatus`, `whatsappStartQr`, `whatsappDisconnect`, `whatsappActivate` in `src/fns/whatsappSettings.ts`; replace `EvolutionConnectionCard` with `src/components/admin/settings/WhatsAppCard.tsx`
-- [ ] T163 [US9] Scope inbox queries by connection in the WhatsApp hooks under `src/hooks/`
+- [x] T159 [US9] Per-company Evolution instance lifecycle in `src/whatsapp/evolutionInstance.ts`
+- [x] T160 [US9] Route `src/routes/api/public/webhooks/evolution.$connectionId.ts` and connection lookup in `src/fns/evolutionWebhook.ts`; delete `src/routes/api/public/evolution-webhook.ts`
+- [x] T161 [US9] Per-company disconnect detection and alert in `src/fns/evolutionSessionWatch.ts` and `src/fns/notifyWhatsappSessionDisconnected.ts`
+- [x] T162 [US9] `whatsappStatus`, `whatsappStartQr`, `whatsappDisconnect`, `whatsappActivate` in `src/fns/whatsappSettings.ts`; replace `EvolutionConnectionCard` with `src/components/admin/settings/WhatsAppCard.tsx`
+- [x] T163 [US9] Scope inbox queries by connection in the WhatsApp hooks under `src/hooks/`
 - [ ] T164 [US9] ⛔ BLOCKED(owner: Meta app id, app secret, Embedded Signup configuration id) VERIFY current Embedded Signup parameters for coexistence and the Graph API version in research.md R15
-- [ ] T165 [US9] Official API sending with the approved-template check in `src/whatsapp/cloudApi.ts`
-- [ ] T166 [US9] Meta webhook route `src/routes/api/public/webhooks/meta.ts` and routing in `src/whatsapp/routing.ts`
+- [x] T165 [US9] Official API sending with the approved-template check in `src/whatsapp/cloudApi.ts`
+- [x] T166 [US9] Meta webhook route `src/routes/api/public/webhooks/meta.ts` and routing in `src/whatsapp/routing.ts`
 - [ ] T167 [US9] Embedded Signup with coexistence in `src/whatsapp/embeddedSignup.ts`; `whatsappEmbeddedSignupConfig`, `whatsappCompleteEmbeddedSignup`, `whatsappSaveCloudCredentials` in `src/fns/whatsappSettings.ts`; the sign-up button in `WhatsAppCard.tsx`
 - [ ] T168 [US9] Gate: quickstart.md Phase 4 steps 1 to 6; record SC-013
 
@@ -429,10 +429,10 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 - [x] T177 [US11] Write migration `db/migrations/297_impersonation_sessions.sql`: the table, the session branch of `current_company_id()`, the impersonator in `write_audit` (data-model.md: `impersonation_sessions.reason`, `impersonation_sessions.expires_at`; research.md R17) (done as `330_impersonation_sessions.sql`)
 - [x] T178 [US11] `platformStartSupportSession` and `platformEndSupportSession` with token minting in `src/platform/supportSession.ts`
-- [ ] T179 [US11] Accept the support token on the company host in `src/routes/support-session.tsx` and `src/auth/AuthProvider.tsx`
-- [ ] T180 [US11] Persistent red banner in `src/components/admin/SupportSessionBanner.tsx`, mounted in `src/routes/admin.tsx`
-- [ ] T181 [US11] Refuse with `SUPPORT_SESSION_FORBIDDEN` in `src/fns/gatewaySettings.ts`, `src/fns/whatsappSettings.ts`, `src/fns/updateAppUser.ts` and `src/fns/passwordReset.ts` — done in gatewaySettings, updateAppUser, passwordReset; `whatsappSettings.ts` gets it when US9 T159–T163 creates it
-- [ ] T182 [US11] Start and end controls in `src/routes/platform.companies.$id.tsx`
+- [x] T179 [US11] Accept the support token on the company host in `src/routes/support-session.tsx` and `src/auth/AuthProvider.tsx`
+- [x] T180 [US11] Persistent red banner in `src/components/admin/SupportSessionBanner.tsx`, mounted in `src/routes/admin.tsx`
+- [x] T181 [US11] Refuse with `SUPPORT_SESSION_FORBIDDEN` in `src/fns/gatewaySettings.ts`, `src/fns/whatsappSettings.ts`, `src/fns/updateAppUser.ts` and `src/fns/passwordReset.ts` — done in all four (`whatsappSettings.ts` refuses on start QR, disconnect and activate; status is read-only)
+- [x] T182 [US11] Start and end controls in `src/routes/platform.companies.$id.tsx`
 - [ ] T183 [US11] Gate: quickstart.md Phase 5 steps 1 to 5
 
 **Checkpoint**: Support access works and leaves a complete trail.

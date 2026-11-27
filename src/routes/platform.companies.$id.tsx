@@ -8,6 +8,7 @@ import { DomainsPanel } from "@/components/platform/DomainsPanel";
 import { LimitsPanel } from "@/components/platform/LimitsPanel";
 import { ModuleSwitches } from "@/components/platform/ModuleSwitches";
 import { SubscriptionPanel } from "@/components/platform/SubscriptionPanel";
+import { SupportSessionPanel } from "@/components/platform/SupportSessionPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -303,6 +304,7 @@ export function PlatformCompanyDetailPage() {
       <ModuleSwitches companyId={companyId} />
       <DomainsPanel companyId={companyId} />
       <CompanyUsersPanel companyId={companyId} />
+      <SupportSessionPanel companyId={companyId} />
     </section>
   );
 }

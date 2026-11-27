@@ -139,7 +139,7 @@ describe("dispatchNotificationRecord through Evolution", () => {
     // The webhook recorded `close` when WhatsApp unlinked the device. Sending
     // anyway just burns a retry on a gateway that answers 500 — the row must
     // land on the needs_review code that tells an admin to re-scan.
-    db.connection = { instance_name: "danat", last_connection_state: "close" };
+    db.connection = { ...db.connection, status: "disconnected" } as Record<string, unknown>;
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ instance: { state: "close" } }), { status: 200 }),
     );
@@ -156,7 +156,7 @@ describe("dispatchNotificationRecord through Evolution", () => {
   it("heals a stale closed record when the live probe says open, and sends", async () => {
     // A webhook that never arrived (Evolution restarted, app was deploying)
     // must not silence every WhatsApp until someone opens the settings page.
-    db.connection = { instance_name: "danat", last_connection_state: "close" };
+    db.connection = { ...db.connection, status: "disconnected" } as Record<string, unknown>;
     vi.mocked(globalThis.fetch)
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ instance: { state: "open" } }), { status: 200 }),
@@ -170,7 +170,7 @@ describe("dispatchNotificationRecord through Evolution", () => {
       "http://evolution:8080/message/sendText/danat",
     ]);
     expect(result.state).toBe("sent");
-    expect(db.connectionUpdates).toEqual([{ last_connection_state: "open" }]);
+    expect(db.connectionUpdates).toEqual([expect.objectContaining({ status: "connected" })]);
   });
 
   it("is preferred over the other WhatsApp providers if somehow co-enabled", async () => {

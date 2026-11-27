@@ -51,8 +51,9 @@ export const PROVIDER_CONFIG_SHAPE: Record<
     optional: { webhook_secret_env: "POSTORA_WEBHOOK_SECRET" },
   },
   evolution_api: {
-    // No instance_name here on purpose: evolution_connections (migration 179)
-    // is its single source of truth, so config and paired session cannot drift.
+    // No instance_name here on purpose: the company's `whatsapp_connections`
+    // row (migration 333) is its single source of truth, so config and paired
+    // session cannot drift.
     required: {
       api_base: "http://evolution:8080",
       api_key_env: "EVOLUTION_API_KEY",

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { useInViewOnce } from "./useInViewOnce";
 import { useObjectUrl } from "./useObjectUrl";
@@ -11,11 +12,9 @@ export * from "./useWhatsAppContactsData";
 
 import {
   deleteWhatsAppChat,
-  deleteWhatsAppContact,
   deleteWhatsAppMessage,
   exportWhatsAppContactsCsv,
   markWhatsAppChatRead,
-  saveWhatsAppContact,
   sendWhatsAppChatMessage,
 } from "@/fns/whatsappChat";
 import {
@@ -24,10 +23,10 @@ import {
   sendWhatsAppChatMedia,
 } from "@/fns/whatsappMedia";
 import { supabase } from "@/integrations/supabase/client";
-import { sessionHeaders } from "./whatsappSession";
+import { sessionHeaders, useActiveWhatsAppConnectionId } from "./whatsappSession";
 import type {
+  Database,
   WhatsappChatRow,
-  WhatsappContactRow,
   WhatsappMessageRow,
 } from "@/integrations/supabase/database.types";
 
@@ -49,96 +48,122 @@ function visiblePollInterval(ms: number): () => number | false {
     typeof document !== "undefined" && document.visibilityState === "visible" ? ms : false;
 }
 
-export function useWhatsAppChats(enabled: boolean, search: string) {
-  return useQuery({
-    queryKey: ["whatsapp-chats", search],
-    enabled,
-    refetchInterval: visiblePollInterval(15_000),
-    queryFn: async (): Promise<WhatsappChatRow[]> => {
-      let query = supabase
-        .from("whatsapp_chats")
-        .select("*")
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(200);
-      if (search.trim()) {
-        const term = search.trim().replace(/[%_]/g, "");
-        query = query.or(`chat_number.ilike.%${term}%,display_name.ilike.%${term}%`);
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      const chats = data ?? [];
-      if (!chats.length) return chats;
+/**
+ * يجلب قائمة محادثات واتساب مقيّدة بمعرّف الاتصال النشط للشركة مع دمج أسماء الدليل.
+ */
+export async function fetchWhatsAppChats(
+  client: SupabaseClient<Database>,
+  connectionId: string | null,
+  search: string,
+): Promise<WhatsappChatRow[]> {
+  if (!connectionId) return [];
 
-      // The contact directory is the authoritative name book: a name the admin
-      // typed there beats the WhatsApp push name captured at ingest (which for
-      // LID accounts is often just digits). chat_number === contacts.phone.
-      const contacts = await supabase
-        .from("whatsapp_contacts")
-        .select("phone, name, avatar_url")
-        .in(
-          "phone",
-          chats.map((chat) => chat.chat_number),
-        );
-      if (contacts.error) throw contacts.error;
-      const byPhone = new Map((contacts.data ?? []).map((contact) => [contact.phone, contact]));
-      return chats.map((chat) => {
-        const contact = byPhone.get(chat.chat_number);
-        return {
-          ...chat,
-          display_name: contact?.name?.trim() ? contact.name : chat.display_name,
-          avatar_url: chat.avatar_url ?? contact?.avatar_url ?? null,
-        };
-      });
-    },
+  let query = client
+    .from("whatsapp_chats")
+    .select("*")
+    .eq("connection_id", connectionId)
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .limit(200);
+  if (search.trim()) {
+    const term = search.trim().replace(/[%_]/g, "");
+    query = query.or(`chat_number.ilike.%${term}%,display_name.ilike.%${term}%`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  const chats = data ?? [];
+  if (!chats.length) return chats;
+
+  // The contact directory is the authoritative name book: a name the admin
+  // typed there beats the WhatsApp push name captured at ingest (which for
+  // LID accounts is often just digits). chat_number === contacts.phone.
+  const contacts = await client
+    .from("whatsapp_contacts")
+    .select("phone, name, avatar_url")
+    .eq("connection_id", connectionId)
+    .in(
+      "phone",
+      chats.map((chat) => chat.chat_number),
+    );
+  if (contacts.error) throw contacts.error;
+  const byPhone = new Map((contacts.data ?? []).map((contact) => [contact.phone, contact]));
+  return chats.map((chat) => {
+    const contact = byPhone.get(chat.chat_number);
+    return {
+      ...chat,
+      display_name: contact?.name?.trim() ? contact.name : chat.display_name,
+      avatar_url: chat.avatar_url ?? contact?.avatar_url ?? null,
+    };
+  });
+}
+
+/**
+ * يستعلم عن قائمة محادثات واتساب للاتصال النشط للشركة.
+ */
+export function useWhatsAppChats(enabled: boolean, search: string) {
+  const connectionQuery = useActiveWhatsAppConnectionId(enabled);
+  const connectionId = connectionQuery.data ?? null;
+  return useQuery({
+    queryKey: ["whatsapp-chats", search, connectionId],
+    enabled: enabled && connectionQuery.isFetched,
+    refetchInterval: visiblePollInterval(15_000),
+    queryFn: () => fetchWhatsAppChats(supabase, connectionId, search),
   });
 }
 
 type MessageCursor = { sentAt: string; id: string };
 
 /**
+ * يجلب صفحة رسائل لمحادثة محددة مقيّدة بمعرّف الاتصال النشط.
+ */
+export async function fetchWhatsAppMessagesPage(
+  client: SupabaseClient<Database>,
+  connectionId: string | null,
+  chatNumber: string,
+  cursor: MessageCursor | null = null,
+): Promise<WhatsappMessageRow[]> {
+  if (!connectionId) return [];
+
+  let query = client
+    .from("whatsapp_messages")
+    .select("*")
+    .eq("connection_id", connectionId)
+    .eq("chat_number", chatNumber)
+    .order("sent_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(THREAD_PAGE_SIZE);
+  if (cursor) {
+    query = query.or(
+      `sent_at.lt.${cursor.sentAt},and(sent_at.eq.${cursor.sentAt},id.lt.${cursor.id})`,
+    );
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
  * خيط محادثة واحدة: أحدث صفحة تُستطلع كل 5 ثوانٍ، والتاريخ يُسحب عند الطلب،
  * ويُدمجان بلا تكرار عبر معرّف الرسالة.
  */
 export function useWhatsAppThread(chatNumber: string | null) {
+  const connectionQuery = useActiveWhatsAppConnectionId(!!chatNumber);
+  const connectionId = connectionQuery.data ?? null;
+  const threadReady = !!chatNumber && connectionQuery.isFetched;
+
   const latest = useQuery({
-    queryKey: ["whatsapp-latest", chatNumber],
-    enabled: !!chatNumber,
+    queryKey: ["whatsapp-latest", chatNumber, connectionId],
+    enabled: threadReady,
     refetchInterval: visiblePollInterval(5_000),
-    queryFn: async (): Promise<WhatsappMessageRow[]> => {
-      const { data, error } = await supabase
-        .from("whatsapp_messages")
-        .select("*")
-        .eq("chat_number", chatNumber!)
-        .order("sent_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(THREAD_PAGE_SIZE);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => fetchWhatsAppMessagesPage(supabase, connectionId, chatNumber!),
   });
 
   const history = useInfiniteQuery({
-    queryKey: ["whatsapp-history", chatNumber],
-    enabled: !!chatNumber,
+    queryKey: ["whatsapp-history", chatNumber, connectionId],
+    enabled: threadReady,
     refetchInterval: false,
     initialPageParam: null as MessageCursor | null,
-    queryFn: async ({ pageParam }): Promise<WhatsappMessageRow[]> => {
-      let query = supabase
-        .from("whatsapp_messages")
-        .select("*")
-        .eq("chat_number", chatNumber!)
-        .order("sent_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(THREAD_PAGE_SIZE);
-      if (pageParam) {
-        query = query.or(
-          `sent_at.lt.${pageParam.sentAt},and(sent_at.eq.${pageParam.sentAt},id.lt.${pageParam.id})`,
-        );
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: ({ pageParam }) =>
+      fetchWhatsAppMessagesPage(supabase, connectionId, chatNumber!, pageParam),
     getNextPageParam: (lastPage): MessageCursor | null | undefined => {
       if (lastPage.length < THREAD_PAGE_SIZE) return undefined;
       const oldest = lastPage[lastPage.length - 1];

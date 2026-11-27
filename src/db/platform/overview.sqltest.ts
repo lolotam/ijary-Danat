@@ -371,17 +371,13 @@ async function seedOverviewFixtures(client: PoolClient): Promise<void> {
   await seedFailedNotification(client, degradedId, 8);
   await seedFailedNotification(client, degradedId, 40);
 
-  // Until US9 there is one Evolution session row (id 1); it belongs to the
-  // healthy company, is open and is paired with that company's number. The
-  // degraded company has a number but no session, so it cannot send.
+  // Each company has its own WhatsApp connection (migration 334): the healthy
+  // company's active QR connection is paired; the degraded company published a
+  // number but has no connection, so it cannot send.
   await client.query(
-    `insert into public.evolution_connections
-       (id, company_id, instance_name, webhook_secret, last_connection_state, connected_number)
-     values (1, $2, 'danat', 'test-secret', 'open', $1)
-     on conflict (id) do update
-       set company_id = excluded.company_id,
-           last_connection_state = excluded.last_connection_state,
-           connected_number = excluded.connected_number`,
+    `insert into public.whatsapp_connections
+       (company_id, method, is_active, status, instance_name, connected_number)
+     values ($2, 'evolution_qr', true, 'connected', 'ijary-healthy', $1)`,
     [HEALTHY_WHATSAPP, healthyId],
   );
 

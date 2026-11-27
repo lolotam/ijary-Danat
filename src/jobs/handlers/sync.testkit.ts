@@ -318,14 +318,16 @@ export function syncRequestCompanyModule() {
   };
 }
 
-/** بيانات الاتصال المفتوح وصف إعدادات المزوّد لاختبارات مزامنة واتساب. */
-export function seedEvolution(fake: SyncFake, companyId: string): void {
-  seedSyncTable(fake, "evolution_connections", [
+/** صفّ اتصال واتساب النشط وصف إعدادات المزوّد لاختبارات مزامنة واتساب. */
+export function seedEvolution(fake: SyncFake, companyId: string, connectionId: string): void {
+  seedSyncTable(fake, "whatsapp_connections", [
     {
-      id: 1,
+      id: connectionId,
       company_id: companyId,
+      method: "evolution_qr",
+      is_active: true,
+      status: "connected",
       instance_name: "danat",
-      last_connection_state: "open",
     },
   ]);
   seedSyncTable(fake, "provider_configs", [

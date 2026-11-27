@@ -57,12 +57,15 @@ interface ImpersonationSessionRecord {
 }
 
 /**
- * يقرأ سر توقيع JWT الخاص بـ Supabase لإصدار رمز جلسة الدعم قصيرة العمر.
+ * يقرأ سر توقيع JWT الخاص بـ Supabase لإصدار رمز جلسة الدعم والتحقق منه.
+ *
+ * One reader for minting and verifying, so the two can never disagree about
+ * which secret signs a support token.
  */
-function requireJwtSecret(): Uint8Array {
+export function requireJwtSecret(): Uint8Array {
   const secret = process.env.SUPABASE_JWT_SECRET || process.env.SELF_SUPABASE_JWT_SECRET;
   if (!secret || !secret.trim()) {
-    throw new Error("Missing SUPABASE_JWT_SECRET for support session token signing.");
+    throw new Error("Missing SUPABASE_JWT_SECRET for support session tokens.");
   }
   return new TextEncoder().encode(secret);
 }

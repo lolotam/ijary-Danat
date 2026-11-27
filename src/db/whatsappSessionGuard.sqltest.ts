@@ -72,6 +72,39 @@ async function seedConnection(
   );
 }
 
+/**
+ * يزرع اتصال QR النشط للشركة في `whatsapp_connections` بالحالة المطلوبة.
+ *
+ * The health RPC reads this table since migration 335; the legacy singleton
+ * above stays for the migration 253 trigger and seed cases only.
+ */
+async function seedQrConnection(
+  client: PoolClient,
+  companyId: string,
+  overrides: {
+    status?: "disconnected" | "pairing" | "connected" | "error";
+    connectedNumber?: string | null;
+    connectedAt?: string | null;
+    disconnectedAt?: string | null;
+  } = {},
+) {
+  await client.query(`delete from public.whatsapp_connections where company_id = $1`, [companyId]);
+  await client.query(
+    `insert into public.whatsapp_connections (
+       company_id, method, is_active, status, instance_name,
+       connected_number, connected_at, disconnected_at
+     ) values ($1, 'evolution_qr', true, $2, $3, $4, $5, $6)`,
+    [
+      companyId,
+      overrides.status ?? "disconnected",
+      `ijary-${companyId}`,
+      overrides.connectedNumber ?? null,
+      overrides.connectedAt ?? null,
+      overrides.disconnectedAt ?? null,
+    ],
+  );
+}
+
 /** يقرأ دالة whatsapp_session_health() كـ jsonb. */
 async function readHealth(client: PoolClient) {
   const { rows } = await client.query<{
@@ -238,14 +271,13 @@ describe("episode trigger and atomic alert claim (migration 253)", () => {
   });
 });
 
-describe("whatsapp_session_health RPC", () => {
+describe("whatsapp_session_health RPC (migration 335)", () => {
   test("32: admin and accountant get full object; tenant gets null; anon gets permission denied", async () => {
     await withRollback(async (client) => {
       const companyId = await seedCompany(client);
-      await seedConnection(client, companyId, {
-        state: "close",
+      await seedQrConnection(client, companyId, {
+        status: "disconnected",
         connectedNumber: "96550000000",
-        armed: false,
         disconnectedAt: "2026-11-11T07:10:00Z",
       });
       await client.query(
@@ -291,13 +323,15 @@ describe("whatsapp_session_health RPC", () => {
       const companyId = await seedCompany(client);
       const admin = await seedUserWithRole(client, companyId, "admin");
 
-      await client.query(`delete from public.evolution_connections where id = 1`);
+      await client.query(`delete from public.whatsapp_connections where company_id = $1`, [
+        companyId,
+      ]);
       await actAs(client, "authenticated", admin);
       expect((await readHealth(client))?.paired).toBe(false);
 
       await actAsSuperuser(client);
-      await seedConnection(client, companyId, {
-        state: "connecting",
+      await seedQrConnection(client, companyId, {
+        status: "pairing",
         connectedNumber: null,
         connectedAt: null,
       });
@@ -305,8 +339,8 @@ describe("whatsapp_session_health RPC", () => {
       expect((await readHealth(client))?.paired).toBe(false);
 
       await actAsSuperuser(client);
-      await seedConnection(client, companyId, {
-        state: "close",
+      await seedQrConnection(client, companyId, {
+        status: "disconnected",
         connectedNumber: "96550000000",
         connectedAt: null,
       });
@@ -314,8 +348,8 @@ describe("whatsapp_session_health RPC", () => {
       expect((await readHealth(client))?.paired).toBe(true);
 
       await actAsSuperuser(client);
-      await seedConnection(client, companyId, {
-        state: "close",
+      await seedQrConnection(client, companyId, {
+        status: "disconnected",
         connectedNumber: null,
         connectedAt: "2026-11-11T07:00:00Z",
       });
@@ -329,30 +363,33 @@ describe("whatsapp_session_health RPC", () => {
       const companyId = await seedCompany(client);
       const admin = await seedUserWithRole(client, companyId, "admin");
 
-      await seedConnection(client, companyId, { state: "connecting" });
+      await seedQrConnection(client, companyId, { status: "pairing" });
       await client.query(
-        `update public.evolution_connections
+        `update public.whatsapp_connections
             set disconnected_at = now() - interval '10 seconds'
-          where id = 1`,
+          where company_id = $1`,
+        [companyId],
       );
       await actAs(client, "authenticated", admin);
       expect((await readHealth(client))?.settling).toBe(true);
 
       await actAsSuperuser(client);
       await client.query(
-        `update public.evolution_connections
+        `update public.whatsapp_connections
             set disconnected_at = now() - interval '2 minutes'
-          where id = 1`,
+          where company_id = $1`,
+        [companyId],
       );
       await actAs(client, "authenticated", admin);
       expect((await readHealth(client))?.settling).toBe(false);
 
       await actAsSuperuser(client);
       await client.query(
-        `update public.evolution_connections
-            set last_connection_state = 'close',
+        `update public.whatsapp_connections
+            set status = 'disconnected',
                 disconnected_at = now() - interval '10 seconds'
-          where id = 1`,
+          where company_id = $1`,
+        [companyId],
       );
       await actAs(client, "authenticated", admin);
       expect((await readHealth(client))?.settling).toBe(false);
@@ -363,7 +400,10 @@ describe("whatsapp_session_health RPC", () => {
     await withRollback(async (client) => {
       const companyId = await seedCompany(client);
       const admin = await seedUserWithRole(client, companyId, "admin");
-      await seedConnection(client, companyId, { state: "close", connectedNumber: "96550000000" });
+      await seedQrConnection(client, companyId, {
+        status: "disconnected",
+        connectedNumber: "96550000000",
+      });
       await client.query(
         `insert into public.provider_configs (company_id, provider, is_enabled)
          values ($1, 'evolution_api', false)

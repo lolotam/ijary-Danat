@@ -1,10 +1,25 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+const CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
+const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
+const INSTANCE_NAME = "ijary-00000000000040008000000000000001";
+
 const state = {
   preRead: {
+    id: CONNECTION_ID,
+    instance_name: INSTANCE_NAME,
+    connected_number: "96550000000",
     disconnect_alert_armed: true,
-    last_connection_state: "close" as string | null,
-  } as { disconnect_alert_armed: boolean; last_connection_state: string | null } | null,
+    status: "disconnected" as string | null,
+    disconnected_at: "2026-11-11T07:10:00Z",
+  } as {
+    id: string;
+    instance_name: string | null;
+    connected_number: string | null;
+    disconnect_alert_armed: boolean;
+    status: string | null;
+    disconnected_at: string | null;
+  } | null,
   preReadError: null as { message: string } | null,
   providerEnabled: true,
   providerError: null as { message: string } | null,
@@ -14,22 +29,24 @@ const state = {
   } | null,
   claimRows: [
     {
-      instance_name: "danat",
+      id: CONNECTION_ID,
+      instance_name: INSTANCE_NAME,
       connected_number: "96550000000",
-      last_connection_state: "close",
+      status: "disconnected",
       disconnected_at: "2026-11-11T07:10:00Z",
     },
   ] as Array<{
-    instance_name: string;
+    id: string;
+    instance_name: string | null;
     connected_number: string | null;
-    last_connection_state: string | null;
+    status: string | null;
     disconnected_at: string | null;
   }>,
   parkedCount: 12,
   cronReads: 0,
   claimAttempts: 0,
-  evolutionUpdates: [] as Array<Record<string, unknown>>,
-  evolutionUpdateCalls: [] as Array<{
+  connectionUpdates: [] as Array<Record<string, unknown>>,
+  connectionUpdateCalls: [] as Array<{
     values: Record<string, unknown>;
     filters: Array<[string, ...unknown[]]>;
   }>,
@@ -42,7 +59,7 @@ const resolveRecipients = vi.fn(async (targets: string[]) =>
 );
 
 const TEST_COMPANY = {
-  id: "00000000-0000-4000-8000-000000000001",
+  id: COMPANY_ID,
   slug: "danat",
   status: "active" as const,
 };
@@ -62,7 +79,7 @@ vi.mock("@/company/requestCompany.server", () => ({
 vi.mock("@/company/companyClient.server", () => ({
   companyClient: () => ({
     from: (table: string) => {
-      if (table === "evolution_connections") {
+      if (table === "whatsapp_connections") {
         const chain: any = {
           _update: null as Record<string, unknown> | null,
           _filters: [] as Array<[string, ...unknown[]]>,
@@ -87,13 +104,13 @@ vi.mock("@/company/companyClient.server", () => ({
           update(values: Record<string, unknown>) {
             chain._update = values;
             chain._filters = [];
-            state.evolutionUpdates.push(values);
+            state.connectionUpdates.push(values);
             if (values.disconnect_alert_armed === false) state.claimAttempts += 1;
             return chain;
           },
           then: (onFulfilled: (value: unknown) => unknown) => {
             if (chain._update) {
-              state.evolutionUpdateCalls.push({
+              state.connectionUpdateCalls.push({
                 values: chain._update,
                 filters: [...chain._filters],
               });
@@ -104,17 +121,13 @@ vi.mock("@/company/companyClient.server", () => ({
                 return Promise.resolve({ data: claimed, error: null }).then(onFulfilled);
               }
               if (chain._update.disconnect_alert_armed === true) {
-                if (state.preRead && state.preRead.last_connection_state !== "open") {
+                if (state.preRead && state.preRead.status !== "connected") {
                   state.preRead.disconnect_alert_armed = true;
                 }
                 return Promise.resolve({ data: null, error: null }).then(onFulfilled);
               }
             }
-            const res =
-              chain._update?.disconnect_alert_armed === false
-                ? { data: state.claimRows, error: null }
-                : { data: null, error: null };
-            return Promise.resolve(res).then(onFulfilled);
+            return Promise.resolve({ data: null, error: null }).then(onFulfilled);
           },
         };
         return chain;
@@ -188,24 +201,32 @@ const { notifyWhatsappSessionDisconnected } = await import("./notifyWhatsappSess
 
 beforeEach(() => {
   vi.clearAllMocks();
-  state.preRead = { disconnect_alert_armed: true, last_connection_state: "close" };
+  state.preRead = {
+    id: CONNECTION_ID,
+    instance_name: INSTANCE_NAME,
+    connected_number: "96550000000",
+    disconnect_alert_armed: true,
+    status: "disconnected",
+    disconnected_at: "2026-11-11T07:10:00Z",
+  };
   state.preReadError = null;
   state.providerEnabled = true;
   state.providerError = null;
   state.workflowRow = { is_active: true, recipient_targets: ["admin", "company"] };
   state.claimRows = [
     {
-      instance_name: "danat",
+      id: CONNECTION_ID,
+      instance_name: INSTANCE_NAME,
       connected_number: "96550000000",
-      last_connection_state: "close",
+      status: "disconnected",
       disconnected_at: "2026-11-11T07:10:00Z",
     },
   ];
   state.parkedCount = 12;
   state.cronReads = 0;
   state.claimAttempts = 0;
-  state.evolutionUpdates = [];
-  state.evolutionUpdateCalls = [];
+  state.connectionUpdates = [];
+  state.connectionUpdateCalls = [];
   rpc.mockResolvedValue({ data: null, error: null });
   enqueue.mockResolvedValue({ id: "notif-1" });
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -216,13 +237,13 @@ describe("notifyWhatsappSessionDisconnected", () => {
     const result = await notifyWhatsappSessionDisconnected({ source: "webhook" });
 
     expect(result).toMatchObject({ skipped: false, notification: { id: "notif-1" } });
-    expect(state.evolutionUpdateCalls).toEqual([
+    expect(state.connectionUpdateCalls).toEqual([
       {
         values: { disconnect_alert_armed: false },
         filters: [
-          ["eq", "id", 1],
+          ["eq", "id", CONNECTION_ID],
           ["eq", "disconnect_alert_armed", true],
-          ["neq", "last_connection_state", "open"],
+          ["neq", "status", "connected"],
         ],
       },
     ]);
@@ -235,7 +256,7 @@ describe("notifyWhatsappSessionDisconnected", () => {
       templateCode: "whatsapp-session-disconnected",
       payload: {
         source: "webhook",
-        observed_state: "close",
+        observed_state: "disconnected",
         disconnected_at: "2026-11-11T07:10:00Z",
         recipients: ["admin@example.test"],
       },
@@ -248,9 +269,10 @@ describe("notifyWhatsappSessionDisconnected", () => {
   test("1b: null disconnected_at renders a dash placeholder in the email body", async () => {
     state.claimRows = [
       {
-        instance_name: "danat",
+        id: CONNECTION_ID,
+        instance_name: INSTANCE_NAME,
         connected_number: null,
-        last_connection_state: "close",
+        status: "disconnected",
         disconnected_at: null,
       },
     ];
@@ -262,7 +284,14 @@ describe("notifyWhatsappSessionDisconnected", () => {
   });
 
   test("2: unarmed skips before reading cron_jobs, recording a run, or enqueueing", async () => {
-    state.preRead = { disconnect_alert_armed: false, last_connection_state: "close" };
+    state.preRead = {
+      id: CONNECTION_ID,
+      instance_name: INSTANCE_NAME,
+      connected_number: "96550000000",
+      disconnect_alert_armed: false,
+      status: "disconnected",
+      disconnected_at: "2026-11-11T07:10:00Z",
+    };
 
     const result = await notifyWhatsappSessionDisconnected({ source: "send" });
 
@@ -325,20 +354,20 @@ describe("notifyWhatsappSessionDisconnected", () => {
     const result = await notifyWhatsappSessionDisconnected({ source: "send" });
 
     expect(result).toMatchObject({ skipped: true, reason: "insert failed" });
-    expect(state.evolutionUpdateCalls).toEqual([
+    expect(state.connectionUpdateCalls).toEqual([
       {
         values: { disconnect_alert_armed: false },
         filters: [
-          ["eq", "id", 1],
+          ["eq", "id", CONNECTION_ID],
           ["eq", "disconnect_alert_armed", true],
-          ["neq", "last_connection_state", "open"],
+          ["neq", "status", "connected"],
         ],
       },
       {
         values: { disconnect_alert_armed: true },
         filters: [
-          ["eq", "id", 1],
-          ["not", "last_connection_state", "in", "(open,disconnecting)"],
+          ["eq", "id", CONNECTION_ID],
+          ["neq", "status", "connected"],
           ["or", "connected_number.not.is.null,connected_at.not.is.null"],
         ],
       },
@@ -354,20 +383,20 @@ describe("notifyWhatsappSessionDisconnected", () => {
       skipped: true,
       reason: "Template whatsapp-session-disconnected excludes the email channel.",
     });
-    expect(state.evolutionUpdateCalls).toEqual([
+    expect(state.connectionUpdateCalls).toEqual([
       {
         values: { disconnect_alert_armed: false },
         filters: [
-          ["eq", "id", 1],
+          ["eq", "id", CONNECTION_ID],
           ["eq", "disconnect_alert_armed", true],
-          ["neq", "last_connection_state", "open"],
+          ["neq", "status", "connected"],
         ],
       },
       {
         values: { disconnect_alert_armed: true },
         filters: [
-          ["eq", "id", 1],
-          ["not", "last_connection_state", "in", "(open,disconnecting)"],
+          ["eq", "id", CONNECTION_ID],
+          ["neq", "status", "connected"],
           ["or", "connected_number.not.is.null,connected_at.not.is.null"],
         ],
       },
@@ -385,12 +414,20 @@ describe("notifyWhatsappSessionDisconnected", () => {
 
     // Re-scan re-arms a new episode (full trigger cycle covered in whatsappSessionGuard.sqltest.ts #29);
     // next disconnect 5 minutes later alerts immediately without any time cooldown.
-    state.preRead = { disconnect_alert_armed: true, last_connection_state: "close" };
+    state.preRead = {
+      id: CONNECTION_ID,
+      instance_name: INSTANCE_NAME,
+      connected_number: "96550000000",
+      disconnect_alert_armed: true,
+      status: "disconnected",
+      disconnected_at: "2026-11-11T07:15:00Z",
+    };
     state.claimRows = [
       {
-        instance_name: "danat",
+        id: CONNECTION_ID,
+        instance_name: INSTANCE_NAME,
         connected_number: "96550000000",
-        last_connection_state: "close",
+        status: "disconnected",
         disconnected_at: "2026-11-11T07:15:00Z",
       },
     ];
@@ -417,5 +454,16 @@ describe("notifyWhatsappSessionDisconnected", () => {
       "[notifyWhatsappSessionDisconnected] failed to read provider config",
       "provider lookup failed",
     );
+  });
+
+  test("11: a company with no WhatsApp connection is skipped without touching cron_jobs", async () => {
+    state.preRead = null;
+
+    const result = await notifyWhatsappSessionDisconnected({ source: "webhook" });
+
+    expect(result).toMatchObject({ skipped: true, benign: true });
+    expect(state.cronReads).toBe(0);
+    expect(state.claimAttempts).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

@@ -79,7 +79,7 @@ async function insertWebhookEvent(
     connectionId: string;
     provider: GatewayProvider;
     eventType: string | null;
-    providerEventId: string;
+    providerEventId: string | null;
     providerPaymentId: string | null;
     rawPayload: Json;
     signatureValid: boolean;
@@ -171,12 +171,16 @@ export async function handleGatewayWebhook(
   const rawPayload = parseRawPayload(rawBody);
 
   if (!verification.valid) {
+    // An unverified delivery must not claim the event id: the unique indexes
+    // on webhook_events skip a null id, so a forged request carrying a real
+    // event id cannot make the genuine delivery look like a replay and block
+    // its settlement. The claimed id is still in raw_payload for review.
     await insertWebhookEvent(db, {
       companyId: lookup.companyId,
       connectionId: params.connectionId,
       provider: loaded.provider,
       eventType: details.eventType,
-      providerEventId: details.providerEventId,
+      providerEventId: null,
       providerPaymentId: details.paymentId,
       rawPayload,
       signatureValid: false,

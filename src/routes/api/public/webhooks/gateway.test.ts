@@ -166,7 +166,7 @@ describe("T137 per-connection gateway webhook route", () => {
     expect(enqueueWebhookJob).not.toHaveBeenCalled();
   });
 
-  it("stores bad signature with signature_valid=false and enqueues nothing", async () => {
+  it("stores a bad signature without claiming the event id, and enqueues nothing", async () => {
     const { db, insertedRows } = createFakeWebhookDb();
     const enqueueWebhookJob = vi.fn();
 
@@ -187,6 +187,7 @@ describe("T137 per-connection gateway webhook route", () => {
       company_id: COMPANY_ID,
       connection_id: CONNECTION_ID,
       provider: "myfatoorah",
+      provider_event_id: null,
       signature_valid: false,
       result: "invalid_signature",
       processed: true,

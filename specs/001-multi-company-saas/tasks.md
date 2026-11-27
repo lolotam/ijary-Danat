@@ -350,7 +350,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [ ] T145 [US8] Webhook route `src/routes/api/public/webhooks/$provider.$connectionId.ts` and the `webhook.process` and `payment.settle` handlers in `src/jobs/handlers/inbound.ts`; delete `src/routes/api/public/myfatoorah-webhook.ts`
 - [ ] T146 [US8] Reconcile per company and connection in `src/fns/paymentReconcileJob.ts`
 - [ ] T147 [US8] Make the return page session-free and company-bound in `src/routes/portal_.payments.callback_.$preq.tsx` (`contracts/webhooks.md`)
-- [ ] T148 [US8] `gatewayList`, `gatewaySaveCredentials`, `gatewayTestConnection`, `gatewayActivate`, `gatewayDeactivate` in `src/fns/gatewaySettings.ts`
+- [x] T148 [US8] `gatewayList`, `gatewaySaveCredentials`, `gatewayTestConnection`, `gatewayActivate`, `gatewayDeactivate` in `src/fns/gatewaySettings.ts`
 - [ ] T149 [US8] Payment gateway card in `src/components/admin/settings/PaymentGatewayCard.tsx`, shown from `src/routes/admin.settings.integrations.tsx`
 - [ ] T150 [US8] Hide online payment in the portal when no gateway is active, in `src/routes/portal.invoices.tsx` and `src/routes/portal.payments.tsx`
 - [ ] T151 [US8] `platformSetGatewayLiveAllowed` in `src/platform/gateways.ts` and its switch in `src/components/platform/GatewayLaunchPanel.tsx`

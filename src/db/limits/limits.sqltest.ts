@@ -362,6 +362,41 @@ describe("migration 323 - company_limits, usage tracking, and enforcement (T124,
     });
   });
 
+  // Regression (security review, migration 327): an upsert that grows an
+  // existing object must hit the limit, and a shrink must still pass.
+  test("storage limit refuses growing an existing object past the limit and allows shrinking it", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      const name = `companies/${A.id}/docs/${randomUUID().slice(0, 8)}.pdf`;
+
+      await setCompanyLimits(client, A.id, { maxStorageBytes: 1000 });
+
+      await runAsCompanyService(client, A.id, async () => {
+        await client.query(
+          `insert into storage.objects (bucket_id, name, metadata)
+           values ('company-documents', $1, '{"size": 100}'::jsonb)`,
+          [name],
+        );
+
+        const growErr = await captureRaise(client, () =>
+          client.query(
+            `update storage.objects set metadata = '{"size": 5000}'::jsonb where name = $1`,
+            [name],
+          ),
+        );
+        expect(growErr).toContain("LIMIT_STORAGE");
+
+        const shrinkErr = await captureRaise(client, () =>
+          client.query(
+            `update storage.objects set metadata = '{"size": 50}'::jsonb where name = $1`,
+            [name],
+          ),
+        );
+        expect(shrinkErr).toBeNull();
+      });
+    });
+  });
+
   test("consume_whatsapp_quota atomically enforces max_whatsapp_per_month and restricts execute to company_service", async () => {
     await withRollback(async (client) => {
       const { A } = await seedTwoCompanies(client);

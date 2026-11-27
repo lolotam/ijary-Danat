@@ -88,6 +88,34 @@ describe("gateway live-mode launch gate (T151)", () => {
     });
   });
 
+  // Regression (security review, migration 326): switching the provider of a
+  // live connection to a provider that is not allowed live must be refused.
+  test("refuses moving a live connection to a provider that is not allowed live", async () => {
+    await withRollback(async (client) => {
+      const fixture = await seedTwoCompanies(client);
+
+      await actAsSuperuser(client);
+      await client.query(
+        `update public.platform_gateway_launch set live_allowed = true where provider = 'tap'`,
+      );
+
+      await actAsCompanyService(client, fixture.A.id);
+      const { rows } = await client.query<{ id: string }>(
+        `insert into public.gateway_connections (company_id, provider, mode)
+         values ($1, 'tap', 'live')
+         returning id`,
+        [fixture.A.id],
+      );
+
+      const switchMsg = await captureRaise(client, () =>
+        client.query(`update public.gateway_connections set provider = 'upayments' where id = $1`, [
+          rows[0].id,
+        ]),
+      );
+      expect(switchMsg).toBe("GATEWAY_LIVE_NOT_ALLOWED");
+    });
+  });
+
   test("forbids companies (authenticated and company_service) from reading or writing platform_gateway_launch", async () => {
     await withRollback(async (client) => {
       const fixture = await seedTwoCompanies(client);

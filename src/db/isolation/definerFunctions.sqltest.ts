@@ -13,6 +13,9 @@ const DEFINER_ALLOWLIST = new Set<string>([
   "is_platform_admin",
   "tg_guard_company_slug",
   "tg_gateway_connections_guard_live",
+  // Storage limit trigger: takes the company from the object path, which the
+  // storage policies of migration 304 tie to the caller's company (migration 327).
+  "tg_enforce_storage_limit",
   // Super admin overview: reads across companies and refuses every caller that
   // `is_platform_admin()` does not recognise (migration 325).
   "platform_overview_totals",

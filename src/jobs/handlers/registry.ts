@@ -5,12 +5,13 @@ import { createBulkHandlers } from "./bulk";
 import { createCronHandlers } from "./cron";
 import { createDocumentHandlers } from "./documents";
 import { eventHandlers } from "./events";
+import { createInboundHandlers } from "./inbound";
 import {
   createNotificationDispatchHandler,
   type NotificationDispatchDependencies,
 } from "./notification";
-import { createInboundHandlers } from "./inbound";
 import { createSyncHandlers } from "./sync";
+import { createSubscriptionRemindHandler } from "./subscriptionRemind";
 
 /** خريطة معالجات جزئية: بعض الأنواع مسجَّلة وبعضها مقصود غيابه. */
 export type HandlerMap = Partial<Record<JobKind, JobHandler>>;
@@ -31,6 +32,7 @@ export function handlerMaps(deps: NotificationDispatchDependencies): HandlerMap[
     createBulkHandlers(),
     createSyncHandlers(),
     createInboundHandlers(),
+    { "subscription.remind": createSubscriptionRemindHandler() },
     eventHandlers,
   ];
 }

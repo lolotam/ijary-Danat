@@ -10,6 +10,9 @@ import { jobs } from "./en/jobs";
 import { publicPages } from "./en/publicPages";
 import { passwordReset } from "./en/passwordReset";
 import { modules } from "./en/modules";
+import { platform } from "./en/platform";
+import { platformCompanies } from "./en/platformCompanies";
+import { subscriptions } from "./en/subscriptions";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -34,4 +37,7 @@ export const en: Record<string, string> = {
   ...publicPages,
   ...passwordReset,
   ...modules,
+  ...platform,
+  ...platformCompanies,
+  ...subscriptions,
 };

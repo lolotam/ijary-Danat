@@ -10,6 +10,9 @@ import { jobs } from "./ar/jobs";
 import { publicPages } from "./ar/publicPages";
 import { passwordReset } from "./ar/passwordReset";
 import { modules } from "./ar/modules";
+import { platform } from "./ar/platform";
+import { platformCompanies } from "./ar/platformCompanies";
+import { subscriptions } from "./ar/subscriptions";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -37,4 +40,7 @@ export const ar: Record<string, string> = {
   ...publicPages,
   ...passwordReset,
   ...modules,
+  ...platform,
+  ...platformCompanies,
+  ...subscriptions,
 };

@@ -26,6 +26,51 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 const noFields = z.object({}).strict();
 const onDay = z.object({ date: day }).strict();
 
+/** علامات التذكير قبل تجديد الاشتراك، بتوقيت الشركة (contracts/jobs.md section 7). */
+export const SUBSCRIPTION_REMINDER_MARKS = [14, 7, 1] as const;
+
+/** علامة التجديد الذي انتهى ولم يُسجَّل تجديد جديد بعده. */
+export const SUBSCRIPTION_OVERDUE_MARK = -1;
+
+/** صياغة تاريخ الشركة (Asia/Kuwait) كما تستخدمها مفاتيح منع التكرار. */
+const COMPANY_DATE_PARTS = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kuwait",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/**
+ * يُعيد تاريخ اليوم بتوقيت الشركة، لا تاريخ خادم العامل.
+ *
+ * A renewal mark is a company-facing day: a UTC midnight job run at 21:00
+ * Kuwait time must still file the same key as the 08:00 run it follows.
+ */
+export function companyCalendarDate(at: Date): string {
+  const parts = Object.fromEntries(
+    COMPANY_DATE_PARTS.formatToParts(at)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/**
+ * يضيف أو يطرح أياماً على تاريخ company بصيغة YYYY-MM-DD دون انحياز التوقيت.
+ */
+export function addCalendarDays(date: string, days: number): string {
+  const instant = new Date(`${date}T00:00:00Z`);
+  instant.setUTCDate(instant.getUTCDate() + days);
+  return instant.toISOString().slice(0, 10);
+}
+
+/**
+ * يحسب الفرق بالأيام بين تاريخين للشركة؛ القيمة السالبة تعني أن الثاني انتهى.
+ */
+export function daysBetweenDates(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
 /**
  * القنوات التي يختارها المسؤول في حوار «إرسال معلومات الشركة».
  *

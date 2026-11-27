@@ -281,15 +281,15 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 6
 
-- [ ] T114 [P] [US6] SQL tests: a suspended company's users read 0 rows; `allow_suspended` still settles a payment; reactivation restores access, in `src/db/platform/suspension.sqltest.ts`
-- [ ] T115 [P] [US6] Reminder tests for the 14, 7 and 1 day marks and the overdue flag in `src/jobs/handlers/subscriptionRemind.test.ts`
+- [x] T114 [P] [US6] SQL tests: a suspended company's users read 0 rows; `allow_suspended` still settles a payment; reactivation restores access, in `src/db/platform/suspension.sqltest.ts`
+- [x] T115 [P] [US6] Reminder tests for the 14, 7 and 1 day marks and the overdue flag in `src/jobs/handlers/subscriptionRemind.test.ts`
 
 ### Implementation for User Story 6
 
-- [ ] T116 [US6] Write migration `db/migrations/291_company_subscriptions.sql` (data-model.md: `company_subscriptions.status`, `companies.status`)
+- [x] T116 [US6] Write migration `db/migrations/322_company_subscriptions.sql` (data-model.md: `company_subscriptions.status`, `companies.status`)
 - [ ] T117 [US6] `platformRecordSubscription` in `src/platform/subscriptions.ts` and `src/components/platform/SubscriptionPanel.tsx`
 - [ ] T118 [US6] `subscription.remind` handler in `src/jobs/handlers/subscriptionRemind.ts`, its schedule in `src/worker/scheduler.ts`, and the warnings list on `src/routes/platform.companies.tsx`
-- [ ] T119 [US6] Renewal banner: `src/fns/companySubscriptionBanner.ts` and `src/components/admin/SubscriptionBanner.tsx`
+- [x] T119 [US6] Renewal banner: `src/fns/companySubscriptionBanner.ts` and `src/components/admin/SubscriptionBanner.tsx`
 - [ ] T120 [US6] `platformSetCompanyStatus` with a required reason in `src/platform/companies.ts` and its control in `src/routes/platform.companies.$id.tsx`
 - [ ] T121 [US6] Suspended page in `src/routes/suspended.tsx`; serve it from `server/middleware/company.ts`; refuse in `src/fns/signInWithIdentifier.ts` and `src/fns/createPayment.ts`
 - [ ] T122 [US6] In `src/worker/runJob.ts` skip jobs of suspended companies except `payment.settle`, which uses `companyClient(…, { allowSuspended: true })`

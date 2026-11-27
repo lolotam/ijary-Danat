@@ -922,6 +922,20 @@ export type CompanyModuleRow = {
 /** مزوّدو بوابات الدفع لكل شركة (ترحيل 319). */
 export type GatewayConnectionProvider = "myfatoorah" | "tap" | "upayments";
 
+/** سطر اشتراك شركة (migration 322)؛ إضافي فقط، لا يُعدَّل ولا يُحذف. */
+export type CompanySubscriptionRow = {
+  id: string;
+  company_id: string;
+  plan_name: string;
+  price: number;
+  period_start: string;
+  renewal_date: string;
+  status: "trial" | "active" | "overdue" | "cancelled";
+  note: string | null;
+  recorded_by: string | null;
+  created_at: string;
+};
+
 /** اتصال بوابة دفع لشركة (ترحيل 319): الإعداد العام ونتيجة آخر اختبار، بلا أسرار. */
 export type GatewayConnectionRow = {
   id: string;
@@ -1763,6 +1777,10 @@ export interface Database {
       company_modules: TableDefinition<CompanyModuleRow, "company_id" | "module_key" | "enabled">;
       platform_admins: TableDefinition<PlatformAdminRow, "user_id" | "full_name">;
       platform_audit_log: TableDefinition<PlatformAuditLogRow, "action" | "entity">;
+      company_subscriptions: TableDefinition<
+        CompanySubscriptionRow,
+        "plan_name" | "price" | "period_start" | "renewal_date"
+      >;
       profiles: {
         Row: {
           company_id: string | null;

@@ -10,6 +10,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { InboxBell } from "@/components/admin/InboxBell";
 import { NoticesBell } from "@/components/admin/NoticesBell";
+import { CompanySubscriptionBanner } from "@/components/admin/SubscriptionBanner";
 import { WhatsappSessionBanner } from "@/components/admin/WhatsappSessionBanner";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
@@ -146,6 +147,7 @@ function AdminLayout() {
               </Button>
             </div>
           </header>
+          <CompanySubscriptionBanner />
           <WhatsappSessionBanner />
           <main id="main-content" className="flex-1 bg-muted/20 p-4 sm:p-6 lg:p-8">
             <Outlet />

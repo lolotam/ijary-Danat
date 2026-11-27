@@ -2,7 +2,11 @@ import type { Job, Queue } from "bullmq";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/database.types";
-import { JOB_CATALOG, type JobKind } from "@/jobs/catalog";
+import { companyCalendarDate, JOB_CATALOG, type JobKind } from "@/jobs/catalog";
+import {
+  platformDueSubscriptionReminders,
+  type SubscriptionReminder,
+} from "@/platform/subscriptions";
 
 import type { RelayedJobData } from "./types";
 
@@ -31,7 +35,9 @@ export type FanOutUnit =
   /** صف لكل وصلة صندوق بريد مربوطة (مزامنة Gmail). */
   | "gmail-connection"
   /** صف لكل جدول زمني مستحق (التقارير المجدولة). */
-  | "report-schedules";
+  | "report-schedules"
+  /** صف لكل علامة تجديد اشتراك مستحقة (منصة، لا شركة). */
+  | "subscription";
 
 /** الفتحة الزمنية في مفتاح منع التكرار: يوم، أو شهر، أو نافذة عشر دقائق. */
 export type FanOutSlot = "day" | "month" | "window";
@@ -126,6 +132,17 @@ export const SCHEDULES: readonly ScheduleDefinition[] = [
     slot: "day",
   },
   {
+    // Platform-owned: one row per renewal mark at 08:00 company time, not one
+    // per company. The mark and the renewal date travel in the payload; the
+    // key `<kind>__<companyId>__<renewalDate>__<offset>` keeps a repeated tick
+    // from filing the same warning twice (contracts/jobs.md section 5).
+    kind: "subscription.remind",
+    pattern: "0 8 * * *",
+    registryKey: "subscription-remind",
+    unit: "subscription",
+    slot: "day",
+  },
+  {
     kind: "gmail.sync",
     pattern: "*/10 * * * *",
     registryKey: "gmail-sync",
@@ -174,11 +191,11 @@ export function companyMoment(at: Date): CompanyMoment {
       .filter((part) => part.type !== "literal")
       .map((part) => [part.type, part.value]),
   );
-  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  const date = companyCalendarDate(at);
   const windowMinute = String(Math.floor(Number(parts.minute) / 10) * 10).padStart(2, "0");
   return {
     date,
-    month: `${parts.year}-${parts.month}`,
+    month: date.slice(0, 7),
     window: `${date}T${parts.hour}:${windowMinute}`,
   };
 }
@@ -203,6 +220,8 @@ export interface SchedulerDatabase {
   dueReportSchedules(at: Date): Promise<{ companyId: string; scheduleId: string }[]>;
   /** وصلات صندوق البريد المربوطة بكل شركة. */
   gmailConnections(): Promise<{ companyId: string; connectionId: string }[]>;
+  /** علامات تجديد الاشتراك المستحقة لكل شركة في هذا اليوم. */
+  subscriptionReminders(at: Date): Promise<SubscriptionReminder[]>;
   /** يسجّل صف `job_requests` للشركة؛ الصف الموجود بمفتاح التكرار لا يتكرر. */
   insertJobRequest(row: FanOutRow): Promise<void>;
 }
@@ -284,6 +303,23 @@ function reportRows(
     }));
 }
 
+/** الصفوف التي يوزّعها جدول تذكير الاشتراك: صف لكل علامة تجديد مستحقة. */
+function subscriptionRows(
+  schedule: ScheduleDefinition,
+  companies: { id: string }[],
+  reminders: SubscriptionReminder[],
+): FanOutRow[] {
+  const active = new Set(companies.map((company) => company.id));
+  return reminders
+    .filter((reminder) => active.has(reminder.companyId))
+    .map((reminder) => ({
+      companyId: reminder.companyId,
+      kind: schedule.kind,
+      payload: { renewalDate: reminder.renewalDate, offsetDays: reminder.offsetDays },
+      dedupeKey: `${schedule.kind}__${reminder.companyId}__${reminder.renewalDate}__${reminder.offsetDays}`,
+    }));
+}
+
 /**
  * يبني الصفوف التي يوزّعها جدول، بحسب وحدته.
  *
@@ -297,6 +333,9 @@ async function buildRows(
   at: Date,
 ): Promise<FanOutRow[]> {
   const companies = (await db.listCompanies()).filter((company) => company.status === "active");
+  if (schedule.unit === "subscription") {
+    return subscriptionRows(schedule, companies, await db.subscriptionReminders(at));
+  }
   if (schedule.unit === "report-schedules") {
     return reportRows(schedule, companies, await db.dueReportSchedules(at), moment);
   }
@@ -429,6 +468,7 @@ export const schedulerDatabase: SchedulerDatabase = {
     if (error) throw new Error(`gmail_connections lookup failed: ${error.message}`);
     return (data ?? []).map((row) => ({ companyId: row.company_id, connectionId: row.id }));
   },
+  subscriptionReminders: async (at) => platformDueSubscriptionReminders(at),
   insertJobRequest: async (row) => {
     const { error } = await supabaseAdmin.rpc("enqueue_job_for_company", {
       _company_id: row.companyId,

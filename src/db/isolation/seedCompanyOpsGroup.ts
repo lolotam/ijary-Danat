@@ -474,6 +474,14 @@ export async function seedCompanyOpsGroup(
       [cid],
     );
   }
+  // One recorded subscription per company, so the matrix has a row to aim at.
+  if (colMap.has("company_subscriptions")) {
+    await client.query(
+      `insert into public.company_subscriptions (company_id, plan_name, price, period_start, renewal_date)
+       values ($1, 'seed plan', 10, current_date, current_date + 30)`,
+      [cid],
+    );
+  }
   if (colMap.has("job_requests")) {
     await client.query(
       `with j as (

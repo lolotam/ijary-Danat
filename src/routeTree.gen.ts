@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as NotFoundRouteImport } from './routes/not-found'
+import { Route as PlatformRouteImport } from './routes/platform'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -29,6 +30,10 @@ import { Route as AdminInvoicesRouteImport } from './routes/admin.invoices'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as PlatformIndexRouteImport } from './routes/platform.index'
+import { Route as PlatformAuditRouteImport } from './routes/platform.audit'
+import { Route as PlatformLoginRouteImport } from './routes/platform.login'
+import { Route as PlatformMfaRouteImport } from './routes/platform.mfa'
 import { Route as PortalIndexRouteImport } from './routes/portal.index'
 import { Route as PortalInvoicesRouteImport } from './routes/portal.invoices'
 import { Route as PortalLeaseRouteImport } from './routes/portal.lease'
@@ -82,6 +87,11 @@ const AuthRoute = AuthRouteImport.update({
 const NotFoundRoute = NotFoundRouteImport.update({
   id: '/not-found',
   path: '/not-found',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformRoute = PlatformRouteImport.update({
+  id: '/platform',
+  path: '/platform',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortalRoute = PortalRouteImport.update({
@@ -163,6 +173,26 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => AdminRoute,
+} as any)
+const PlatformIndexRoute = PlatformIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PlatformRoute,
+} as any)
+const PlatformAuditRoute = PlatformAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => PlatformRoute,
+} as any)
+const PlatformLoginRoute = PlatformLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => PlatformRoute,
+} as any)
+const PlatformMfaRoute = PlatformMfaRouteImport.update({
+  id: '/mfa',
+  path: '/mfa',
+  getParentRoute: () => PlatformRoute,
 } as any)
 const PortalIndexRoute = PortalIndexRouteImport.update({
   id: '/',
@@ -347,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/not-found': typeof NotFoundRoute
+  '/platform': typeof PlatformRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -362,6 +393,9 @@ export interface FileRoutesByFullPath {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/settings': typeof AdminSettingsRouteWithChildren
+  '/platform/audit': typeof PlatformAuditRoute
+  '/platform/login': typeof PlatformLoginRoute
+  '/platform/mfa': typeof PlatformMfaRoute
   '/portal/invoices': typeof PortalInvoicesRoute
   '/portal/lease': typeof PortalLeaseRoute
   '/portal/payments': typeof PortalPaymentsRoute
@@ -369,6 +403,7 @@ export interface FileRoutesByFullPath {
   '/portal/shop': typeof PortalShopRoute
   '/portal/auth': typeof PortalAuthRoute
   '/admin/': typeof AdminIndexRoute
+  '/platform/': typeof PlatformIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/admin/contracts/builder': typeof AdminContractsBuilderRoute
   '/admin/properties/$id': typeof AdminPropertiesIdRoute
@@ -415,6 +450,9 @@ export interface FileRoutesByTo {
   '/admin/invoices': typeof AdminInvoicesRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/platform/audit': typeof PlatformAuditRoute
+  '/platform/login': typeof PlatformLoginRoute
+  '/platform/mfa': typeof PlatformMfaRoute
   '/portal/invoices': typeof PortalInvoicesRoute
   '/portal/lease': typeof PortalLeaseRoute
   '/portal/payments': typeof PortalPaymentsRoute
@@ -422,6 +460,7 @@ export interface FileRoutesByTo {
   '/portal/shop': typeof PortalShopRoute
   '/portal/auth': typeof PortalAuthRoute
   '/admin': typeof AdminIndexRoute
+  '/platform': typeof PlatformIndexRoute
   '/portal': typeof PortalIndexRoute
   '/admin/contracts/builder': typeof AdminContractsBuilderRoute
   '/admin/properties/$id': typeof AdminPropertiesIdRoute
@@ -456,6 +495,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/not-found': typeof NotFoundRoute
+  '/platform': typeof PlatformRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -471,6 +511,9 @@ export interface FileRoutesById {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/settings': typeof AdminSettingsRouteWithChildren
+  '/platform/audit': typeof PlatformAuditRoute
+  '/platform/login': typeof PlatformLoginRoute
+  '/platform/mfa': typeof PlatformMfaRoute
   '/portal/invoices': typeof PortalInvoicesRoute
   '/portal/lease': typeof PortalLeaseRoute
   '/portal/payments': typeof PortalPaymentsRoute
@@ -478,6 +521,7 @@ export interface FileRoutesById {
   '/portal/shop': typeof PortalShopRoute
   '/portal_/auth': typeof PortalAuthRoute
   '/admin/': typeof AdminIndexRoute
+  '/platform/': typeof PlatformIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/admin/contracts_/builder': typeof AdminContractsBuilderRoute
   '/admin/properties/$id': typeof AdminPropertiesIdRoute
@@ -514,6 +558,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/not-found'
+    | '/platform'
     | '/portal'
     | '/privacy'
     | '/reset-password'
@@ -529,6 +574,9 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/reports'
     | '/admin/settings'
+    | '/platform/audit'
+    | '/platform/login'
+    | '/platform/mfa'
     | '/portal/invoices'
     | '/portal/lease'
     | '/portal/payments'
@@ -536,6 +584,7 @@ export interface FileRouteTypes {
     | '/portal/shop'
     | '/portal/auth'
     | '/admin/'
+    | '/platform/'
     | '/portal/'
     | '/admin/contracts/builder'
     | '/admin/properties/$id'
@@ -582,6 +631,9 @@ export interface FileRouteTypes {
     | '/admin/invoices'
     | '/admin/payments'
     | '/admin/reports'
+    | '/platform/audit'
+    | '/platform/login'
+    | '/platform/mfa'
     | '/portal/invoices'
     | '/portal/lease'
     | '/portal/payments'
@@ -589,6 +641,7 @@ export interface FileRouteTypes {
     | '/portal/shop'
     | '/portal/auth'
     | '/admin'
+    | '/platform'
     | '/portal'
     | '/admin/contracts/builder'
     | '/admin/properties/$id'
@@ -622,6 +675,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/not-found'
+    | '/platform'
     | '/portal'
     | '/privacy'
     | '/reset-password'
@@ -637,6 +691,9 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/reports'
     | '/admin/settings'
+    | '/platform/audit'
+    | '/platform/login'
+    | '/platform/mfa'
     | '/portal/invoices'
     | '/portal/lease'
     | '/portal/payments'
@@ -644,6 +701,7 @@ export interface FileRouteTypes {
     | '/portal/shop'
     | '/portal_/auth'
     | '/admin/'
+    | '/platform/'
     | '/portal/'
     | '/admin/contracts_/builder'
     | '/admin/properties/$id'
@@ -679,6 +737,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRoute
   NotFoundRoute: typeof NotFoundRoute
+  PlatformRoute: typeof PlatformRouteWithChildren
   PortalRoute: typeof PortalRouteWithChildren
   PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
@@ -720,6 +779,13 @@ declare module '@tanstack/react-router' {
       path: '/not-found'
       fullPath: '/not-found'
       preLoaderRoute: typeof NotFoundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform': {
+      id: '/platform'
+      path: '/platform'
+      fullPath: '/platform'
+      preLoaderRoute: typeof PlatformRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portal': {
@@ -833,6 +899,34 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/platform/': {
+      id: '/platform/'
+      path: '/'
+      fullPath: '/platform/'
+      preLoaderRoute: typeof PlatformIndexRouteImport
+      parentRoute: typeof PlatformRoute
+    }
+    '/platform/audit': {
+      id: '/platform/audit'
+      path: '/audit'
+      fullPath: '/platform/audit'
+      preLoaderRoute: typeof PlatformAuditRouteImport
+      parentRoute: typeof PlatformRoute
+    }
+    '/platform/login': {
+      id: '/platform/login'
+      path: '/login'
+      fullPath: '/platform/login'
+      preLoaderRoute: typeof PlatformLoginRouteImport
+      parentRoute: typeof PlatformRoute
+    }
+    '/platform/mfa': {
+      id: '/platform/mfa'
+      path: '/mfa'
+      fullPath: '/platform/mfa'
+      preLoaderRoute: typeof PlatformMfaRouteImport
+      parentRoute: typeof PlatformRoute
     }
     '/portal/': {
       id: '/portal/'
@@ -1169,6 +1263,24 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface PlatformRouteChildren {
+  PlatformAuditRoute: typeof PlatformAuditRoute
+  PlatformLoginRoute: typeof PlatformLoginRoute
+  PlatformMfaRoute: typeof PlatformMfaRoute
+  PlatformIndexRoute: typeof PlatformIndexRoute
+}
+
+const PlatformRouteChildren: PlatformRouteChildren = {
+  PlatformAuditRoute: PlatformAuditRoute,
+  PlatformLoginRoute: PlatformLoginRoute,
+  PlatformMfaRoute: PlatformMfaRoute,
+  PlatformIndexRoute: PlatformIndexRoute,
+}
+
+const PlatformRouteWithChildren = PlatformRoute._addFileChildren(
+  PlatformRouteChildren,
+)
+
 interface PortalRouteChildren {
   PortalInvoicesRoute: typeof PortalInvoicesRoute
   PortalLeaseRoute: typeof PortalLeaseRoute
@@ -1195,6 +1307,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRoute,
   NotFoundRoute: NotFoundRoute,
+  PlatformRoute: PlatformRouteWithChildren,
   PortalRoute: PortalRouteWithChildren,
   PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,

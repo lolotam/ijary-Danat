@@ -50,6 +50,7 @@ function fakeDatabase(overrides: Partial<SchedulerDatabase> = {}): {
     pausedCompanyIds: vi.fn().mockResolvedValue([]),
     dueReportSchedules: vi.fn().mockResolvedValue([]),
     gmailConnections: vi.fn().mockResolvedValue([]),
+    subscriptionReminders: vi.fn().mockResolvedValue([]),
     insertJobRequest: vi.fn(async (row: FanOutRow) => {
       const filed = rows.some(
         (existing) =>
@@ -222,6 +223,9 @@ describe("the scheduler's fan-out", () => {
         gmailConnections: vi
           .fn()
           .mockResolvedValue([{ companyId: COMPANY_A, connectionId: GMAIL_CONNECTION }]),
+        subscriptionReminders: vi
+          .fn()
+          .mockResolvedValue([{ companyId: COMPANY_A, renewalDate: "2026-12-12", offsetDays: 14 }]),
       });
 
       await fanOut(schedule, db, FIRED_AT);
@@ -233,9 +237,16 @@ describe("the scheduler's fan-out", () => {
     },
   );
 
-  test.each(SCHEDULES)("the $kind cadence is the one the workflow catalogue shows", (schedule) => {
-    // The admin panel prints the catalogue's cadence; a panel that promises a
-    // time the worker does not keep is worse than no panel.
-    expect(WORKFLOW_CATALOG[schedule.registryKey]?.schedule).toBe(schedule.pattern);
-  });
+  // The subscription reminder is platform-owned: it never appears on a company's
+  // workflow panel, so it has no catalogue entry to agree with.
+  const companyPanelSchedules = SCHEDULES.filter((entry) => entry.unit !== "subscription");
+
+  test.each(companyPanelSchedules)(
+    "the $kind cadence is the one the workflow catalogue shows",
+    (schedule) => {
+      // The admin panel prints the catalogue's cadence; a panel that promises a
+      // time the worker does not keep is worse than no panel.
+      expect(WORKFLOW_CATALOG[schedule.registryKey]?.schedule).toBe(schedule.pattern);
+    },
+  );
 });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { buildGatewayMatrixTargets } from "@/db/isolation/gatewayMatrixTargets";
 import { buildModuleMatrixTargets } from "@/db/isolation/moduleMatrixTargets";
+import { buildSubscriptionMatrixTargets } from "@/db/isolation/subscriptionMatrixTargets";
 import {
   buildScopedInsert,
   makeTarget,
@@ -505,6 +506,7 @@ export function buildCompanyMatrixTargets(
 
   targets.push(...buildGatewayMatrixTargets(cid, colMap));
   targets.push(...buildModuleMatrixTargets(cid, colMap));
+  targets.push(...buildSubscriptionMatrixTargets(cid, colMap));
 
   if (colMap.has("evolution_connections")) {
     targets.push({

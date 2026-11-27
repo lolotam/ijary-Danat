@@ -49,6 +49,12 @@ import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
  *   notification request path enqueues `notification.dispatch` and returns, so
  *   the row stays `queued` until the worker picks it up. Dispatching it here
  *   as well would deliver the same message to the same recipient twice.
+ * - **A row another dispatcher holds is left alone (GR-001).** Every dispatch
+ *   first claims its row with a lease (`dispatch_claimed_at`), so of the
+ *   drain, the `notification.dispatch` worker and the retry paths exactly one
+ *   sends a row. A queued row whose claim this run loses comes back still
+ *   `queued` — its sender is mid-send — and is counted `skippedInFlight`; a
+ *   queued row whose lease expired is reclaimed by the claim and sent here.
  * - **A retried `failed` row is claimed before it is dispatched (GR-010).**
  *   The report delivery re-queue retries failed rows too, and without a claim
  *   both paths could dispatch the one row — the tenant would get the message
@@ -299,7 +305,15 @@ export async function runNotificationDrainJob(_asOf: string | null = null, compa
       }
 
       const result = await dispatchNotificationRecord(row.id, { companyId: resolvedCompanyId });
-      if (result.state === "sent") dispatched.push(row.id);
+      if (result.state === "sent") {
+        dispatched.push(row.id);
+      } else if (result.state === "queued") {
+        // GR-001: the dispatch claim rejected this run — the row came back
+        // still `queued` because another sender holds its lease and is
+        // sending it right now. Dispatching it here as well would deliver the
+        // same message to the same recipient twice.
+        skippedInFlight += 1;
+      }
     }
 
     await db.rpc("write_audit", {

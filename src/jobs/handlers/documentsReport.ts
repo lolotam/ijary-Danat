@@ -220,18 +220,17 @@ export async function runReportScheduleRecord(
  * attempt — and then dispatched through the same call
  * `runNotificationDrainJob`'s retry of a failed row makes.
  *
- * The claim is a compare-and-swap on the state and retry count this caller
- * read (GR-010): the drain job retries failed rows too, and only the caller
- * Postgres lets update the row dispatches — a row some other sender already
- * re-queued or is sending comes back untouched, and reaching the renter twice
- * is exactly what the claim exists to prevent.
+ * Returns `null` when the claim was lost (GR-005): another sender — the
+ * drain's retry, a second run of this job — already owns the row and records
+ * its outcome. A `null` here must stop the bookkeeping below: writing
+ * `generated_reports.sent = false` and a failure audit while that sender is
+ * still delivering would file a live delivery as a failure.
  */
 async function requeueFailedReportDelivery(
   row: Tables<"notifications">,
   companyId: string,
-): Promise<Tables<"notifications">> {
-  const dispatched = await retryFailedNotificationRecord(row.id, row.retry_count, companyId);
-  return dispatched ?? row;
+): Promise<Tables<"notifications"> | null> {
+  return retryFailedNotificationRecord(row.id, row.retry_count, companyId);
 }
 
 /**
@@ -288,7 +287,16 @@ export async function resendGeneratedReportRecord(
 
   let dispatched: Tables<"notifications">;
   if (prior) {
-    dispatched = await requeueFailedReportDelivery(prior, resolvedCompanyId);
+    const requeued = await requeueFailedReportDelivery(prior, resolvedCompanyId);
+    if (!requeued) {
+      // GR-005: the claim was lost — the drain's retry or a second run of
+      // this job owns the row and records its outcome. Returning early skips
+      // the `generated_reports` update and the failure audit: filing
+      // `sent = false` while that sender is still delivering would record a
+      // live delivery as a failure.
+      return prior;
+    }
+    dispatched = requeued;
   } else {
     // Reuses the stored document when this exact report was already printed,
     // and renders when it was not — a report generated before migration 109 has

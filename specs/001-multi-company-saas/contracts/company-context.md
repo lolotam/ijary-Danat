@@ -10,8 +10,9 @@ The rules every request, server function, job and SQL object follows to know whi
 | `admin.ijary.app` | Super admin panel (`/platform/*` routes only) | None |
 | `<slug>.ijary.app` | Company sign-in, admin panel (`/admin/*`), renter portal (`/portal/*`) | The company owning the host |
 | Any other host | 404 page | None |
+| Any host — `/api/public/*` paths only | Payment and messaging provider callbacks (webhooks) | None at the gate; each handler resolves its own company and refuses with `COMPANY_REQUIRED` |
 
-`/platform/*` returns 404 on a company host. `/admin/*` and `/portal/*` return 404 on the platform and super admin hosts.
+`/platform/*` returns 404 on a company host. `/admin/*` and `/portal/*` return 404 on the platform and super admin hosts. The `/api/public/*` exemption is deliberate: those callbacks arrive on whatever host the provider was configured with, and gating them would silently drop payment and messaging callbacks during host misconfiguration — the handler, not the gate, decides which company a callback belongs to.
 
 ## 2. Request context (server)
 

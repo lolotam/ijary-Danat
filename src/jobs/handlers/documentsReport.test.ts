@@ -359,6 +359,33 @@ describe("the report.run handler", () => {
       notification: { id: "notification-1", state: "failed" },
     });
   });
+
+  test("a lost re-queue claim writes no sent=false and no failure audit (GR-005)", async () => {
+    // الخاسر بالحجز لا يملك النتيجة: الفائز يرسل التقرير ويسجّلها. كتابة
+    // `generated_reports.sent = false` وسجل فشل هنا كانت تصنّف تسليماً ما زال
+    // جارياً على أنه فشل.
+    mocks.deliverySelect.mockResolvedValue({
+      data: [
+        {
+          id: "notification-1",
+          state: "failed",
+          failure_reason: "provider refused",
+          retry_count: 2,
+        },
+      ],
+      error: null,
+    });
+    mocks.generatedSelect.mockResolvedValue({ data: { id: "generated-1" }, error: null });
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+    mocks.retry.mockResolvedValue(null);
+
+    await createReportRunHandler()(jobContext("2026-09-28"));
+
+    expect(mocks.retry).toHaveBeenCalledWith("notification-1", 2, COMPANY_ID);
+    // لا تحديث لصف التقرير ولا سجل تدقيق إطلاقاً — الفائز وحده يكتبهما.
+    expect(mocks.generatedUpdateValues).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalledWith("write_audit", expect.anything());
+  });
 });
 
 describe("the report delivery key under insert collisions", () => {

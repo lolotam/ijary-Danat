@@ -32,6 +32,7 @@ const ROW: NotificationWithRelations = {
   contract_id: null,
   created_at: "2026-08-01T09:00:00.000Z",
   delivery_key: null,
+  dispatch_claimed_at: null,
   error_code: null,
   failure_reason: "SMTP timeout",
   id: "n1",

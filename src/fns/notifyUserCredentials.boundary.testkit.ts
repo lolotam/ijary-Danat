@@ -189,6 +189,9 @@ function tableChain(table: string) {
     in: self,
     order: self,
     limit: self,
+    // Pass-through like `in`: the claim's lease condition is exercised for
+    // real in `notificationDispatchLease.test.ts`, where the claim can lose.
+    or: self,
     eq(column: string, value: unknown) {
       state.filters.push({ column, value });
       return chain;

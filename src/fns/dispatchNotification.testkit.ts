@@ -68,6 +68,10 @@ export function companyClientModule() {
       select: () => chain,
       eq: () => chain,
       in: () => chain,
+      // Pass-through like `eq`: the claim's lease condition
+      // (`dispatch_claimed_at is null or … expired`) is exercised for real in
+      // `notificationDispatchLease.test.ts`; here the claim always wins.
+      or: () => chain,
       update(values: Record<string, unknown>) {
         chain._update = values;
         return chain;
@@ -87,6 +91,24 @@ export function companyClientModule() {
         if (table === "tenants") return { data: db.tenant, error: null };
         if (table === "provider_configs") return { data: db.providers, error: null };
         if (table === "notification_templates") return { data: db.template, error: null };
+        // الهوية العامة للشركة (readPublicBranding): صفاً محايداً بالحقائق التي
+        // تقرأها، لأن قراءتها ترمي على الخطأ منذ أن صارت تفشل بصوت عالٍ بدل
+        // أن تعود بهوية فارغة.
+        if (table === "companies") {
+          return {
+            data: {
+              name_ar: "دانة",
+              name_en: "Danat",
+              brand_primary: null,
+              brand_accent: null,
+              logo_url: null,
+              favicon_url: null,
+              portal_bg_url: null,
+              email_logo_url: null,
+            },
+            error: null,
+          };
+        }
         if (table === "evolution_connections") {
           if (chain._update) db.connectionUpdates.push(chain._update);
           return { data: db.connection, error: null };

@@ -530,6 +530,24 @@ describe("runNotificationDrainJob", () => {
     expect(result.count).toBe(0);
   });
 
+  it("counts a queued row another dispatcher is sending as skipped in flight", async () => {
+    // GR-001: محاولة التصريف تخسر حجز الصف المحجوز فيعيده طابوراً كما هو —
+    // مُرسِل آخر يملك المهلة ويرسله الآن؛ عدّه هنا مُصرَّفاً كان سيصف المهمة
+    // بأنها أرسلت ما لم ترسله.
+    db.pending = [row({ id: "claimed-queued" })];
+    dispatchMock.mockResolvedValue({ state: "queued" });
+
+    const result = await runNotificationDrainJob();
+
+    expect(dispatchMock).toHaveBeenCalledWith("claimed-queued");
+    expect(result.dispatched).toEqual([]);
+    expect(result.count).toBe(0);
+    expect(result.skippedInFlight).toBe(1);
+    expect(db.audit).toMatchObject({
+      p_after: { scanned: 1, dispatched: 0, skipped_in_flight: 1 },
+    });
+  });
+
   it("records the run outcome for unattended visibility", async () => {
     db.pending = [
       row({ id: "due-1" }),

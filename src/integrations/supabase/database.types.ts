@@ -990,6 +990,8 @@ export type NotificationRow = {
   contract_id: string | null;
   created_at: string;
   delivery_key: string | null;
+  /** حجز الإرسال (миграция 315): زمن بدء محاولة الإرسال الجارية، أو null. */
+  dispatch_claimed_at: string | null;
   error_code: string | null;
   failure_reason: string | null;
   id: string;

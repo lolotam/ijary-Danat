@@ -56,7 +56,14 @@ const TEST_COMPANY = { id: COMPANY_ID, slug: "danat", status: "active" as const 
 
 /** القيم التي يضعها Postgres على صف إشعار لم يذكرها المُدخل. */
 const ROW_DEFAULTS: Record<string, FakeRow> = {
-  notifications: { state: "queued", retry_count: 0, provider: null, sender_address: null },
+  notifications: {
+    company_id: COMPANY_ID,
+    state: "queued",
+    retry_count: 0,
+    provider: null,
+    sender_address: null,
+    dispatch_claimed_at: null,
+  },
 };
 
 /** شرط واحد على صف: كل مُرشِّح في السلسلة يُضاف إلى هذه القائمة. */
@@ -210,6 +217,10 @@ function createQuery(table: string): any {
     neq: (column: string, value: unknown) => addPredicate((row) => row[column] !== value),
     in: (column: string, values: readonly unknown[]) =>
       addPredicate((row) => values.includes(row[column])),
+    // Pass-through: the dispatch claim's lease condition
+    // (`dispatch_claimed_at is null or … expired`) is exercised for real in
+    // `notificationDispatchLease.test.ts`; here the claim always wins.
+    or: () => chain,
     not: (column: string, operator: string, value: unknown) =>
       addPredicate(isNot(column, operator, value)),
     contains: (column: string, needle: Record<string, unknown>) =>
@@ -477,6 +488,7 @@ export function enqueuedJobCalls(): Array<Record<string, unknown>> {
 export function seedNotification(overrides: FakeRow = {}): FakeRow {
   const row: FakeRow = {
     id: NOTIFICATION_ID,
+    company_id: COMPANY_ID,
     audience: "tenant",
     body: "Payment received.",
     channel: "email",

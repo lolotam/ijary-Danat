@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import type { HostResolution, RequestCompany } from "@/company/requestCompany.server";
-import { isRouteAllowedForHost } from "@/company/routeGating";
+import { isRouteAllowedForHost, suspendedRouteDecision } from "@/company/routeGating";
 
 const ACME_COMPANY: RequestCompany = {
   id: "11111111-1111-4111-8111-111111111111",
   slug: "acme",
   status: "active",
   host: "acme.ijary.app",
+};
+
+const SUSPENDED_COMPANY: RequestCompany = {
+  id: "33333333-3333-4333-8333-333333333333",
+  slug: "frozen",
+  status: "suspended",
+  host: "frozen.ijary.app",
 };
 
 const COMPANY_RESOLUTION: HostResolution = {
@@ -25,6 +32,11 @@ const UNKNOWN_RESOLUTION: HostResolution = {
   kind: "unknown",
   host: "ghost.ijary.app",
   company: null,
+};
+const SUSPENDED_RESOLUTION: HostResolution = {
+  kind: "company",
+  host: "frozen.ijary.app",
+  company: SUSPENDED_COMPANY,
 };
 
 describe("isRouteAllowedForHost", () => {
@@ -102,5 +114,51 @@ describe("isRouteAllowedForHost", () => {
 
   it.each(["/", "/auth", "/terms"])("unguarded path %s is served on the admin host", (pathname) => {
     expect(isRouteAllowedForHost(ADMIN_RESOLUTION, pathname)).toBe(true);
+  });
+});
+
+describe("suspendedRouteDecision", () => {
+  /**
+   * يبني طلب صفحة كيرسله المتصفّح: يقبل HTML.
+   */
+  function documentRequest(pathname: string): Request {
+    return new Request(`https://frozen.ijary.app${pathname}`, {
+      headers: { accept: "text/html" },
+    });
+  }
+
+  it.each([
+    ["the suspended page itself", "/suspended", "allowed"],
+    ["a provider callback", "/api/public/webhooks/myfatoorah/abc", "allowed"],
+    ["a static asset", "/assets/app.css", "allowed"],
+    ["an application page", "/admin/invoices", "page"],
+    ["the tenant portal", "/portal/invoices", "page"],
+    ["an api route", "/api/oauth/google/callback", "forbidden"],
+    ["a server function call", "/_serverFn/createPayment", "forbidden"],
+  ])("answers %s on a suspended company with %s", (_label, pathname, expected) => {
+    expect(suspendedRouteDecision(documentRequest(pathname), SUSPENDED_RESOLUTION, pathname)).toBe(
+      expected,
+    );
+  });
+
+  it("reads a request that does not accept HTML as an api call", () => {
+    const request = new Request("https://frozen.ijary.app/admin/invoices", {
+      headers: { accept: "application/json" },
+    });
+
+    expect(suspendedRouteDecision(request, SUSPENDED_RESOLUTION, "/admin/invoices")).toBe(
+      "forbidden",
+    );
+  });
+
+  it.each([
+    ["an active company", COMPANY_RESOLUTION],
+    ["the platform root", ROOT_RESOLUTION],
+    ["the super admin host", ADMIN_RESOLUTION],
+    ["an unknown host", UNKNOWN_RESOLUTION],
+  ])("leaves %s alone", (_label, resolution) => {
+    expect(
+      suspendedRouteDecision(documentRequest("/admin/invoices"), resolution, "/admin/invoices"),
+    ).toBe("allowed");
   });
 });

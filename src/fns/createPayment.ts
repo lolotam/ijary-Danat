@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
 import { companyOrigin } from "@/company/companyUrl.server";
+import { CompanyContextError } from "@/company/errors";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { loadActiveGatewayConnection } from "@/gateways/connectionStore.server";
 import { gatewayRegistry } from "@/gateways/registry";
@@ -400,6 +401,12 @@ export const createPayment = createServerFn({ method: "POST" })
   .validator(inputSchema)
   .handler(async ({ data: requestInput, context }) => {
     const company = requireRequestCompany();
+    // A suspended company gets no new payment link. The refusal comes first:
+    // an in-flight payment still settles (the settlement path is exempt from
+    // the suspension), but nothing may start, and no gateway is contacted.
+    if (company.status === "suspended") {
+      throw new CompanyContextError("COMPANY_SUSPENDED");
+    }
     const payingTenantId = await tenantIdFromInvoices(context.supabase, requestInput.invoiceIds);
     const tenantContext = await tenantPaymentContext(
       context.supabase,

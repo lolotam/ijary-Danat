@@ -31,6 +31,11 @@ import { recordFailedLoginAttempt, recordLoginAttempt } from "@/fns/loginAudit";
  *
  * The browser receives the same session tokens GoTrue would have given it
  * directly, and installs them with `supabase.auth.setSession`.
+ *
+ * **A suspended company never signs in.** The host middleware already answers
+ * its pages with the suspended page, so the refusal here is the second lock on
+ * the same door: it stops the password check itself and names the refusal
+ * `COMPANY_SUSPENDED` instead of the opaque credential failure.
  */
 
 const schema = z.object({
@@ -137,6 +142,12 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => schema.parse(data))
   .handler(async ({ data }) => {
     const company = requireRequestCompany();
+    // A suspended company is refused before the password is checked: its status
+    // is public through the host — the visitor is already on the page that says
+    // so — so this refusal reveals nothing and costs no credential check.
+    if (company.status === "suspended") {
+      return { ok: false as const, error: "COMPANY_SUSPENDED" };
+    }
     const db = companyClient(company.id);
 
     /*

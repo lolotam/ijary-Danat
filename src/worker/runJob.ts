@@ -87,6 +87,15 @@ export interface JobNotice {
 export type HandlerLookup = (kind: JobKind) => JobHandler | undefined;
 
 /**
+ * أنواع المهام التي يواصل تعليق الشركة تنفيذها، لأن ما تنفّذه هو تسوية دفعة.
+ *
+ * `payment.settle` يسجّل مالاً أُخذ فعلاً من البوابة، و`webhook.process` هو ما
+ * يقرأ حدث الويب هوك المخزَّن ويجدول تلك التسوية — فإيقافه يعني أن دفعة
+ * معلَّقة لا تُسجَّل أبداً (FR-045).
+ */
+const SUSPENSION_EXEMPT_KINDS: readonly JobKind[] = ["payment.settle", "webhook.process"];
+
+/**
  * المنافذ التي يحتاجها غلاف التنفيذ؛ خلف كل منفذ صف في `job_requests` أو معالج حقيقي.
  *
  * The wrapper itself writes no database or queue code: which role backs each
@@ -205,8 +214,10 @@ function prepareJob(handlerFor: HandlerLookup, row: JobRequestRow, spec: JobSpec
 /**
  * يحدّد سبب تخطي المهمة: شركة معلّقة أو قسم مُطفأ، أو لا تخطي إطلاقاً.
  *
- * `payment.settle` records money already taken at the gateway, so a suspended
- * company may not skip it (owner decision 2026-11-27).
+ * A suspended company drops its jobs, except the two kinds that settle a
+ * payment: `payment.settle` records money already taken at the gateway, and
+ * `webhook.process` is what schedules that settlement (owner decision
+ * 2026-11-27, FR-045).
  */
 async function skipReasonFor(
   ports: RunJobPorts,
@@ -214,7 +225,9 @@ async function skipReasonFor(
   spec: JobSpec,
 ): Promise<SkipReason | null> {
   const status = await ports.companyStatus(row.companyId);
-  if (status === "suspended" && row.kind !== "payment.settle") return "company_suspended";
+  if (status === "suspended" && !SUSPENSION_EXEMPT_KINDS.some((kind) => kind === row.kind)) {
+    return "company_suspended";
+  }
 
   const section = spec.section;
   if (section === null) return null;

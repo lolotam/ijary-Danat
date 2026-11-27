@@ -169,6 +169,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (result.error === "ACCOUNT_DEACTIVATED") {
             return { error: "ACCOUNT_DEACTIVATED" };
           }
+          // A suspended company's refusal must not fall through either: the
+          // direct path would hand its staff a GoTrue session anyway.
+          if (result.error === "COMPANY_SUSPENDED") {
+            return { error: "COMPANY_SUSPENDED" };
+          }
         } catch (error) {
           // Not surfaced: the fallback below produces the real outcome, and a
           // transport failure here is not something the person can act on.

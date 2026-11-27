@@ -178,6 +178,16 @@ describe("the direct sign-in fallback", () => {
     expect(mocks.directSignIn).not.toHaveBeenCalled();
   });
 
+  test("is not reached when the company is suspended", async () => {
+    mocks.resolver.mockResolvedValue({ ok: false, error: "COMPANY_SUSPENDED" });
+
+    mountProvider();
+    const error = await clickGo();
+
+    expect(error).toBe("COMPANY_SUSPENDED");
+    expect(mocks.directSignIn).not.toHaveBeenCalled();
+  });
+
   test("is still reached when the resolver throws", async () => {
     // The warn is the fallback doing its documented job; silence it so the
     // suite output stays readable.

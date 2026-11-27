@@ -43,6 +43,87 @@ function isPublicWebhookPath(pathname: string): boolean {
 }
 
 /**
+ * ما يردّ به وسيط المضيف لطلب يقع على مضيف شركة معلّقة.
+ *
+ * `allowed` — الطلب يمرّ عادياً: صفحة التعليق نفسها، أو استدعاء مزوّد عام،
+ * أو ملف ثابت من أصول البناء.
+ * `page` — الطلب صفحة تطبيق، فتردّ له صفحة التعليق.
+ * `forbidden` — الطلب نداء واجهة أو دالة خادم، فيُرفض برمز `COMPANY_SUSPENDED`.
+ */
+export type SuspendedRouteDecision = "allowed" | "page" | "forbidden";
+
+/** مسار صفحة الشركة المعلّقة؛ الطلب إليه يصل إلى الصفحة نفسها. */
+const SUSPENDED_PAGE_PATH = "/suspended";
+
+/**
+ * بادئة نداءات دوال الخادم في TanStack Start (الافتراضي `/_serverFn`).
+ *
+ * The comparison happens after `normalizePathname` has lowercased the path, so
+ * the prefix is written the way it looks at that point.
+ */
+const SERVER_FUNCTION_PATH = "/_serverfn";
+
+/**
+ * هل المسار صفحة الشركة المعلّقة نفسها؟
+ *
+ * The page is the one path of a suspended company the gate leaves alone, so it
+ * reaches the router and renders `src/routes/suspended.tsx`.
+ */
+export function isSuspendedPagePath(rawPathname: string): boolean {
+  return isUnderPathPrefix(normalizePathname(rawPathname), SUSPENDED_PAGE_PATH);
+}
+
+/**
+ * هل المسار ملف ثابت (ورقة أنماط أو صورة أو نص) لا صفحة تطبيق؟
+ *
+ * Every built asset carries a file extension and every route in this app ends
+ * in an extension-free segment, so the extension is what tells a request for
+ * `/assets/app.css` from a request for `/admin/invoices`. Only the last
+ * segment counts: a dot in a directory name says nothing about the file the
+ * request asks for.
+ */
+function isStaticAssetPath(pathname: string): boolean {
+  const lastSegment = pathname.slice(pathname.lastIndexOf("/") + 1);
+  return /\.[a-z0-9]{2,8}$/i.test(lastSegment);
+}
+
+/**
+ * هل الطلب نداء واجهة برمجية أو دالة خادم، لا طلب صفحة؟
+ *
+ * The path decides it — `/api/*` routes and the `/_serverFn/*` calls the
+ * browser makes — and the `Accept` header is the fallback the framework itself
+ * uses: a request that does not accept HTML gets JSON, never a rendered page.
+ */
+function isApiRequest(request: Request, pathname: string): boolean {
+  if (isUnderPathPrefix(pathname, "/api")) return true;
+  if (isUnderPathPrefix(pathname, SERVER_FUNCTION_PATH)) return true;
+  const accept = request.headers.get("accept") ?? "*/*";
+  return !/(^|,)\s*(\*\/\*|text\/html)/.test(accept);
+}
+
+/**
+ * يقرر ما يردّ به وسيط المضيف على طلب يقع على مضيف شركة معلّقة.
+ *
+ * A suspended company keeps three things open: the suspended page itself, the
+ * public provider callbacks (`/api/public/*`, which resolve their own company
+ * and must not be dropped), and the static assets the page needs. Everything
+ * else is either a page — which gets the suspended page — or an API or
+ * server-function call, which is refused with `COMPANY_SUSPENDED`.
+ */
+export function suspendedRouteDecision(
+  request: Request,
+  resolution: HostResolution,
+  rawPathname: string,
+): SuspendedRouteDecision {
+  if (resolution.kind !== "company" || resolution.company.status !== "suspended") return "allowed";
+  const pathname = normalizePathname(rawPathname);
+  if (isSuspendedPagePath(pathname)) return "allowed";
+  if (isPublicWebhookPath(pathname)) return "allowed";
+  if (isStaticAssetPath(pathname)) return "allowed";
+  return isApiRequest(request, pathname) ? "forbidden" : "page";
+}
+
+/**
  * يحسم إقفال المسارات على المضيفين: `/platform/*` للوحة المشرف العام فقط،
  * و`/admin/*` و`/portal/*` لمضيفات الشركات فقط، والباقي يُمنع على المضيف المجهول.
  *

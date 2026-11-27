@@ -291,8 +291,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T118 [US6] `subscription.remind` handler in `src/jobs/handlers/subscriptionRemind.ts`, its schedule in `src/worker/scheduler.ts`, and the warnings list on `src/routes/platform.companies.tsx`
 - [x] T119 [US6] Renewal banner: `src/fns/companySubscriptionBanner.ts` and `src/components/admin/SubscriptionBanner.tsx`
 - [x] T120 [US6] `platformSetCompanyStatus` with a required reason in `src/platform/companyStatus.ts` and its control in `src/routes/platform.companies.$id.tsx`
-- [ ] T121 [US6] Suspended page in `src/routes/suspended.tsx`; serve it from `server/middleware/company.ts`; refuse in `src/fns/signInWithIdentifier.ts` and `src/fns/createPayment.ts`
-- [ ] T122 [US6] In `src/worker/runJob.ts` skip jobs of suspended companies except `payment.settle`, which uses `companyClient(…, { allowSuspended: true })`
+- [x] T121 [US6] Suspended page in `src/routes/suspended.tsx`; serve it from `server/middleware/company.ts`; refuse in `src/fns/signInWithIdentifier.ts` and `src/fns/createPayment.ts`
+- [x] T122 [US6] In `src/worker/runJob.ts` skip jobs of suspended companies except `payment.settle`, which uses `companyClient(…, { allowSuspended: true })`
 - [ ] T123 [US6] Gate: quickstart.md Phase 2 steps 9 and 10; record SC-008 and SC-010
 
 **Checkpoint**: Subscriptions are tracked and suspension works without losing a paid payment.

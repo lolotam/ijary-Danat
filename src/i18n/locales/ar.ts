@@ -16,6 +16,7 @@ import { platformCompaniesUi } from "./ar/platformCompaniesUi";
 import { subscriptions } from "./ar/subscriptions";
 import { platformBilling } from "./ar/platformBilling";
 import { gatewaySettingsUi } from "./ar/gatewaySettingsUi";
+import { suspended } from "./ar/suspended";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -49,4 +50,5 @@ export const ar: Record<string, string> = {
   ...subscriptions,
   ...platformBilling,
   ...gatewaySettingsUi,
+  ...suspended,
 };

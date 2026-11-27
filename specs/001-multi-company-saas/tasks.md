@@ -256,12 +256,12 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 5
 
-- [ ] T105 [P] [US5] SQL tests: with a section off `has_permission` is false for every role including `admin`, data is kept, the other company is unaffected, in `src/db/modules/moduleGate.sqltest.ts`
+- [x] T105 [P] [US5] SQL tests: with a section off `has_permission` is false for every role including `admin`, data is kept, the other company is unaffected, in `src/db/modules/moduleGate.sqltest.ts`
 - [x] T106 [P] [US5] Test that every permission code in `src/lib/permissions.ts` maps to a section or is marked always-on, in `src/company/modules.test.ts`
 
 ### Implementation for User Story 5
 
-- [ ] T107 [US5] Write migration `db/migrations/290_company_modules.sql`: `company_modules`, `module_enabled()`, the `has_permission` change, `get_my_modules()` (data-model.md: `company_modules.module_key`; research.md R10)
+- [x] T107 [US5] Write migration `db/migrations/320_company_modules.sql`: `company_modules`, `module_enabled()`, the `has_permission` change, `get_my_modules()` (data-model.md: `company_modules.module_key`; research.md R10)
 - [x] T108 [US5] Section keys and the permission-to-section map in `src/company/modules.ts`
 - [ ] T109 [US5] `platformSetModules` in `src/platform/modules.ts` and `src/components/platform/ModuleSwitches.tsx`
 - [ ] T110 [US5] `myModules` in `src/fns/myModules.ts` and `src/hooks/useModules.ts` (cache at most 60 seconds)
@@ -335,15 +335,15 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 - [x] T134 [P] [US8] Encryption tests (round trip, wrong key fails, key version, `last4`) in `src/lib/secrets.server.test.ts`
 - [ ] T135 [P] [US8] Shared adapter contract suite run against every adapter in `src/gateways/contract.test.ts`
-- [ ] T136 [P] [US8] SQL tests: one active connection, activation needs a passing test, secrets unreadable by another company and by `authenticated`, in `src/db/gateways/gatewayConnections.sqltest.ts`
+- [x] T136 [P] [US8] SQL tests: one active connection, activation needs a passing test, secrets unreadable by another company and by `authenticated`, in `src/db/gateways/gatewayConnections.sqltest.ts`
 - [ ] T137 [P] [US8] Webhook route tests (unknown connection 404, bad signature stored and ignored, duplicate event enqueues nothing) in `src/routes/api/public/webhooks/gateway.test.ts`
 - [ ] T138 [P] [US8] Settlement tests: recorded once by webhook, return page and reconciliation; an in-flight payment settles on its original connection, in `src/fns/gatewaySettlement.test.ts`
 
 ### Implementation for User Story 8
 
-- [ ] T139 [US8] Write migration `db/migrations/293_company_secrets.sql` (data-model.md: `company_secrets.owner_kind`; research.md R9)
+- [x] T139 [US8] Write migration `db/migrations/318_company_secrets.sql` (data-model.md: `company_secrets.owner_kind`; research.md R9)
 - [x] T140 [US8] Implement AES-256-GCM encrypt and decrypt with key versions in `src/lib/secrets.server.ts`
-- [ ] T141 [US8] Write migration `db/migrations/294_gateway_connections.sql`: `gateway_connections`, `payment_requests` and `webhook_events` extensions (data-model.md: `gateway_connections.provider`, `gateway_connections.mode`, `gateway_connections.is_active`)
+- [x] T141 [US8] Write migration `db/migrations/319_gateway_connections.sql`: `gateway_connections`, `payment_requests` and `webhook_events` extensions (data-model.md: `gateway_connections.provider`, `gateway_connections.mode`, `gateway_connections.is_active`)
 - [x] T142 [US8] `PaymentGateway` interface and registry in `src/gateways/types.ts` and `src/gateways/registry.ts`
 - [ ] T143 [US8] MyFatoorah adapter in `src/gateways/myfatoorah.ts`, moved from `src/fns/myfatoorahGateway.ts`
 - [ ] T144 [US8] Bind each payment request to its connection and credentials version in `src/fns/createPayment.ts`, `src/fns/confirmGatewayPayment.ts` and `src/fns/gatewaySettlement*.ts`

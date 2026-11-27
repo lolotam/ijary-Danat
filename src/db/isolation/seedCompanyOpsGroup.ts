@@ -441,6 +441,39 @@ export async function seedCompanyOpsGroup(
       [cid],
     );
   }
+  // بوابة دفع واحدة وسرها المشفّر لكل شركة: تغطي مصفوفة العزل هذين الجدولين.
+  if (colMap.has("gateway_connections")) {
+    const gatewayConnectionId = await insertRow(client, colMap, "gateway_connections", cid, {
+      provider: "myfatoorah",
+      mode: "test",
+      is_active: false,
+      last_test_ok: false,
+      credentials_version: 1,
+    });
+    if (colMap.has("company_secrets")) {
+      await client.query(
+        `insert into public.company_secrets (
+           company_id, owner_kind, owner_id, name, ciphertext, iv, auth_tag, key_version, last4
+         ) values (
+           $1, 'gateway', $2, 'api_key',
+           decode(repeat('00', 32), 'hex'),
+           decode(repeat('00', 12), 'hex'),
+           decode(repeat('00', 16), 'hex'),
+           1, 'abcd'
+         )`,
+        [cid, gatewayConnectionId],
+      );
+    }
+  }
+  // One explicit section switch per company, so the matrix has a row to aim at.
+  if (colMap.has("company_modules")) {
+    await client.query(
+      `insert into public.company_modules (company_id, module_key, enabled)
+       values ($1, 'electricity', true)
+       on conflict (company_id, module_key) do nothing`,
+      [cid],
+    );
+  }
   if (colMap.has("job_requests")) {
     await client.query(
       `with j as (

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { buildGatewayMatrixTargets } from "@/db/isolation/gatewayMatrixTargets";
+import { buildModuleMatrixTargets } from "@/db/isolation/moduleMatrixTargets";
 import {
   buildScopedInsert,
   makeTarget,
@@ -500,6 +502,9 @@ export function buildCompanyMatrixTargets(
       values: { message_id: `wmx-${t}`, chat_number: ids.chatNumber, direction: "inbound" },
     })),
   ];
+
+  targets.push(...buildGatewayMatrixTargets(cid, colMap));
+  targets.push(...buildModuleMatrixTargets(cid, colMap));
 
   if (colMap.has("evolution_connections")) {
     targets.push({

@@ -882,10 +882,73 @@ export type PaymentRequestRow = {
   status: "pending" | "completed" | "failed" | "expired" | "cancelled" | "superseded";
   tenant_id: string;
   updated_at: string;
+  /** Migration 319: the company gateway connection that issued this request. */
+  gateway_connection_id: string | null;
+  credentials_version: number | null;
 };
+
+/** حالة قسم واحد لشركة (ترحيل 320)؛ غياب الصف يعني القيمة الافتراضية للقسم. */
+export type CompanyModuleRow = {
+  company_id: string;
+  module_key: string;
+  enabled: boolean;
+  updated_at: string;
+  updated_by: string | null;
+};
+
+/** مزوّدو بوابات الدفع لكل شركة (ترحيل 319). */
+export type GatewayConnectionProvider = "myfatoorah" | "tap" | "upayments";
+
+/** اتصال بوابة دفع لشركة (ترحيل 319): الإعداد العام ونتيجة آخر اختبار، بلا أسرار. */
+export type GatewayConnectionRow = {
+  id: string;
+  company_id: string;
+  provider: GatewayConnectionProvider;
+  mode: "test" | "live";
+  public_config: Json;
+  is_active: boolean;
+  last_test_at: string | null;
+  last_test_ok: boolean;
+  last_test_message: string | null;
+  credentials_version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** نوع مالك السر المشفّر في `company_secrets` (ترحيل 318). */
+export type CompanySecretOwnerKind = "gateway" | "whatsapp" | "email" | "gmail";
+
+/**
+ * سر شركة مشفّر (ترحيل 318). PostgREST returns `bytea` columns as hex strings;
+ * only `company_service` / `service_role` can read this table.
+ */
+export type CompanySecretRow = {
+  id: string;
+  company_id: string;
+  owner_kind: CompanySecretOwnerKind;
+  owner_id: string;
+  name: string;
+  ciphertext: string;
+  iv: string;
+  auth_tag: string;
+  key_version: number;
+  last4: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** معاينة السر (العرض `company_secret_previews`): آخر 4 أحرف فقط، بلا أي عمود مشفّر. */
+export type CompanySecretPreviewRow = Pick<
+  CompanySecretRow,
+  "id" | "company_id" | "owner_kind" | "owner_id" | "name" | "last4" | "version" | "updated_at"
+>;
 
 export type WebhookEventRow = {
   company_id: string;
+  /** Migration 319: the gateway connection whose webhook route received the event. */
+  connection_id: string | null;
+  provider: GatewayConnectionProvider | null;
   error: string | null;
   event_type: string | null;
   gateway: GatewayProvider;
@@ -1662,6 +1725,19 @@ export interface Database {
       company_domains: TableDefinition<CompanyDomainRow, "company_id" | "host" | "kind">;
       reserved_slugs: TableDefinition<ReservedSlugRow, "slug">;
       company_counters: TableDefinition<CompanyCounterRow, "company_id" | "kind">;
+      company_secrets: TableDefinition<
+        CompanySecretRow,
+        | "company_id"
+        | "owner_kind"
+        | "owner_id"
+        | "name"
+        | "ciphertext"
+        | "iv"
+        | "auth_tag"
+        | "key_version"
+      >;
+      gateway_connections: TableDefinition<GatewayConnectionRow, "company_id" | "provider">;
+      company_modules: TableDefinition<CompanyModuleRow, "company_id" | "module_key" | "enabled">;
       profiles: {
         Row: {
           company_id: string | null;
@@ -2245,7 +2321,9 @@ export interface Database {
         "contact_id" | "contract_id"
       >;
     };
-    Views: { [_ in never]: never };
+    Views: {
+      company_secret_previews: { Row: CompanySecretPreviewRow; Relationships: [] };
+    };
     Functions: {
       /** Migration 254 — معرّف الشركة النشطة للمستدعي الحالي أو null عند عدم التحقق أو الإيقاف. */
       current_company_id: {
@@ -2567,6 +2645,22 @@ export interface Database {
       has_permission: {
         Args: { _code: string; _user_id: string };
         Returns: boolean;
+      };
+      revoke_user_sessions: {
+        Args: { _user_id: string };
+        Returns: undefined;
+      };
+      permission_section: {
+        Args: { _code: string };
+        Returns: string | null;
+      };
+      module_enabled: {
+        Args: { _key: string };
+        Returns: boolean;
+      };
+      get_my_modules: {
+        Args: Record<PropertyKey, never>;
+        Returns: { module_key: string; enabled: boolean }[];
       };
       apply_payment_allocation: {
         Args: { p_allocations: Json; p_payment_id: string };

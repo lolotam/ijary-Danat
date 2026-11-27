@@ -63,7 +63,7 @@ vi.mock("./myfatoorahWebhook", async () => {
   return { ...actual, settleGatewayPayment: settleGatewayPaymentMock };
 });
 
-vi.mock("./notifyPaymentSuccess", () => ({
+vi.mock("./notifyPaymentSuccess.server", () => ({
   notifyPaymentSuccess: vi.fn().mockResolvedValue({ ok: true, skipped: true, ids: [] }),
 }));
 

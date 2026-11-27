@@ -134,7 +134,7 @@ vi.mock("@/company/companyClient.server", () => {
   return { companyClient: () => client };
 });
 
-vi.mock("@/fns/evolutionSession", async (importOriginal) => ({
+vi.mock("@/fns/evolutionSession.server", async (importOriginal) => ({
   // Partial: the connection reader is the real one, so the query's own company
   // and method filters are what the test observes.
   ...(await importOriginal<Record<string, unknown>>()),
@@ -146,8 +146,8 @@ vi.mock("@/lib/providers/evolution", () => ({
   evolutionClientFromConfig: () => ({ fetchProfilePictureUrl }),
 }));
 
-const { backfillChatAvatars, runEvolutionAvatarSweep, syncEvolutionAvatars } =
-  await import("./evolutionAvatars");
+const { backfillChatAvatars, runEvolutionAvatarSweep } = await import("./evolutionAvatars.server");
+const { syncEvolutionAvatars } = await import("./evolutionAvatars");
 
 beforeEach(() => {
   db.chats = [];

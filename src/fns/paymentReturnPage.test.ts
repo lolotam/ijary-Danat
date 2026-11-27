@@ -105,8 +105,8 @@ vi.mock("@/fns/gatewaySettlement", () => ({
   settleGatewayPayment: (...args: unknown[]) => settleGatewayPaymentMock(...args),
 }));
 
-const { confirmPaymentReturnPage, loadPaymentReturnState } =
-  await import("@/fns/paymentReturnPage");
+const { confirmPaymentReturnPage } = await import("@/fns/paymentReturnPage");
+const { loadPaymentReturnState } = await import("@/fns/paymentReturnPage.server");
 
 function makeConnection(): LoadedGatewayConnection {
   return {

@@ -10,7 +10,7 @@ import {
   fetchPlatformCompanyDomains,
   verifyPlatformCustomDomain,
   type PlatformCompanyDomain,
-} from "@/platform/domains";
+} from "@/platform/domainsFns";
 import { platformErrorMessage } from "@/platform/platformFns";
 
 /**

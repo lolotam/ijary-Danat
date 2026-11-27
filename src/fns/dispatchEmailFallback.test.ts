@@ -16,7 +16,7 @@ vi.mock("nodemailer", () => ({ default: { createTransport: () => ({ sendMail }) 
 
 import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
 
-import { dispatchNotificationRecord } from "./dispatchNotification";
+import { dispatchNotificationRecord } from "./dispatchNotification.server";
 import {
   db,
   RESEND,

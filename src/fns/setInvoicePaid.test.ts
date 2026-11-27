@@ -20,11 +20,11 @@ vi.mock("@tanstack/react-start", () => {
 });
 
 // Boundary mock: the real sender reaches the database and the mail queue.
-vi.mock("@/fns/notifyPaymentSuccess", () => ({
+vi.mock("@/fns/notifyPaymentSuccess.server", () => ({
   notifyManualPaymentInvoice: vi.fn().mockResolvedValue({ ok: true, skipped: false, ids: [] }),
 }));
 
-import { notifyManualPaymentInvoice } from "@/fns/notifyPaymentSuccess";
+import { notifyManualPaymentInvoice } from "@/fns/notifyPaymentSuccess.server";
 import { setInvoicePaid, setInvoicePaidSchema } from "./setInvoicePaid";
 
 const INVOICE_ID = "3f1d2c4e-8a6b-4d5f-9e0a-1b2c3d4e5f60";

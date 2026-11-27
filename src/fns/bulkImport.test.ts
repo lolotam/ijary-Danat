@@ -64,13 +64,8 @@ vi.mock("@/company/requestCompany.server", () => ({
   }),
 }));
 
-import {
-  bulkImport,
-  dedupeRowsByCode,
-  ENTITIES_DEDUPED_BY_CODE,
-  type BulkImportInput,
-  type BulkImportResult,
-} from "@/fns/bulkImport";
+import { bulkImport, type BulkImportInput, type BulkImportResult } from "@/fns/bulkImport";
+import { dedupeRowsByCode, ENTITIES_DEDUPED_BY_CODE } from "@/fns/bulkImportRun.server";
 
 describe("dedupeRowsByCode", () => {
   it("imports a tenant once when the CSV repeats it per contract", () => {

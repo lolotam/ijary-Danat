@@ -58,8 +58,9 @@ vi.mock("@/company/requestCompany.server", () => ({
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
 
-const { notifyManualPaymentInvoice, notifyPaymentSuccess, notifyPaymentSuccessFn } =
-  await import("./notifyPaymentSuccess");
+const { notifyManualPaymentInvoice, notifyPaymentSuccess } =
+  await import("./notifyPaymentSuccess.server");
+const { notifyPaymentSuccessFn } = await import("./notifyPaymentSuccess");
 
 const context = {
   userId: "user-1",

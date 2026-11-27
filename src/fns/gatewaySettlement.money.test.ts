@@ -45,7 +45,7 @@ vi.mock("@/company/requestCompany.server", () => ({
   }),
   runWithRequestCompany: (_company: unknown, fn: () => unknown) => fn(),
 }));
-vi.mock("@/fns/notifyPaymentSuccess", () => ({
+vi.mock("@/fns/notifyPaymentSuccess.server", () => ({
   notifyPaymentSuccess: (ids: string[]) => notifyPaymentSuccess(ids),
 }));
 vi.mock("@/lib/suppressedPayments", () => ({

@@ -55,7 +55,7 @@ vi.mock("@/fns/enqueueNotification", () => ({
   enqueueNotification: (...args: unknown[]) => enqueue(...args),
 }));
 
-vi.mock("@/fns/resolveTemplateVariables", () => ({
+vi.mock("@/fns/resolveTemplateVariables.server", () => ({
   buildFinalMessage: (...args: unknown[]) => buildFinalMessage(...args),
 }));
 

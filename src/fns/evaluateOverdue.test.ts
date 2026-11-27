@@ -36,7 +36,8 @@ vi.mock("@/company/requestCompany.server", () => ({
   }),
 }));
 
-import { evaluateOverdue, runEvaluateOverdueJob } from "./evaluateOverdue";
+import { evaluateOverdue } from "./evaluateOverdue";
+import { runEvaluateOverdueJob } from "./evaluateOverdue.server";
 
 describe("evaluateOverdue server function and job", () => {
   describe("runEvaluateOverdueJob (cron helper)", () => {

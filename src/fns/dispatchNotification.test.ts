@@ -14,7 +14,7 @@ vi.mock("@/company/companyClient.server", async () =>
 import { stubHungFetch } from "@/lib/providers/hungProvider.fixture";
 import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
 
-import { dispatchNotificationRecord } from "./dispatchNotification";
+import { dispatchNotificationRecord } from "./dispatchNotification.server";
 import {
   CLOUD,
   db,

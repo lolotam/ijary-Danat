@@ -50,7 +50,7 @@ vi.mock("@/company/companyClient.server", () => ({
   }),
 }));
 
-vi.mock("@/fns/resolveTemplateVariables", () => ({
+vi.mock("@/fns/resolveTemplateVariables.server", () => ({
   buildFinalMessage: (...args: unknown[]) => buildFinalMessage(...args),
 }));
 

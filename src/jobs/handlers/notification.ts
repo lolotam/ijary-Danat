@@ -1,5 +1,5 @@
 import { runWithRequestCompany } from "@/company/requestCompany.server";
-import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
+import { dispatchNotificationRecord } from "@/fns/dispatchNotification.server";
 import type { JobPayload } from "@/jobs/catalog";
 import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
 

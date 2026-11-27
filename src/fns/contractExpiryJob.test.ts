@@ -62,7 +62,7 @@ vi.mock("@/fns/workflowRegistry", () => ({
   }),
 }));
 
-const { runContractExpiryJob } = await import("./contractExpiryJob");
+const { runContractExpiryJob } = await import("./contractExpiryJob.server");
 
 beforeEach(() => {
   vi.clearAllMocks();

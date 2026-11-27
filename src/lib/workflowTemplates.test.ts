@@ -80,7 +80,7 @@ describe("the workflow↔template map codes", () => {
  * Found by grepping the workflow key in src/fns: each file below is the one
  * that runs that key's dispatcher. contract-created/contract-ended are absent
  * on purpose — both go through the `contract-${event}` builder in
- * notifyContractLifecycle.ts, asserted separately below.
+ * notifyContractLifecycle.server.ts, asserted separately below.
  *
  * The receipt codes moved out of the request with the rest of the receipt work
  * (T068): the sender that selects them now runs in the worker, in
@@ -88,13 +88,13 @@ describe("the workflow↔template map codes", () => {
  */
 const SENDER_FILE: Record<string, string> = {
   "overdue-reminders": "src/fns/overdueRemindersJob.ts",
-  "contract-expiry": "src/fns/contractExpiryJob.ts",
+  "contract-expiry": "src/fns/contractExpiryJob.server.ts",
   "contact-inquiry-received": "src/fns/notifyContactInquiry.ts",
   "deposit-confirmed": "src/fns/notifyDepositConfirmed.ts",
-  "maintenance-request-created": "src/fns/notifyMaintenanceRequest.ts",
+  "maintenance-request-created": "src/fns/notifyMaintenanceRequest.server.ts",
   "manual-payment-invoice": "src/jobs/handlers/documentsPayment.ts",
   "payment-succeeded": "src/jobs/handlers/documentsPayment.ts",
-  "refund-recorded": "src/fns/notifyRefundRecorded.ts",
+  "refund-recorded": "src/fns/notifyRefundRecorded.server.ts",
   "contract-closeout-completed": "src/fns/notifyContractCloseout.ts",
   "contract-restored": "src/fns/notifyContractRestored.ts",
   "invoice-written-off": "src/fns/notifyInvoiceWrittenOff.ts",
@@ -159,7 +159,7 @@ describe("per-sender pairing", () => {
       // `contract-${event}` string, not a literal — the pairing is asserted on
       // the builder so a renamed event still resolves to its mapped code.
       const source = readFileSync(
-        resolve(process.cwd(), "src/fns/notifyContractLifecycle.ts"),
+        resolve(process.cwd(), "src/fns/notifyContractLifecycle.server.ts"),
         "utf8",
       );
       expect(source).toContain("`contract-${event}`");

@@ -9,7 +9,7 @@ import {
 import {
   dispatchNotificationRecord,
   retryFailedNotificationRecord,
-} from "@/fns/dispatchNotification";
+} from "@/fns/dispatchNotification.server";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 import { notificationDispatchDedupeKey } from "@/jobs/catalog";
 import { DELIVERY_INDETERMINATE, EMAIL_SENDER_NOT_CONFIGURED } from "@/lib/providers/types";

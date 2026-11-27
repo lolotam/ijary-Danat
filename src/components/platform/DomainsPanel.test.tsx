@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
   verifyPlatformCustomDomain: vi.fn(),
 }));
 
-vi.mock("@/platform/domains", () => ({
+vi.mock("@/platform/domainsFns", () => ({
   fetchPlatformCompanyDomains: mocks.fetchPlatformCompanyDomains,
   addPlatformCustomDomain: mocks.addPlatformCustomDomain,
   verifyPlatformCustomDomain: mocks.verifyPlatformCustomDomain,

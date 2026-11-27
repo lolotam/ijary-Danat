@@ -89,7 +89,7 @@ vi.mock("@/company/requestCompany.server", () => ({
   runWithRequestCompany: async (_company: unknown, fn: () => unknown) => fn(),
 }));
 
-vi.mock("@/fns/dispatchNotification", () => ({
+vi.mock("@/fns/dispatchNotification.server", () => ({
   dispatchNotificationRecord: (...args: unknown[]) => mocks.dispatch(...args),
   retryFailedNotificationRecord: (...args: unknown[]) => mocks.retry(...args),
 }));

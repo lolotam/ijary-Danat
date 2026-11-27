@@ -6,15 +6,13 @@ import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { estimatedDrainCapacityWithinStaleWindow } from "@/fns/notificationDrainJob";
-import { buildFinalMessage } from "@/fns/resolveTemplateVariables";
+import { buildFinalMessage } from "@/fns/resolveTemplateVariables.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json, LocaleCode, Tables } from "@/integrations/supabase/database.types";
 import { enqueueJob } from "@/jobs/enqueue";
 import type { QueuedBulkJob } from "@/jobs/handlers/bulk";
 import { isTemplateOfferable } from "@/lib/templateEligibility";
 import { requirePermission } from "@/fns/requirePermission";
-
-export { estimatedDrainCapacityWithinStaleWindow } from "@/fns/notificationDrainJob";
 
 export const sendBulkSchema = z
   .object({

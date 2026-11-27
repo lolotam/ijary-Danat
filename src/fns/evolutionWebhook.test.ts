@@ -120,7 +120,7 @@ vi.mock("@/company/companyClient.server", () => {
   };
 });
 
-import { respondToEvolutionWebhook } from "./evolutionWebhook";
+import { respondToEvolutionWebhook } from "./evolutionWebhook.server";
 
 const SECRET = "current-secret";
 const PREVIOUS_SECRET = "old-secret";

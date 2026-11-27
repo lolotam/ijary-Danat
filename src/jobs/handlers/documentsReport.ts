@@ -5,7 +5,7 @@ import { requireRequestCompany, runWithRequestCompany } from "@/company/requestC
 import {
   dispatchNotificationRecord,
   retryFailedNotificationRecord,
-} from "@/fns/dispatchNotification";
+} from "@/fns/dispatchNotification.server";
 import type {
   Database,
   Json,

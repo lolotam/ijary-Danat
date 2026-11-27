@@ -113,6 +113,7 @@ describe("isTemplateOfferable", () => {
     for (const file of [
       "src/fns/enqueueNotification.ts",
       "src/fns/dispatchNotification.ts",
+      "src/fns/dispatchNotification.server.ts",
       "src/fns/notificationDrainJob.ts",
     ]) {
       expect(readFileSync(file, "utf8")).not.toContain("isTemplateOfferable");

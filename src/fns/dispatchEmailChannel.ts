@@ -1,4 +1,4 @@
-import { resolveEmailSender, type EmailSenderProvider } from "@/fns/emailSenderStatus";
+import { resolveEmailSender, type EmailSenderProvider } from "@/fns/emailSender.server";
 import { emailLogoFor } from "@/fns/publicBranding";
 import { readPublicBranding } from "@/fns/publicBranding.server";
 import {

@@ -35,12 +35,12 @@ vi.mock("@/company/hostCompany.server", () => ({
 }));
 
 const overdue = vi.fn();
-vi.mock("@/fns/evaluateOverdue", () => ({
+vi.mock("@/fns/evaluateOverdue.server", () => ({
   runEvaluateOverdueJob: (...a: unknown[]) => overdue(...a),
 }));
 vi.mock("@/fns/overdueRemindersJob", () => ({ runOverdueRemindersJob: vi.fn() }));
-vi.mock("@/fns/contractExpiryJob", () => ({ runContractExpiryJob: vi.fn() }));
-vi.mock("@/fns/scheduledReportsJob", () => ({ runScheduledReportsJob: vi.fn() }));
+vi.mock("@/fns/contractExpiryJob.server", () => ({ runContractExpiryJob: vi.fn() }));
+vi.mock("@/fns/scheduledReportsJob.server", () => ({ runScheduledReportsJob: vi.fn() }));
 vi.mock("@/fns/notificationDrainJob", () => ({ runNotificationDrainJob: vi.fn() }));
 vi.mock("@/fns/gmailSyncJob", () => ({ runGmailSyncJob: vi.fn() }));
 vi.mock("@/fns/salariesJob", () => ({ runSalariesJob: vi.fn() }));

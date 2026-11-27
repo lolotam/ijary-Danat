@@ -93,3 +93,22 @@ export async function loadQrConnection(
   if (error) throw new Error(`Failed to load WhatsApp connection: ${error.message}`);
   return data;
 }
+
+/**
+ * يعيد إعداد مزوّد evolution_api إن كان هو مزوّد واتساب المفعّل، وإلا يرفض.
+ */
+export async function requireEnabledEvolutionConfig() {
+  const result = await companyClient(requireRequestCompany().id)
+    .from("provider_configs")
+    .select("*")
+    .eq("provider", "evolution_api")
+    .eq("is_enabled", true)
+    .maybeSingle();
+  if (result.error) throw new Error(result.error.message);
+  if (!result.data) {
+    throw new Error(
+      "Evolution API is not the enabled WhatsApp provider. Enable it in Settings â†’ Automations â†’ Providers before sending from the inbox.",
+    );
+  }
+  return result.data;
+}

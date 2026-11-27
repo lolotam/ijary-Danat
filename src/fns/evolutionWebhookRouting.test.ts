@@ -180,7 +180,7 @@ vi.mock("@/platform/whatsappConnectionLookup.server", () => ({
   lookupWhatsappConnectionById: async (connectionId: string) => connections[connectionId] ?? null,
 }));
 
-import { respondToEvolutionWebhook } from "./evolutionWebhook";
+import { respondToEvolutionWebhook } from "./evolutionWebhook.server";
 
 /** يبني طلب ويبهوك كما يرسله Evolution. */
 function webhookRequest(

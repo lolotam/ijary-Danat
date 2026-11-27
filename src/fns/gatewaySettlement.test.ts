@@ -93,7 +93,7 @@ vi.mock("@/gateways/connectionStore.server", async () => {
   };
 });
 
-vi.mock("@/fns/notifyPaymentSuccess", () => ({
+vi.mock("@/fns/notifyPaymentSuccess.server", () => ({
   notifyPaymentSuccess: vi.fn().mockResolvedValue({ ok: true }),
 }));
 

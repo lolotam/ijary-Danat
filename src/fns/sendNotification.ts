@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
-import { buildFinalMessage } from "@/fns/resolveTemplateVariables";
+import { buildFinalMessage } from "@/fns/resolveTemplateVariables.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Json } from "@/integrations/supabase/database.types";
 import { enqueueJob } from "@/jobs/enqueue";

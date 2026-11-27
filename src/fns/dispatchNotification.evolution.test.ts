@@ -16,7 +16,7 @@ vi.mock("@/fns/evolutionSessionWatch", () => ({
   reportSendSessionDisconnected: () => reportSendSessionDisconnected(),
 }));
 
-import { dispatchNotificationRecord } from "./dispatchNotification";
+import { dispatchNotificationRecord } from "./dispatchNotification.server";
 import {
   CLOUD,
   db,

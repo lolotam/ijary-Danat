@@ -35,7 +35,7 @@ vi.mock("./notifyContractRestored", () => ({
   notifyContractRestoredRecord: vi.fn().mockResolvedValue({ skipped: true, reason: "test" }),
 }));
 
-vi.mock("./notifyRefundRecorded", () => ({
+vi.mock("./notifyRefundRecorded.server", () => ({
   notifyRefundRecordedRecord: vi.fn().mockResolvedValue({ skipped: true, reason: "test" }),
 }));
 
@@ -53,7 +53,7 @@ import { notifyContractCloseoutRecord } from "./notifyContractCloseout";
 import { notifyContractRestoredRecord } from "./notifyContractRestored";
 import { notifyInvoiceDisputedRecord } from "./notifyInvoiceDisputed";
 import { notifyInvoiceWrittenOffRecord } from "./notifyInvoiceWrittenOff";
-import { notifyRefundRecordedRecord } from "./notifyRefundRecorded";
+import { notifyRefundRecordedRecord } from "./notifyRefundRecorded.server";
 import { previewContractCloseout } from "./previewContractCloseout";
 import { restoreContract } from "./restoreContract";
 import { reverseRefund } from "./reverseRefund";

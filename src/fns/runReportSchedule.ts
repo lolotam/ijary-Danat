@@ -8,8 +8,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { enqueueJob } from "@/jobs/enqueue";
 import type { QueuedDocumentJob } from "@/jobs/handlers/documents";
 
-export { runReportScheduleRecord } from "@/jobs/handlers/documentsReport";
-
 const schema = z.object({
   asOf: z.string().date().nullable().optional(),
   scheduleId: z.string().uuid(),

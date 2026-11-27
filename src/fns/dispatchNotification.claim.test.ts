@@ -32,7 +32,7 @@ import {
   seedNotification,
 } from "@/jobs/handlers/idempotency.testkit";
 
-import { retryFailedNotificationRecord } from "./dispatchNotification";
+import { retryFailedNotificationRecord } from "./dispatchNotification.server";
 
 /**
  * رد المزوّد الذي قبِل الرسالة.

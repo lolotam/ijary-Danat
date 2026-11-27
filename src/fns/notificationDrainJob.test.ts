@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const dispatchMock = vi.fn();
 const retryMock = vi.fn();
 
-vi.mock("@/fns/dispatchNotification", () => ({
+vi.mock("@/fns/dispatchNotification.server", () => ({
   dispatchNotificationRecord: (id: string) => dispatchMock(id),
   retryFailedNotificationRecord: (id: string, seenRetryCount: number) =>
     retryMock(id, seenRetryCount),

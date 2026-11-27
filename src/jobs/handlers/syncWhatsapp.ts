@@ -1,13 +1,13 @@
 import { runWithRequestCompany } from "@/company/requestCompany.server";
-import { runEvolutionAvatarSweep } from "@/fns/evolutionAvatars";
-import { runEvolutionHistorySweep } from "@/fns/evolutionHistorySync";
+import { runEvolutionAvatarSweep } from "@/fns/evolutionAvatars.server";
+import { runEvolutionHistorySweep } from "@/fns/evolutionHistorySync.server";
 import type { JobPayload } from "@/jobs/catalog";
 import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
 
 /**
  * يبني معالج مهمة `whatsapp.history.sync`: استيراد تاريخ محادثات الواتساب.
  *
- * The sweep is the moved work of `src/fns/evolutionHistorySync.ts` — bounded
+ * The sweep is the moved work of `src/fns/evolutionHistorySync.server.ts` — bounded
  * and idempotent on message_id — so a retry of this job imports nothing twice.
  * The payload's `connectionId` scopes the connection read; another company's
  * id finds nothing (the connection is the per-company singleton of migration

@@ -3,12 +3,7 @@ import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
-import {
-  dedupeRowsByCode,
-  ENTITIES_DEDUPED_BY_CODE,
-  type BulkImportLimitRefusal,
-  type RefusedImportRow,
-} from "@/fns/bulkImportRun.server";
+import type { BulkImportLimitRefusal, RefusedImportRow } from "@/fns/bulkImportRun.server";
 import { IMPORT_PERMISSION_BY_ENTITY, stageImportBatch } from "@/fns/importBatches.server";
 import { requirePermission } from "@/fns/requirePermission";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -19,7 +14,9 @@ import {
   type ImportValidationError,
 } from "@/lib/bulkImportSchemas";
 
-export { dedupeRowsByCode, ENTITIES_DEDUPED_BY_CODE };
+// Types only: a value re-export from the `.server` module would keep it (and its
+// server-only imports) alive in the browser bundle. Import the dedupe helpers
+// from `@/fns/bulkImportRun.server` directly.
 export type { BulkImportLimitRefusal, RefusedImportRow };
 
 const schema = z.object({

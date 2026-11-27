@@ -11,8 +11,8 @@ import {
   restoreBackupSchema,
   backupRestorePreflightSchema,
   restoreBackup,
-  performRestore,
 } from "@/fns/restoreBackup";
+import { performRestore } from "@/fns/restoreBackup.server";
 import { createBackupArchive, deleteBackupRecord } from "@/fns/backupCore";
 import { JOB_CATALOG } from "@/jobs/catalog";
 import { buildArchive, sha256Hex } from "@/lib/backupArchive";

@@ -116,8 +116,9 @@ vi.mock("@/fns/enqueueNotification", () => ({
   resolveNotificationRecipients: (...args: unknown[]) => resolveRecipients(...(args as [string[]])),
 }));
 
-const { notifyContractCreatedRecord, notifyContractEndedRecord, notifyContractLifecycle } =
-  await import("./notifyContractLifecycle");
+const { notifyContractCreatedRecord, notifyContractEndedRecord } =
+  await import("./notifyContractLifecycle.server");
+const { notifyContractLifecycle } = await import("./notifyContractLifecycle");
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -49,13 +49,9 @@ vi.mock("@/lib/emailTemplates", () => ({
   portalInvoicesUrl: () => "https://danat-future.com/portal/invoices",
 }));
 
-const {
-  collectPlaceholders,
-  findMissingPlaceholders,
-  resolveVariablesSchema,
-  buildFinalMessage,
-  catalogueKeysFor,
-} = await import("./resolveTemplateVariables");
+const { resolveVariablesSchema, catalogueKeysFor } = await import("./resolveTemplateVariables");
+const { collectPlaceholders, findMissingPlaceholders, buildFinalMessage } =
+  await import("./resolveTemplateVariables.server");
 
 describe("collectPlaceholders", () => {
   it("collects every distinct placeholder", () => {

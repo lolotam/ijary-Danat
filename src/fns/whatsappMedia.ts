@@ -10,7 +10,7 @@ import {
   WHATSAPP_MEDIA_BUCKET,
   whatsappMediaPath,
 } from "@/fns/evolutionDelivery";
-import { requireEnabledEvolutionConfig } from "@/fns/whatsappChat";
+import { requireEnabledEvolutionConfig } from "@/fns/evolutionSession.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Tables } from "@/integrations/supabase/database.types";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";

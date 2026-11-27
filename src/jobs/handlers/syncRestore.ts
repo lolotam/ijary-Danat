@@ -1,6 +1,6 @@
 import { companyClient } from "@/company/companyClient.server";
 import { runWithRequestCompany } from "@/company/requestCompany.server";
-import { performRestore } from "@/fns/restoreBackup";
+import { performRestore } from "@/fns/restoreBackup.server";
 import type { JobPayload } from "@/jobs/catalog";
 import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
 

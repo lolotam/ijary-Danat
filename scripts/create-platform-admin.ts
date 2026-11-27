@@ -10,7 +10,7 @@
  * exists in `platform_admins`, the helper refuses and the panel adds the next
  * admin through an audited write.
  */
-import { bootstrapFirstPlatformAdmin } from "@/platform/auditList";
+import { bootstrapFirstPlatformAdmin } from "@/platform/platformAdminBootstrap.server";
 
 /** يقرأ قيمة علم من وسائط سطر الأوامر، ويرفض المعلمة الناقصة. */
 function readFlag(argv: readonly string[], name: string): string {

@@ -4,7 +4,7 @@ import {
   requireRequestCompany,
   runWithRequestCompany,
 } from "@/company/requestCompany.server";
-import { notifyPaymentSuccess } from "@/fns/notifyPaymentSuccess";
+import { notifyPaymentSuccess } from "@/fns/notifyPaymentSuccess.server";
 import type { Json, Tables } from "@/integrations/supabase/database.types";
 import { classifyBlockingPayments } from "@/lib/gatewayReconciliation";
 

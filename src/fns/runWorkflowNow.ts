@@ -23,14 +23,6 @@ import { requirePermission } from "@/fns/requirePermission";
 
 type ScheduledJobName = keyof typeof JOBS;
 
-/**
- * Dispatches from the cron endpoint's own map rather than a second copy, so a
- * job can never be runnable from one path and missing from the other.
- */
-function isScheduledJobName(value: string): value is ScheduledJobName {
-  return Object.prototype.hasOwnProperty.call(JOBS, value);
-}
-
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const schema = z.object({
@@ -44,7 +36,11 @@ export const runWorkflowNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(schema)
   .handler(async ({ data, context }) => {
-    if (!isScheduledJobName(data.key)) {
+    // Dispatches from the cron endpoint's own map rather than a second copy, so a
+    // job can never be runnable from one path and missing from the other. The
+    // check stays inline: a top-level helper reading `JOBS` would keep
+    // `cronJobs` (and every server-only job) in the browser bundle.
+    if (!Object.prototype.hasOwnProperty.call(JOBS, data.key)) {
       throw new Error(
         `Only scheduled workflows can be run now. "${data.key}" is not a dispatchable scheduled job.`,
       );
@@ -70,9 +66,9 @@ export const runWorkflowNow = createServerFn({ method: "POST" })
     }
 
     // The lock is taken only after the checks above, so a refused or paused
-    // call never acquires it. `key` is hoisted because a type-guard narrowing
-    // of `data.key` does not survive into the closure below.
-    const key = data.key;
+    // call never acquires it. `key` is hoisted and cast once, after the
+    // membership check above, so the closure below can index `JOBS`.
+    const key = data.key as ScheduledJobName;
     const asOf = data.asOf ?? null;
     const outcome = await withJobLock(key, async () => {
       const startedAt = Date.now();

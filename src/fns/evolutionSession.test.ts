@@ -58,7 +58,7 @@ vi.mock("@/company/requestCompany.server", () => ({
   }),
 }));
 
-const { loadEvolutionProviderConfig, loadQrConnection } = await import("./evolutionSession");
+const { loadEvolutionProviderConfig, loadQrConnection } = await import("./evolutionSession.server");
 
 function makeConnection(overrides: Partial<WhatsappConnectionRow> = {}): WhatsappConnectionRow {
   return {

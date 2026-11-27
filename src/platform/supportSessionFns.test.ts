@@ -43,11 +43,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 import { runWithRequestCompany } from "@/company/requestCompany.server";
 import { supportSession as arSupport } from "@/i18n/locales/ar/supportSession";
-import {
-  supportSessionErrorMessage,
-  supportSessionLink,
-  verifySupportToken,
-} from "@/platform/supportSessionFns";
+import { verifySupportToken } from "@/platform/supportSessionAccess.server";
+import { supportSessionErrorMessage, supportSessionLink } from "@/platform/supportSessionFns";
 import {
   acceptSupportSessionToken,
   endSupportSessionFromPanel,

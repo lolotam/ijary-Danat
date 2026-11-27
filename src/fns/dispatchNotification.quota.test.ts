@@ -13,7 +13,7 @@ vi.mock("@/company/companyClient.server", async () =>
 
 import { companyClient } from "@/company/companyClient.server";
 
-import { dispatchNotificationRecord } from "./dispatchNotification";
+import { dispatchNotificationRecord } from "./dispatchNotification.server";
 import {
   CLOUD,
   db,

@@ -7,7 +7,7 @@ import {
   DISPATCH_LEASE_MS,
   dispatchNotificationRecord,
   retryFailedNotificationRecord,
-} from "./dispatchNotification";
+} from "./dispatchNotification.server";
 import { runNotificationDrainJob } from "./notificationDrainJob";
 
 vi.mock("@tanstack/react-start", async () =>

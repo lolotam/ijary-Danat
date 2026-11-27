@@ -121,7 +121,7 @@ vi.mock("@/company/companyClient.server", () => {
   };
 });
 
-vi.mock("@/fns/evolutionSession", async (importOriginal) => ({
+vi.mock("@/fns/evolutionSession.server", async (importOriginal) => ({
   // Partial: only the provider config is stubbed; the connection reader stays
   // real so the ingest path runs as it does in production.
   ...(await importOriginal<Record<string, unknown>>()),
@@ -144,7 +144,7 @@ vi.mock("@/lib/providers/evolution", () => ({
   }),
 }));
 
-const { respondToEvolutionWebhook } = await import("./evolutionWebhook");
+const { respondToEvolutionWebhook } = await import("./evolutionWebhook.server");
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});

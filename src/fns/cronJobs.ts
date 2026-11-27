@@ -1,11 +1,11 @@
-import { runContractExpiryJob } from "@/fns/contractExpiryJob";
-import { runEvaluateOverdueJob } from "@/fns/evaluateOverdue";
+import { runContractExpiryJob } from "@/fns/contractExpiryJob.server";
+import { runEvaluateOverdueJob } from "@/fns/evaluateOverdue.server";
 import { runGmailSyncJob } from "@/fns/gmailSyncJob";
 import { runSalariesJob } from "@/fns/salariesJob";
 import { runNotificationDrainJob } from "@/fns/notificationDrainJob";
 import { runOverdueRemindersJob } from "@/fns/overdueRemindersJob";
 import { runPaymentReconcileJob } from "@/fns/paymentReconcileJob";
-import { runScheduledReportsJob } from "@/fns/scheduledReportsJob";
+import { runScheduledReportsJob } from "@/fns/scheduledReportsJob.server";
 import { runBackupJob } from "@/fns/backupJob";
 import { runLogRetentionJob } from "@/fns/logRetentionJob";
 

@@ -136,7 +136,8 @@ vi.mock("@/company/companyClient.server", () => {
   };
 });
 
-import { runEvolutionHistorySweep, runEvolutionHistorySync } from "./evolutionHistorySync";
+import { runEvolutionHistorySync } from "./evolutionHistorySync";
+import { runEvolutionHistorySweep } from "./evolutionHistorySync.server";
 
 /** Routes the stubbed fetch by Evolution endpoint path. */
 function stubEvolution(handlers: {

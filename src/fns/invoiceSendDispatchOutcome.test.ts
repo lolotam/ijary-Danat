@@ -11,7 +11,7 @@ vi.mock("@/company/companyClient.server", async () =>
   (await import("./dispatchNotification.testkit")).companyClientModule(),
 );
 
-import { dispatchNotificationRecord } from "./dispatchNotification";
+import { dispatchNotificationRecord } from "./dispatchNotification.server";
 import { CLOUD, db, notification, resetDispatchFixtures } from "./dispatchNotification.testkit";
 import { invoiceSendRowBucket, invoiceSendToast } from "@/lib/invoiceSendOutcome";
 import type { InvoiceSendOutcome } from "@/lib/invoiceSendOutcome";

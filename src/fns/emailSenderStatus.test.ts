@@ -79,7 +79,7 @@ vi.mock("@/company/companyClient.server", () => {
   };
 });
 
-const { getEmailSenderStatus } = await import("./emailSenderStatus");
+const { getEmailSenderStatus } = await import("./emailSender.server");
 
 describe("emailSenderStatus", () => {
   beforeEach(() => {

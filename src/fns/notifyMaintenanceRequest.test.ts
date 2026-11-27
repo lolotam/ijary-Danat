@@ -89,7 +89,7 @@ vi.mock("@/fns/enqueueNotification", () => ({
   resolveNotificationRecipients: (...args: unknown[]) => resolveRecipients(...(args as [string[]])),
 }));
 
-const { notifyMaintenanceRequestRecord } = await import("./notifyMaintenanceRequest");
+const { notifyMaintenanceRequestRecord } = await import("./notifyMaintenanceRequest.server");
 
 beforeEach(() => {
   vi.clearAllMocks();

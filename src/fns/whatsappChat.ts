@@ -4,7 +4,11 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { deliverEvolutionNotification } from "@/fns/evolutionDelivery";
-import { loadQrConnection, NO_QR_SESSION_MESSAGE } from "@/fns/evolutionSession";
+import {
+  loadQrConnection,
+  NO_QR_SESSION_MESSAGE,
+  requireEnabledEvolutionConfig,
+} from "@/fns/evolutionSession.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { evolutionClientFromConfig } from "@/lib/providers/evolution";
 import { toInternationalDigits } from "@/lib/providers/types";
@@ -28,25 +32,6 @@ async function assertPermission(context: PermissionContext, code: string): Promi
     attempted: "whatsapp.chat",
     refusal: "You do not have permission to use the WhatsApp inbox.",
   });
-}
-
-/**
- * يعيد إعداد مزوّد evolution_api إن كان هو مزوّد واتساب المفعّل، وإلا يرفض.
- */
-export async function requireEnabledEvolutionConfig() {
-  const result = await companyClient(requireRequestCompany().id)
-    .from("provider_configs")
-    .select("*")
-    .eq("provider", "evolution_api")
-    .eq("is_enabled", true)
-    .maybeSingle();
-  if (result.error) throw new Error(result.error.message);
-  if (!result.data) {
-    throw new Error(
-      "Evolution API is not the enabled WhatsApp provider. Enable it in Settings â†’ Automations â†’ Providers before sending from the inbox.",
-    );
-  }
-  return result.data;
 }
 
 const sendSchema = z.object({

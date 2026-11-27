@@ -11,7 +11,7 @@ afterAll(closePool);
  * Migration 315 — حجز إرسال الإشعارات: مهلة على الصف تضمن إرسالاً واحداً بالضبط.
  *
  * Real SQL against a real Postgres built from db/migrations. The claim is one
- * conditional UPDATE (the shape `src/fns/dispatchNotification.ts` sends), so
+ * conditional UPDATE (the shape `src/fns/dispatchNotification.server.ts` sends), so
  * these tests pin its three promises: of two concurrent claims exactly one
  * gets the row back, an expired lease is reclaimable while a fresh one is
  * not, and every terminal write releases the lease (migration 315's trigger).

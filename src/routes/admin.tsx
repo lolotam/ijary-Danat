@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useI18n } from "@/i18n/provider";
 import { usePermissions } from "@/hooks/usePermissions";
+import { requirePasswordChange } from "@/components/auth/passwordChangeGuard";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { InboxBell } from "@/components/admin/InboxBell";
@@ -17,6 +18,12 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
+  // The first sign-in of a staff account carries a temporary password that
+  // must be changed (FR-032): the guard sends that account to the
+  // change-password screen, and nothing of the panel loads until it is done.
+  beforeLoad: async () => {
+    await requirePasswordChange("/admin");
+  },
   component: AdminLayout,
 });
 

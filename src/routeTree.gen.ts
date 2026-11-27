@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as NotFoundRouteImport } from './routes/not-found'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAuditRouteImport } from './routes/admin.audit'
@@ -91,6 +92,11 @@ const PortalRoute = PortalRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -343,6 +349,7 @@ export interface FileRoutesByFullPath {
   '/not-found': typeof NotFoundRoute
   '/portal': typeof PortalRouteWithChildren
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/terms': typeof TermsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/contracts': typeof AdminContractsRoute
@@ -396,6 +403,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/not-found': typeof NotFoundRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/terms': typeof TermsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/contracts': typeof AdminContractsRoute
@@ -450,6 +458,7 @@ export interface FileRoutesById {
   '/not-found': typeof NotFoundRoute
   '/portal': typeof PortalRouteWithChildren
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/terms': typeof TermsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/contracts': typeof AdminContractsRoute
@@ -507,6 +516,7 @@ export interface FileRouteTypes {
     | '/not-found'
     | '/portal'
     | '/privacy'
+    | '/reset-password'
     | '/terms'
     | '/admin/audit'
     | '/admin/contracts'
@@ -560,6 +570,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/not-found'
     | '/privacy'
+    | '/reset-password'
     | '/terms'
     | '/admin/audit'
     | '/admin/contracts'
@@ -613,6 +624,7 @@ export interface FileRouteTypes {
     | '/not-found'
     | '/portal'
     | '/privacy'
+    | '/reset-password'
     | '/terms'
     | '/admin/audit'
     | '/admin/contracts'
@@ -669,6 +681,7 @@ export interface RootRouteChildren {
   NotFoundRoute: typeof NotFoundRoute
   PortalRoute: typeof PortalRouteWithChildren
   PrivacyRoute: typeof PrivacyRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   TermsRoute: typeof TermsRoute
   PortalAuthRoute: typeof PortalAuthRoute
   ApiPublicEvolutionWebhookRoute: typeof ApiPublicEvolutionWebhookRoute
@@ -721,6 +734,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -1177,6 +1197,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotFoundRoute: NotFoundRoute,
   PortalRoute: PortalRouteWithChildren,
   PrivacyRoute: PrivacyRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   TermsRoute: TermsRoute,
   PortalAuthRoute: PortalAuthRoute,
   ApiPublicEvolutionWebhookRoute: ApiPublicEvolutionWebhookRoute,

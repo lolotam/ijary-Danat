@@ -207,7 +207,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T082 [US3] Write migration `db/migrations/314_company_accounts.sql`: single-use `password_reset_tokens`, and a must-change-password flag on `profiles` (research.md R3)
 - [x] T083 [US3] Implement GoTrue admin helpers with synthetic auth emails in `src/platform/authAdmin.server.ts`; use them from `src/fns/createAppUser.ts`, `updateAppUser.ts`, `deleteAppUser.ts`; make `src/lib/userConflicts.server.ts` and `phoneConflicts.server.ts` check within the company
 - [x] T084 [US3] Resolve identifiers within the host's company in `src/fns/signInWithIdentifier.ts`, `src/auth/loginIdentity.ts` and `src/auth/AuthProvider.tsx`
-- [ ] T085 [US3] Application password reset in `src/fns/passwordReset.ts` and `src/routes/reset-password.tsx`, sending through a `notification.dispatch` job
+- [x] T085 [US3] Application password reset in `src/fns/passwordReset.ts` and `src/routes/reset-password.tsx`, sending through a `notification.dispatch` job
 - [x] T086 [US3] Branded sign-in: `src/fns/publicBranding.ts` by host; `src/routes/auth.tsx` and `src/routes/portal_.auth.tsx`
 - [x] T087 [US3] Temporary platform page, redirect of a company root to sign-in, and a not-found page in `src/routes/index.tsx` and `src/routes/not-found.tsx`; landing section off for every company
 - [ ] T088 [US3] ⛔ BLOCKED(owner: Cloudflare API token for `ijary.app`, Dokploy access) VERIFY that Dokploy accepts a wildcard domain with DNS-01; write `deploy/ijary/traefik-wildcard.yml` and the steps in `deploy/ijary/README.md`; fallback Cloudflare origin certificate (research.md R5)
@@ -239,7 +239,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [ ] T098 [P] [US4] Companies screens: `src/routes/platform.companies.tsx`, `src/routes/platform.companies.$id.tsx`, `src/components/platform/CompaniesTable.tsx`, `src/components/platform/CompanyCreateDialog.tsx`
 - [ ] T099 [P] [US4] Company users panel in `src/components/platform/CompanyUsersPanel.tsx`
 - [ ] T100 [P] [US4] Audit log screen in `src/routes/platform.audit.tsx`
-- [ ] T101 [US4] Enforce the first-sign-in password change in `src/routes/admin.tsx` and `src/routes/portal.tsx`
+- [x] T101 [US4] Enforce the first-sign-in password change in `src/routes/admin.tsx` and `src/routes/portal.tsx`
 - [ ] T102 [P] [US4] Bootstrap script for the first super admin in `scripts/create-platform-admin.ts`
 - [ ] T103 [P] [US4] Arabic and English strings for the super admin panel in `src/i18n/`
 - [ ] T104 [US4] Gate: quickstart.md Phase 2 steps 1, 2 and 11; record SC-002 and SC-015

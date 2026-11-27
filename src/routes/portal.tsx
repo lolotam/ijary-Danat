@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 import { useAuth } from "@/auth/AuthProvider";
 import { BrandLogo } from "@/components/BrandLogo";
+import { requirePasswordChange } from "@/components/auth/passwordChangeGuard";
 import { AnnouncementBanner } from "@/components/portal/AnnouncementBanner";
 import { ReminderPopupDialog } from "@/components/portal/ReminderPopupDialog";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,12 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const Route = createFileRoute("/portal")({
   ssr: false,
+  // The first sign-in of a portal account carries a temporary password that
+  // must be changed (FR-032): the guard sends that account to the
+  // change-password screen, and nothing of the portal loads until it is done.
+  beforeLoad: async () => {
+    await requirePasswordChange("/portal");
+  },
   // `?tenant=<id>` lets an admin open any tenant's portal (ignored for
   // non-staff users — see usePortalIdentity).
   // `?tenant=` admin preview; `?contract=` multi-contract filter (Lane A).

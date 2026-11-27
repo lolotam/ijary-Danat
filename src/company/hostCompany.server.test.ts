@@ -323,12 +323,10 @@ describe("route gating by host", () => {
     expect(response.status).toBe(200);
   });
 
-  // T081: withCompanyContext does not gate routes by host yet — it only
-  // resolves context, so every host serves every route today. Each case below
-  // is the 404 T081 introduces: `/platform/*` lives on the admin host only,
-  // `/admin/*` and `/portal/*` only on company hosts. Drop the `.fails` when
-  // the gate lands.
-  test.fails.each([
+  // T081: every pairing below is a wrong host/route combination the gate
+  // answers with 404: `/platform/*` lives on the admin host only, `/admin/*`
+  // and `/portal/*` only on company hosts, and an unknown host serves none.
+  test.each([
     ["ijary.app", "/platform/companies"],
     ["acme.ijary.app", "/platform/companies"],
     ["ghost.ijary.app", "/platform/companies"],
@@ -342,5 +340,14 @@ describe("route gating by host", () => {
     const { response, next } = await runGated(host, path);
     expect(response.status).toBe(404);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("serves a 404 page that reveals no company or host", async () => {
+    const { response } = await runGated("acme.ijary.app", "/platform/companies");
+    const body = await response.text();
+    expect(response.status).toBe(404);
+    expect(body).not.toContain("acme");
+    expect(body).not.toContain("ijary");
+    expect(body).not.toContain(ACME_COMPANY.id);
   });
 });

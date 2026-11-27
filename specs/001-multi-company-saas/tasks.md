@@ -203,7 +203,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Implementation for User Story 3
 
-- [ ] T081 [US3] Gate routes by host in `server/middleware/company.ts`: `/platform/*` only on the admin host, `/admin/*` and `/portal/*` only on company hosts, 404 otherwise
+- [x] T081 [US3] Gate routes by host in `server/middleware/company.ts`: `/platform/*` only on the admin host, `/admin/*` and `/portal/*` only on company hosts, 404 otherwise
 - [ ] T082 [US3] Write migration `db/migrations/288_company_accounts.sql`: single-use `password_reset_tokens`, and a must-change-password flag on `profiles` (research.md R3)
 - [ ] T083 [US3] Implement GoTrue admin helpers with synthetic auth emails in `src/platform/authAdmin.server.ts`; use them from `src/fns/createAppUser.ts`, `updateAppUser.ts`, `deleteAppUser.ts`; make `src/lib/userConflicts.server.ts` and `phoneConflicts.server.ts` check within the company
 - [ ] T084 [US3] Resolve identifiers within the host's company in `src/fns/signInWithIdentifier.ts`, `src/auth/loginIdentity.ts` and `src/auth/AuthProvider.tsx`

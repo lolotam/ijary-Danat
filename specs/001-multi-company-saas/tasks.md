@@ -197,9 +197,9 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 3
 
-- [ ] T078 [P] [US3] Host tests (company host, platform root, admin host, unknown host, route gating by host) in `src/company/hostCompany.server.test.ts`
-- [ ] T079 [P] [US3] Sign-in tests (same identifier in two companies, other company's address fails like a wrong password, suspended refused, session of another company treated as signed out) in `src/fns/signInWithIdentifier.test.ts`
-- [ ] T080 [P] [US3] Test that no response sets a cookie with a parent-domain scope, in `src/company/cookieScope.test.ts`
+- [x] T078 [P] [US3] Host tests (company host, platform root, admin host, unknown host, route gating by host) in `src/company/hostCompany.server.test.ts`
+- [x] T079 [P] [US3] Sign-in tests (same identifier in two companies, other company's address fails like a wrong password, suspended refused, session of another company treated as signed out) in `src/fns/signInWithIdentifier.test.ts`
+- [x] T080 [P] [US3] Test that no response sets a cookie with a parent-domain scope, in `src/company/cookieScope.test.ts`
 
 ### Implementation for User Story 3
 

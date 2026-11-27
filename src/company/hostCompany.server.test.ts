@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, test, vi } from "vitest";
 
 import { CompanyContextError, isCompanyContextError } from "@/company/errors";
 import {
@@ -157,6 +157,21 @@ describe("resolveHostCompany", () => {
     expect(findCompanyBySlug).toHaveBeenCalledTimes(1);
   });
 
+  it("reveals no company for an unknown subdomain under the root host", async () => {
+    const deps = {
+      rootHost: "ijary.app",
+      adminHost: "admin.ijary.app",
+      findDomainCompany: createDomainFinder({}),
+      findCompanyBySlug: vi.fn(async () => null),
+    };
+
+    expect(await resolveHostCompany("ghost.ijary.app", deps)).toEqual({
+      kind: "unknown",
+      host: "ghost.ijary.app",
+      company: null,
+    });
+  });
+
   it("does not cache transient lookup failures", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const findDomainCompany = vi
@@ -276,5 +291,56 @@ describe("requestCompany context and withCompanyContext middleware", () => {
 
     expect(companyRes.status).toBe(200);
     expect(getRequestCompany()).toBeNull();
+  });
+});
+
+describe("route gating by host", () => {
+  afterEach(() => {
+    clearHostCompanyCache();
+  });
+
+  /**
+   * يشغّل وسيطة سياق الشركة على طلب مسارٍ من مضيفٍ معيّن ويعيد الاستجابة وعدّاد النداء.
+   */
+  async function runGated(host: string, path: string) {
+    const next = vi.fn(async () => new Response("served", { status: 200 }));
+    const response = await withCompanyContext(new Request(`https://${host}${path}`), next, {
+      rootHost: "ijary.app",
+      adminHost: "admin.ijary.app",
+      findDomainCompany: createDomainFinder({ "acme.ijary.app": ACME_COMPANY }),
+      findCompanyBySlug: vi.fn(async () => null),
+    });
+    return { response, next };
+  }
+
+  it.each([
+    ["admin.ijary.app", "/platform/companies"],
+    ["acme.ijary.app", "/admin/invoices"],
+    ["acme.ijary.app", "/portal/payments"],
+  ])("serves %s for %s", async (host, path) => {
+    const { response, next } = await runGated(host, path);
+    expect(next).toHaveBeenCalledOnce();
+    expect(response.status).toBe(200);
+  });
+
+  // T081: withCompanyContext does not gate routes by host yet — it only
+  // resolves context, so every host serves every route today. Each case below
+  // is the 404 T081 introduces: `/platform/*` lives on the admin host only,
+  // `/admin/*` and `/portal/*` only on company hosts. Drop the `.fails` when
+  // the gate lands.
+  test.fails.each([
+    ["ijary.app", "/platform/companies"],
+    ["acme.ijary.app", "/platform/companies"],
+    ["ghost.ijary.app", "/platform/companies"],
+    ["ijary.app", "/admin/invoices"],
+    ["admin.ijary.app", "/admin/invoices"],
+    ["ghost.ijary.app", "/admin/invoices"],
+    ["ijary.app", "/portal/payments"],
+    ["admin.ijary.app", "/portal/payments"],
+    ["ghost.ijary.app", "/portal/payments"],
+  ])("%s must not serve %s", async (host, path) => {
+    const { response, next } = await runGated(host, path);
+    expect(response.status).toBe(404);
+    expect(next).not.toHaveBeenCalled();
   });
 });

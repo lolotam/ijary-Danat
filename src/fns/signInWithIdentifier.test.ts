@@ -1,112 +1,37 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 
-const mocks = vi.hoisted(() => {
-  const serverFunction = Object.assign(
-    (data: unknown) => serverFunction.handler({ data, context: serverFunction.context }),
-    {
-      context: null as unknown,
-      handler: null as unknown as (input: { data: unknown; context: unknown }) => Promise<unknown>,
-    },
-  );
-  return {
-    createClient: vi.fn(),
-    from: vi.fn(),
-    rpc: vi.fn(),
-    signInWithPassword: vi.fn(),
-    signOut: vi.fn(),
-    recordLoginAttempt: vi.fn(),
-    recordFailedLoginAttempt: vi.fn(),
-    serverFunction,
-  };
-});
+vi.mock("@tanstack/react-start", async () =>
+  (await import("./signInWithIdentifier.testkit")).serverFnModule(),
+);
+vi.mock("@supabase/supabase-js", async () =>
+  (await import("./signInWithIdentifier.testkit")).supabaseJsModule(),
+);
+vi.mock("@/company/companyClient.server", async () =>
+  (await import("./signInWithIdentifier.testkit")).companyClientModule(),
+);
+vi.mock("@/company/requestCompany.server", async () =>
+  (await import("./signInWithIdentifier.testkit")).requestCompanyModule(),
+);
+vi.mock("@/fns/loginAudit", async () =>
+  (await import("./signInWithIdentifier.testkit")).loginAuditModule(),
+);
 
-vi.mock("@tanstack/react-start", () => ({
-  createServerFn: () => {
-    const serverFunctionBuilder = {
-      handler: (handler: typeof mocks.serverFunction.handler) => {
-        mocks.serverFunction.handler = handler;
-        return mocks.serverFunction;
-      },
-    };
-    return {
-      middleware: () => ({
-        inputValidator: () => serverFunctionBuilder,
-        validator: () => serverFunctionBuilder,
-      }),
-      inputValidator: () => serverFunctionBuilder,
-      validator: () => serverFunctionBuilder,
-    };
-  },
-  createMiddleware: () => ({ server: (handler: unknown) => handler }),
-}));
-
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: mocks.createClient,
-}));
-
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: mocks.from, rpc: mocks.rpc },
-}));
-
-vi.mock("@/company/companyClient.server", () => ({
-  companyClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
-}));
-
-vi.mock("@/company/requestCompany.server", () => ({
-  requireRequestCompany: () => ({
-    id: "11111111-1111-4111-8111-111111111111",
-    slug: "danat",
-    status: "active",
-    host: "danat.localhost",
-  }),
-}));
-
-vi.mock("@/fns/loginAudit", () => ({
-  recordLoginAttempt: mocks.recordLoginAttempt,
-  recordFailedLoginAttempt: mocks.recordFailedLoginAttempt,
-}));
-
+import type { RequestCompany } from "@/company/requestCompany.server";
 import { signInWithIdentifier } from "./signInWithIdentifier";
+import {
+  lastAuditInput,
+  resetSignInFixtures,
+  serverFunction,
+  signInBoundary,
+  signInState,
+  stageAuthAccounts,
+  type ProfileRow,
+} from "./signInWithIdentifier.testkit";
 
 // The mocked createServerFn returns a plain callable, so the exported symbol's
 // fetcher type does not describe how it is driven here. Same cast as
 // createAppUser.test.ts.
-const signIn = signInWithIdentifier as unknown as typeof mocks.serverFunction;
-
-/** صفوف profiles التي يعيدها المستعلم في كل اختبار. */
-let profileRows: Array<{ id: string; email: string | null; is_active: boolean }>;
-
-/**
- * وسائط آخر صف تدقيق كُتب لمحاولة الدخول، من أيٍّ من المسارين.
- *
- * Migration 215 routed the two attacker-reachable failures through
- * `recordFailedLoginAttempt`, which throttles before it writes and therefore
- * takes no `actorId`/`result` — those are implied by the RPC it calls. Reading
- * whichever writer fired last keeps these tests about the recorded outcome
- * rather than about which of the two functions produced it.
- */
-function lastAuditInput() {
-  const throttled = mocks.recordFailedLoginAttempt.mock.calls;
-  if (throttled.length) {
-    const input = throttled[throttled.length - 1][0] as {
-      identifier: string;
-      accountId: string | null;
-      errorCode: string | null;
-    };
-    return { ...input, actorId: null, result: "failure" };
-  }
-  const calls = mocks.recordLoginAttempt.mock.calls;
-  return calls[calls.length - 1][0] as {
-    identifier: string;
-    accountId: string | null;
-    actorId: string | null;
-    result: string;
-    errorCode: string | null;
-  };
-}
-
-/** نتيجة نداء GoTrue لمحاولة الدخول في كل اختبار. */
-let signInResult: { data: { session: unknown }; error: unknown };
+const signIn = signInWithIdentifier as unknown as typeof serverFunction;
 
 /**
  * يستدعي دالة الخادم بالطريقة نفسها التي تستخدمها الاختبارات أعلاه.
@@ -115,42 +40,66 @@ function callHandler(data: { identifier: string; password: string }) {
   return signIn(data) as Promise<unknown>;
 }
 
+/**
+ * يحل محل صفوف profiles المرئية لشركة الطلب الحالية في حدود Supabase الوهمية.
+ */
+function stageProfiles(rows: ProfileRow[]) {
+  signInState.profilesByCompany[signInState.requestCompany.id] = rows;
+}
+
+const companyA: RequestCompany = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  slug: "acme",
+  status: "active",
+  host: "acme.ijary.app",
+};
+const companyB: RequestCompany = {
+  id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  slug: "beta",
+  status: "active",
+  host: "beta.ijary.app",
+};
+const frozenCompany: RequestCompany = {
+  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  slug: "frozen",
+  status: "suspended",
+  host: "frozen.ijary.app",
+};
+const userA = "a0000000-0000-4000-8000-000000000001";
+const userB = "b0000000-0000-4000-8000-000000000002";
+
+/**
+ * يجهّز شركتين تتقاسمان معرّفاً واحداً بحسابين منفصلين لكل منهما كلمة مروره.
+ *
+ * Both companies hold a profile for the identifier, and each profile carries
+ * its own address and its own GoTrue account. The account is also reachable
+ * under R3's synthetic address so the scenario keeps holding when T083/T084
+ * move the password grant onto it; the password and account id carry the
+ * scenario, not the address spelling.
+ */
+function stageSharedIdentifierAccounts() {
+  signInState.profilesByCompany = {
+    [companyA.id]: [{ id: userA, email: "john@acme.test", is_active: true }],
+    [companyB.id]: [{ id: userB, email: "john@beta.test", is_active: true }],
+  };
+  signInState.phoneRowsByCompany = {
+    [companyA.id]: [{ id: userA, email: "john@acme.test" }],
+    [companyB.id]: [{ id: userB, email: "john@beta.test" }],
+  };
+  stageAuthAccounts({
+    "john@acme.test": { userId: userA, password: "pw-acme" },
+    [`${userA}@auth.ijary.invalid`]: { userId: userA, password: "pw-acme" },
+    "john@beta.test": { userId: userB, password: "pw-beta" },
+    [`${userB}@auth.ijary.invalid`]: { userId: userB, password: "pw-beta" },
+  });
+}
+
 describe("signInWithIdentifier", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     process.env.SUPABASE_URL = "https://supabase.example.test";
     process.env.SUPABASE_ANON_KEY = "anon-key";
-    profileRows = [
-      { id: "11111111-1111-4111-8111-111111111111", email: "admin@example.test", is_active: true },
-    ];
-    signInResult = {
-      data: {
-        session: {
-          access_token: "access",
-          refresh_token: "refresh",
-          user: { id: "11111111-1111-4111-8111-111111111111" },
-        },
-      },
-      error: null,
-    };
-    mocks.createClient.mockReturnValue({
-      auth: { signInWithPassword: mocks.signInWithPassword, signOut: mocks.signOut },
-    });
-    mocks.signOut.mockResolvedValue({ error: null });
-    // An identifier that classifies as an email resolves through profiles, and
-    // the signed-in id is looked up again by `id`. `profileRows` stands for this
-    // company's profiles only (the company client's RLS), read at call time so a
-    // test can stage its own state after this reset.
-    mocks.from.mockReturnValue({
-      select: () => ({
-        eq: (_column: string, value: string) => ({
-          limit: () => Promise.resolve({ data: profileRows }),
-          maybeSingle: () =>
-            Promise.resolve({ data: profileRows.find((row) => row.id === value) ?? null }),
-        }),
-      }),
-    });
-    mocks.signInWithPassword.mockImplementation(() => Promise.resolve(signInResult));
+    resetSignInFixtures();
   });
 
   /**
@@ -167,8 +116,8 @@ describe("signInWithIdentifier", () => {
   it("builds its login client with auto-refresh disabled", async () => {
     await signIn({ identifier: "admin@example.test", password: "secret-password" });
 
-    expect(mocks.createClient).toHaveBeenCalled();
-    const options = mocks.createClient.mock.calls[0][2];
+    expect(signInBoundary.createClient).toHaveBeenCalled();
+    const options = signInBoundary.createClient.mock.calls[0][2];
     expect(options.auth.autoRefreshToken).toBe(false);
     expect(options.auth.persistSession).toBe(false);
   });
@@ -183,7 +132,7 @@ describe("signInWithIdentifier", () => {
   });
 
   it("reports one opaque failure so the form is not an account-existence oracle", async () => {
-    signInResult = {
+    signInState.signInResult = {
       data: { session: null },
       error: { message: "Invalid login credentials" },
     };
@@ -197,10 +146,10 @@ describe("signInWithIdentifier", () => {
   });
 
   it("an active account signs in and receives its tokens", async () => {
-    profileRows = [
+    stageProfiles([
       { id: "22222222-2222-4222-8222-222222222222", email: "active@example.test", is_active: true },
-    ];
-    signInResult = {
+    ]);
+    signInState.signInResult = {
       data: {
         session: {
           access_token: "a",
@@ -221,8 +170,8 @@ describe("signInWithIdentifier", () => {
   // span every company. A correct password for another company's account
   // returned a session on this company's host.
   it("refuses another company's account with the same opaque failure and revokes its session", async () => {
-    profileRows = [];
-    signInResult = {
+    stageProfiles([]);
+    signInState.signInResult = {
       data: {
         session: { access_token: "a", refresh_token: "r", user: { id: "other-company-user" } },
       },
@@ -232,8 +181,8 @@ describe("signInWithIdentifier", () => {
     const result = await callHandler({ identifier: "owner@other.test", password: "correct-pw" });
 
     expect(result).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
-    expect(mocks.signOut).toHaveBeenCalledWith({ scope: "local" });
-    expect(mocks.recordLoginAttempt).not.toHaveBeenCalled();
+    expect(signInBoundary.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(signInBoundary.recordLoginAttempt).not.toHaveBeenCalled();
     // The other company's account id must not land in this company's audit trail.
     expect(lastAuditInput()).toMatchObject({
       identifier: "owner@other.test",
@@ -244,10 +193,10 @@ describe("signInWithIdentifier", () => {
   });
 
   it("a deactivated account is refused even with the correct password", async () => {
-    profileRows = [
+    stageProfiles([
       { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
-    ];
-    signInResult = {
+    ]);
+    signInState.signInResult = {
       data: {
         session: {
           access_token: "a",
@@ -264,10 +213,10 @@ describe("signInWithIdentifier", () => {
   });
 
   it("an unbanned deactivated account is not revealed to someone without the password", async () => {
-    profileRows = [
+    stageProfiles([
       { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
-    ];
-    signInResult = {
+    ]);
+    signInState.signInResult = {
       data: { session: null },
       error: { message: "Invalid login credentials" },
     };
@@ -281,10 +230,10 @@ describe("signInWithIdentifier", () => {
   });
 
   it("a banned account reports deactivation rather than bad credentials", async () => {
-    profileRows = [
+    stageProfiles([
       { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
-    ];
-    signInResult = {
+    ]);
+    signInState.signInResult = {
       data: { session: null },
       error: { code: "user_banned", message: "User is banned" },
     };
@@ -292,6 +241,106 @@ describe("signInWithIdentifier", () => {
     const result = await callHandler({ identifier: "off", password: "correct-pw" });
 
     expect(result).toEqual({ ok: false, error: "ACCOUNT_DEACTIVATED" });
+  });
+
+  it("the session GoTrue issues for another company's account is treated as signed out", async () => {
+    // One real address, two profile rows: GoTrue holds a single account for the
+    // address (company A's person), while company B's profile points at it too.
+    signInState.requestCompany = companyB;
+    stageAuthAccounts({ "home@shared.test": { userId: userA, password: "pw-shared" } });
+    signInState.profilesByCompany = {
+      [companyA.id]: [{ id: userA, email: "home@shared.test", is_active: true }],
+      [companyB.id]: [{ id: userB, email: "home@shared.test", is_active: true }],
+    };
+    signInState.phoneRowsByCompany = {};
+
+    const result = await callHandler({ identifier: "home@shared.test", password: "pw-shared" });
+
+    expect(result).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
+    // The session GoTrue just issued is revoked (local scope: this session only),
+    // so a session of another company leaves nothing signed in behind it.
+    expect(signInBoundary.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(lastAuditInput()).toMatchObject({ accountId: null, result: "failure" });
+  });
+
+  it("a suspended company's host refuses sign-in even with a correct password", async () => {
+    // RLS fails closed for a suspended company (`current_company_id()` is
+    // null), so its client sees no profiles; the refusal below rides on that.
+    // The error code is deliberately not pinned: research.md R18 says the
+    // function "refuses", and whether the refusal stays RLS-mediated or becomes
+    // an explicit COMPANY_SUSPENDED answer is T084's to decide.
+    signInState.requestCompany = frozenCompany;
+    signInState.profilesByCompany = { [frozenCompany.id]: [] };
+    signInState.phoneRowsByCompany = {};
+    stageAuthAccounts({ "home@shared.test": { userId: userA, password: "pw-acme" } });
+
+    const result = await callHandler({ identifier: "home@shared.test", password: "pw-acme" });
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result).not.toHaveProperty("accessToken");
+  });
+
+  describe("the same identifier in two companies", () => {
+    it.each([["john"], ["96550001111"]])(
+      "the shared identifier %s signs in only the host company's account with its own password",
+      async (identifier) => {
+        stageSharedIdentifierAccounts();
+
+        signInState.requestCompany = companyA;
+        const atA = await callHandler({ identifier, password: "pw-acme" });
+        expect(atA).toEqual({
+          ok: true,
+          accessToken: `access-${userA}`,
+          refreshToken: `refresh-${userA}`,
+        });
+
+        // The other account's password fails here exactly like a wrong password.
+        const foreignAtA = await callHandler({ identifier, password: "pw-beta" });
+        expect(foreignAtA).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
+
+        signInState.requestCompany = companyB;
+        const atB = await callHandler({ identifier, password: "pw-beta" });
+        expect(atB).toEqual({
+          ok: true,
+          accessToken: `access-${userB}`,
+          refreshToken: `refresh-${userB}`,
+        });
+      },
+    );
+
+    // T083 + T084: both profiles carry one real email address, and GoTrue holds
+    // a single account for it, so the two companies share one password today.
+    // Synthetic per-account auth emails (T083) and a password grant against the
+    // host company's own account (T084) are what give each account its own
+    // password; the fixture stages those synthetic addresses to pin the end
+    // state from research.md R3.
+    test.fails("the same email address in two companies keeps separate passwords", async () => {
+      signInState.requestCompany = companyA;
+      signInState.profilesByCompany = {
+        [companyA.id]: [{ id: userA, email: "home@shared.test", is_active: true }],
+        [companyB.id]: [{ id: userB, email: "home@shared.test", is_active: true }],
+      };
+      signInState.phoneRowsByCompany = {};
+      stageAuthAccounts({
+        [`${userA}@auth.ijary.invalid`]: { userId: userA, password: "pw-acme" },
+        [`${userB}@auth.ijary.invalid`]: { userId: userB, password: "pw-beta" },
+      });
+
+      const atA = await callHandler({ identifier: "home@shared.test", password: "pw-acme" });
+      expect(atA).toEqual({
+        ok: true,
+        accessToken: `access-${userA}`,
+        refreshToken: `refresh-${userA}`,
+      });
+
+      signInState.requestCompany = companyB;
+      const atB = await callHandler({ identifier: "home@shared.test", password: "pw-beta" });
+      expect(atB).toEqual({
+        ok: true,
+        accessToken: `access-${userB}`,
+        refreshToken: `refresh-${userB}`,
+      });
+    });
   });
 
   /**
@@ -313,7 +362,10 @@ describe("signInWithIdentifier", () => {
     });
 
     it("records a wrong password as a failure carrying the identifier as typed", async () => {
-      signInResult = { data: { session: null }, error: { message: "Invalid login credentials" } };
+      signInState.signInResult = {
+        data: { session: null },
+        error: { message: "Invalid login credentials" },
+      };
 
       await callHandler({ identifier: "admin@example.test", password: "wrong-password" });
 
@@ -331,8 +383,11 @@ describe("signInWithIdentifier", () => {
      */
     it("records an unresolvable identifier with no account attached", async () => {
       // A mobile identifier goes through the phone RPC, not the profiles read.
-      mocks.rpc.mockResolvedValue({ data: [] });
-      signInResult = { data: { session: null }, error: { message: "Invalid login credentials" } };
+      signInBoundary.rpc.mockResolvedValue({ data: [] });
+      signInState.signInResult = {
+        data: { session: null },
+        error: { message: "Invalid login credentials" },
+      };
 
       await callHandler({ identifier: "96550009999", password: "pw" });
 
@@ -345,10 +400,13 @@ describe("signInWithIdentifier", () => {
     });
 
     it("records a banned account under its own error code", async () => {
-      profileRows = [
+      stageProfiles([
         { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
-      ];
-      signInResult = { data: { session: null }, error: { code: "user_banned", message: "banned" } };
+      ]);
+      signInState.signInResult = {
+        data: { session: null },
+        error: { code: "user_banned", message: "banned" },
+      };
 
       await callHandler({ identifier: "off", password: "correct-pw" });
 
@@ -364,10 +422,10 @@ describe("signInWithIdentifier", () => {
      * actor column.
      */
     it("does not attribute a refused deactivated account to itself", async () => {
-      profileRows = [
+      stageProfiles([
         { id: "33333333-3333-4333-8333-333333333333", email: "off@example.test", is_active: false },
-      ];
-      signInResult = {
+      ]);
+      signInState.signInResult = {
         data: {
           session: {
             access_token: "a",
@@ -389,13 +447,18 @@ describe("signInWithIdentifier", () => {
 
     /** The one thing that must never reach an audit row. */
     it("never passes the password to the audit writer", async () => {
-      signInResult = { data: { session: null }, error: { message: "Invalid login credentials" } };
+      signInState.signInResult = {
+        data: { session: null },
+        error: { message: "Invalid login credentials" },
+      };
 
       await callHandler({ identifier: "admin@example.test", password: "s3cr3t-p4ssw0rd" });
 
       // Both writers, not just the one this path happens to use today.
-      expect(JSON.stringify(mocks.recordLoginAttempt.mock.calls)).not.toContain("s3cr3t-p4ssw0rd");
-      expect(JSON.stringify(mocks.recordFailedLoginAttempt.mock.calls)).not.toContain(
+      expect(JSON.stringify(signInBoundary.recordLoginAttempt.mock.calls)).not.toContain(
+        "s3cr3t-p4ssw0rd",
+      );
+      expect(JSON.stringify(signInBoundary.recordFailedLoginAttempt.mock.calls)).not.toContain(
         "s3cr3t-p4ssw0rd",
       );
     });
@@ -410,8 +473,8 @@ describe("signInWithIdentifier", () => {
     it("attributes a legacy fallback login from the authentication response", async () => {
       // A legacy account has a profile in this company but no real address, so
       // the identifier lookup resolves nothing and the `@users.local` mapping signs in.
-      profileRows = [{ id: "legacy-user-id", email: null, is_active: true }];
-      signInResult = {
+      stageProfiles([{ id: "legacy-user-id", email: null, is_active: true }]);
+      signInState.signInResult = {
         data: {
           session: { access_token: "a", refresh_token: "r", user: { id: "legacy-user-id" } },
         },

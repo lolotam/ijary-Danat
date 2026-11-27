@@ -311,6 +311,10 @@ describe("resend webhook routing (US10)", () => {
     const response = await postPlatformRoute(await signedRequest(bouncePayload(), SECRET));
 
     expect(response.status).toBe(401);
+    // Regression (2026-11-27 security review): an unsigned platform delivery
+    // used to resolve its company from the body's message id and archive a
+    // row there, so anyone could write into any company that had a message.
+    expect(db.webhookEvents).toHaveLength(0);
   });
 
   it("acknowledges a platform delivery whose company cannot be found", async () => {

@@ -661,7 +661,9 @@ export async function respondToResendWebhook(
     // in the route; the platform's sender has none, and an unverified delivery
     // is not trusted to name one — so it is archived only where the company is
     // already known.
-    const scope = await eventScope(target, details.emailId);
+    // A platform delivery is never resolved here: its owner would come from the
+    // unverified body's message id, letting anyone write a row into any company.
+    const scope = target.kind === "company" ? await eventScope(target, null) : null;
     // Archived only when the delivery carries a `svix-id`. Without one the
     // partial unique index cannot dedupe, so any client on the internet could
     // POST an unsigned body in a loop and grow this table without bound. With

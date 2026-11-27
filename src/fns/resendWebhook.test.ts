@@ -322,6 +322,8 @@ describe("resendWebhook signature verification", () => {
       // A rejected delivery was recorded, not handled. Marking it processed
       // would hide it from "what did this endpoint fail to process?".
       processed: false,
+      // T201 F2: the unverified body is attacker-controlled and never stored.
+      raw_payload: null,
     });
   });
 

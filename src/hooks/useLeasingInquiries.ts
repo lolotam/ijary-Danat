@@ -7,6 +7,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { requireLandingCompanyId, useLandingCompanyId } from "@/hooks/useLandingSettings";
 import { normalizePostgrestSearch } from "@/hooks/querySearch";
 import { pageRange } from "@/hooks/pagination";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +29,9 @@ export interface LeasingInquiryListResult {
   count: number;
 }
 
+/**
+ * قائمة طلبات التأجير للشركة صاحبة المضيف مع الترقيم والبحث والتصفية بالحالة.
+ */
 export function useLeasingInquiries(
   params: LeasingInquiryListParams | boolean = {},
   enabledArg?: boolean,
@@ -35,20 +39,22 @@ export function useLeasingInquiries(
   // Back-compat: older call sites passed only `enabled`.
   const normalized: LeasingInquiryListParams = typeof params === "boolean" ? {} : params;
   const enabled = typeof params === "boolean" ? params : (enabledArg ?? true);
+  const { data: companyId } = useLandingCompanyId(enabled);
   const page = Math.max(1, normalized.page ?? 1);
   const pageSize = Math.max(1, normalized.pageSize ?? 20);
   const search = normalized.search ?? "";
   const status = normalized.status;
 
   return useQuery({
-    queryKey: ["leasing_inquiries", { page, pageSize, search, status: status ?? null }],
-    enabled,
+    queryKey: ["leasing_inquiries", companyId, { page, pageSize, search, status: status ?? null }],
+    enabled: enabled && Boolean(companyId),
     placeholderData: (previous) => previous,
     queryFn: async (): Promise<LeasingInquiryListResult> => {
       const { from, to } = pageRange(page, pageSize);
       let query = supabase
         .from("leasing_inquiries")
         .select("*", { count: "exact" })
+        .eq("company_id", requireLandingCompanyId(companyId))
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to);

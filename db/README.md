@@ -1,93 +1,68 @@
-# Danat Al Mustaqbal — Database (self-hosted Supabase)
+# IJARY database
 
-All schema is delivered as plain SQL migrations you run **manually** on your
-self-hosted Supabase Postgres. The app is not wired to Lovable Cloud.
+All schema is plain SQL, applied manually to the self-hosted Supabase Postgres. There is no automatic schema migration on deployment.
 
 ## Run order
 
-Apply files in the order of the numeric prefix:
+1. Every file in [`db/migrations/`](migrations/), ordered by the **numeric prefix** (for example `100_…` after `99_…`). Both [`scripts/test-db.sh`](../scripts/test-db.sh) and [`scripts/gen-types.sh`](../scripts/gen-types.sh) use `sort -V`; a bare lexicographic sort is wrong once the prefixes change width.
+2. Then the files in [`supabase/migrations/`](../supabase/migrations/), in their own name order.
 
-```
-db/migrations/00_extensions.sql              # pgcrypto, uuid-ossp, citext, pg_trgm
-db/migrations/01_schema_core.sql             # companies, profiles, user_roles, has_role(), is_staff()
-db/migrations/02_auth_seed.sql               # new-user trigger + single company seed
-db/migrations/03_phase1_permissions_audit.sql# permissions, role_permissions, audit_logs, write_audit(), has_permission()
-db/migrations/04_phase2_properties_tenants_contracts.sql # properties/buildings/units/tenants/contracts/concessions + code generators
-db/migrations/05_phase3_invoices_payments.sql# invoices, payments, allocations, receipts, generate_invoices/evaluate_overdue/apply_payment_allocation/reverse_payment
-db/migrations/06_phase4_tenant_portal_gateway.sql # payment_requests, webhook_events, evaluate_portal_payable_invoices (chronological ordering)
-db/migrations/07_phase5_notifications_reports.sql # notifications, templates, provider_configs, report_schedules, generated_reports + expiry/report fns
-db/migrations/08_phase6_expenses_deposits_budget.sql # expenses, expense_categories, deposits + attachment buckets
-db/migrations/09_phase7_electricity.sql      # electricity_tariffs/meters/readings/charges + consumption trigger + charge generator
-db/migrations/16_admin_table_operations.sql # maintenance requests + expanded property/building/unit CSV imports
+Each script applies the files with `psql -v ON_ERROR_STOP=1`. The migration set is not fully re-runnable, so do not re-apply it to a database that has already been migrated; provision a clean database instead. For a production apply, take a `pg_dump` first, apply the reviewed files in order, then run:
+
+```sql
+notify pgrst, 'reload schema';
 ```
 
-Phases 0–7 are complete. All migrations are idempotent and safe to re-run.
+Without that notification PostgREST keeps a stale signature cache and new RPCs answer 404. See the [deployment runbook](../deploy/ijary/README.md) for the operational sequence.
 
-## How to apply
+## Local SQL test database
 
-### Option A — `psql`
+| Command            | Effect                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `bun run test:db`  | Build or reuse the Docker Postgres used by the SQL tests, then print its connection URL. `--fresh` forces a rebuild. |
+| `bun run test:sql` | Run `src/db/**/*.sqltest.ts` against that database with one fork and no file parallelism.                            |
+| `bun run test`     | Run the fast Vitest unit suite; the SQL suite is deliberately excluded from it.                                      |
+
+`bun run test:db` applies [`db/testing/00_service_scaffold.sql`](testing/00_service_scaffold.sql) before the migrations because the bare Postgres image lacks the auth/storage baseline the migrations expect. It fingerprints the migration sources, so it reuses the container when they are unchanged and rebuilds when they change.
+
+## Company isolation rules for new tables
+
+A new company-scoped table must follow the [company-context contract](../specs/001-multi-company-saas/contracts/company-context.md):
+
+- It has a `company_id` column, with RLS enabled and forced: `alter table public.<table> force row level security`.
+- Its policies target `authenticated, company_service` and compare with a hoisted context call: `company_id = (select public.current_company_id())`. Other auth helpers are hoisted the same way, for example `(select public.is_staff((select auth.uid())))`; never write a bare `is_staff(auth.uid())`.
+- Platform tables on the allow-list are the only tables without `company_id`; they are checked separately.
+- Storage objects live under `companies/<company_id>/...`.
+- No function or source file looks up an "oldest company" with `from companies … limit 1`, and no grant gives `delete` on `companies`. Suspension is the only access removal.
+- A `security definer` function must reference `current_company_id()` or be on the platform allow-list. Prefer `security invoker` where the caller's rights are enough.
+- Revoke `execute` on new functions from `public` and `anon`.
+
+These rules are enforced by SQL structure tests, not by convention alone:
+
+| Test                                                                                                          | What it checks                                                                      |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [`src/db/isolation/tablesScoped.sqltest.ts`](../src/db/isolation/tablesScoped.sqltest.ts)                     | `company_id`, forced RLS and `current_company_id()` policies on every scoped table. |
+| [`src/db/rlsHoistedAuth.sqltest.ts`](../src/db/rlsHoistedAuth.sqltest.ts)                                     | Auth and company helpers appear inside scalar sub-selects.                          |
+| [`src/db/isolation/definerFunctions.sqltest.ts`](../src/db/isolation/definerFunctions.sqltest.ts)             | `security definer` functions are listed or use the company context.                 |
+| [`src/db/isolation/definerNullContext.sqltest.ts`](../src/db/isolation/definerNullContext.sqltest.ts)         | Definer functions fail closed without a company context.                            |
+| [`src/db/isolation/noOldestCompany.structure.test.ts`](../src/db/isolation/noOldestCompany.structure.test.ts) | No `from companies … limit 1` lookup.                                               |
+| [`src/db/isolation/twoCompanies.sqltest.ts`](../src/db/isolation/twoCompanies.sqltest.ts)                     | Reserved slugs, no `delete` grant on `companies`, and platform-admin gating.        |
+| [`src/db/isolation/crossCompanyMatrix.sqltest.ts`](../src/db/isolation/crossCompanyMatrix.sqltest.ts)         | Two seeded companies cannot reach each other's rows.                                |
+| [`src/db/isolation/storagePaths.sqltest.ts`](../src/db/isolation/storagePaths.sqltest.ts)                     | Storage paths keep the `companies/<company_id>/` prefix.                            |
+
+## Types
+
+`src/integrations/supabase/database.types.ts` is hand-maintained. It exports named aliases that the generated file does not emit, so overwriting it breaks imports across the app.
 
 ```bash
-export PGURL='postgres://postgres:<password>@<host>:5432/postgres'
-for f in db/migrations/00_*.sql db/migrations/01_*.sql db/migrations/02_*.sql \
-         db/migrations/03_*.sql db/migrations/04_*.sql db/migrations/05_*.sql \
-         db/migrations/06_*.sql db/migrations/07_*.sql db/migrations/08_*.sql \
-         db/migrations/09_*.sql db/migrations/16_*.sql; do
-  echo "== applying $f =="
-  psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
-done
+bun run gen:types
 ```
 
-### Option B — Supabase Studio → SQL editor
+That script applies `db/migrations/` to an ephemeral Postgres and writes `src/integrations/supabase/database.types.generated.ts` as a reference. Copy the new table, column or RPC entry into `src/integrations/supabase/database.types.ts` by hand, in the surrounding style, then delete the generated file. The `--force` flag exists for a deliberate codebase-wide migration off the named aliases; it is not the normal path.
 
-Paste each file's contents, run it, then move to the next.
+## Manual data restores
 
-Every migration is idempotent (uses `if not exists`, `create or replace`,
-`drop policy if exists ... create policy ...`), so re-running is safe.
-
-## Conventions (all phases)
-
-- Every `CREATE TABLE public.*` is followed by explicit `GRANT` statements,
-  then `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, then `CREATE POLICY`.
-- Roles are stored ONLY in `public.user_roles` — never on `profiles` or
-  `auth.users`. Membership is checked via `public.has_role()` (SECURITY
-  DEFINER, `set search_path = public`).
-- Money uses `numeric(14,3)` (KWD). UUID primary keys. Human-readable codes
-  are separate unique columns.
-- Storage paths (later phases) use immutable UUIDs, e.g.
-  `companies/{company_id}/tenants/{tenant_id}/documents/{file_id}`.
-
-## After running migrations
-
-Regenerate the TypeScript types for the app:
-
-```bash
-supabase gen types typescript \
-  --db-url "$PGURL" \
-  --schema public \
-  > src/integrations/supabase/database.types.ts
-```
-
-## Deposit triggers move money — disable them for a manual restore
-
-Migrations 152-154 make `public.deposits` a money-moving table: confirming a deposit
-that names an invoice inserts a real `payments` row and its allocation, and
-un-confirming it deletes them. Four triggers implement that:
-
-| Trigger | On | Why it must be off during a raw restore |
-| --- | --- | --- |
-| `deposits_sync_invoice_ins` | `deposits` INSERT | Re-inserting a confirmed deposit re-creates its payment |
-| `deposits_sync_invoice_upd` | `deposits` UPDATE | Same, for a restored update |
-| `deposits_revert_on_delete` | `deposits` DELETE | Deletes payments while the dump is being cleared |
-| `payments_guard_deposit_provenance` | `payments` INSERT/UPDATE | Refuses the restored `source_deposit_id` values |
-
-**The app's own Backup → Restore screen does not need this.** `backup_restore`
-sets `session_replication_role = replica` before its delete/insert loop
-(`146_backups.sql`), which disables user triggers for that session, so a restore
-through the UI cannot re-create payments.
-
-The manual step is only for an out-of-band `psql` data-only restore, or a bulk
-backfill that assigns `invoice_id` to many deposits at once:
+The app's own Backup → Restore path sets `session_replication_role = replica` before its delete/insert loop (`146_backups.sql`), so user triggers cannot fire. An out-of-band `psql` data-only restore, or a bulk backfill that assigns `invoice_id` to many deposits at once, has to disable the four settlement triggers in the same transaction:
 
 ```sql
 begin;
@@ -103,25 +78,8 @@ alter table public.deposits enable trigger deposits_sync_invoice_ins;
 commit;
 ```
 
-Re-enable inside the same transaction. Leaving one off is invisible: deposits
-keep saving and simply stop settling anything.
+Re-enable every trigger before commit. Leaving one off is invisible: deposits keep saving and simply stop settling.
 
 ## Rollback
 
-There is intentionally no automated `down` migration for financial tables.
-For dev environments only, drop and re-create the `public` schema.
-
-| `31_notification_workflows.sql` | Schema: Twilio enum, audience columns, exclusivity trigger, 7-day expiry RPC, richer report HTML |
-| `32_notification_workflow_seeds.sql` | Seeds: Twilio provider row, weekly/monthly schedules, new templates (run after 31 commits) |
-| `33_contract_expiry_retry_failed.sql` | Expiry RPC: retry when prior notify was failed/skipped |
-| `44_scheduled_report_email_design.sql` | Weekly/monthly admin report email: Stitch vibrant design (responsive table HTML, KPIs, deposits, status bars) |
-| `82_billing_safety_archived_contracts.sql` | Exclude archived contracts from invoice generation + both reminder paths |
-| `83_closeout_permissions.sql` | Permissions for close-out, restore, refund reverse/void, invoice write-off/dispute |
-| `84_contract_closeouts.sql` | Close-out tables (header, deductions, invoice actions, operational events) + RLS |
-| `85_refunds_reversal.sql` | Refund status machine, reverse/void RPCs, posted-only aggregates |
-| `86_invoice_dispute_and_write_off.sql` | Invoice dispute flag + write-off to waived |
-| `87_contract_closeout_rpcs.sql` | close_out_contract, preview, cancel, restore (+ in-SQL write_audit) |
-| `88_closeout_notification_types.sql` | **Standalone enum only** — `contract_closeout` / `contract_restored` (must commit before 89; same trap as 71) |
-| `89_closeout_workflows_and_templates.sql` | Event workflows + email-only templates for close-out / restore |
-| `90_module_summaries_archive_mode.sql` | Archive-aware module list summaries |
-| `91_summary_archived_count.sql` | Archived count on summary RPCs |
+There is no automated `down` migration for financial tables. Schema changes are not reversible by rerunning a file; restore from a backup or, in development only, drop and recreate the `public` schema.

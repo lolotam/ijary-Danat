@@ -41,6 +41,25 @@ services:
     plugins:
       - name: cors
 
+  # T201 F1: GoTrue accepts any JWT signed with the project secret on
+  # `PUT /user`, including a support-session token, which could then change the
+  # impersonated user's password or email and keep access after the session
+  # ends. The app changes passwords through `changeOwnPassword` (server, admin
+  # API, refuses support sessions), so the direct write is refused here.
+  - name: auth-v1-user-write-blocked
+    url: http://auth:9999/user
+    routes:
+      - name: auth-v1-user-write-blocked
+        strip_path: true
+        paths: [/auth/v1/user]
+        methods: [PUT, PATCH]
+    plugins:
+      - name: cors
+      - name: request-termination
+        config:
+          status_code: 403
+          message: User updates go through the application.
+
   - name: auth-v1
     url: http://auth:9999/
     routes:

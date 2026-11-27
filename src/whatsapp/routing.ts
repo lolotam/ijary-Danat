@@ -272,6 +272,12 @@ export async function handleMetaWebhookGet(request: Request): Promise<Response> 
 /**
  * يعالج أحداث POST الواردة من Meta Cloud API: يوجّه الحدث عبر `phone_number_id`،
  * يتحقق من التوقيع، ويسقط الأرقام غير المعروفة مع تسجيلها وإرجاع 200.
+ *
+ * After the body parses, every outcome answers the same `200 { ok: true }`:
+ * an unknown number, a missing app secret and a bad signature are logged and
+ * dropped, never told apart in the response. A distinct 401/503 let anyone
+ * probe which `phone_number_id` values belong to a company (T201 F3), and the
+ * old `routedCompanies` list echoed company ids to an unauthenticated caller.
  */
 export async function handleMetaWebhookPost(
   request: Request,
@@ -292,7 +298,7 @@ export async function handleMetaWebhookPost(
 
   const byPhoneId = groupChangesByPhoneNumberId(parsed.data);
   if (byPhoneId.size === 0) {
-    return Response.json({ ok: true, dropped: 0, routedCompanies: [] }, { status: 200 });
+    return metaAcknowledged();
   }
 
   const lookupFn = deps.lookupConnection ?? ((id) => findActiveConnectionByPhoneNumberId(id));
@@ -301,30 +307,34 @@ export async function handleMetaWebhookPost(
   const logger = deps.logger ?? console;
   const signatureHeader = request.headers.get("x-hub-signature-256");
 
-  const routedCompanies: string[] = [];
-  let dropped = 0;
-
   for (const [phoneNumberId, changes] of byPhoneId) {
     const connection = await lookupFn(phoneNumberId);
     if (!connection) {
       logger.warn(`Meta webhook dropped: unknown phone_number_id=${phoneNumberId}`);
-      dropped += 1;
       continue;
     }
 
     const appSecret = await loadSecretFn(connection.companyId, connection.id);
     if (!appSecret) {
-      return Response.json({ error: "Webhook secret is not configured." }, { status: 503 });
+      logger.warn(`Meta webhook dropped: no app secret for connection=${connection.id}`);
+      continue;
     }
 
     if (!verifyMetaSignature(rawBody, signatureHeader, appSecret)) {
-      return Response.json({ error: "Invalid webhook signature." }, { status: 401 });
+      logger.warn(`Meta webhook dropped: bad signature for connection=${connection.id}`);
+      continue;
     }
 
     const db = createDbFn(connection.companyId);
     await persistInboundChanges(db, connection, changes);
-    routedCompanies.push(connection.companyId);
   }
 
-  return Response.json({ ok: true, dropped, routedCompanies }, { status: 200 });
+  return metaAcknowledged();
+}
+
+/**
+ * يبني الرد الموحّد لـ Meta بعد قبول الطلب، أيًّا كانت نتيجة التوجيه.
+ */
+function metaAcknowledged(): Response {
+  return Response.json({ ok: true }, { status: 200 });
 }

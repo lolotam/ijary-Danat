@@ -14,8 +14,14 @@ import { requirePlatformAdmin } from "@/platform/requirePlatformAdmin.server";
  * وسبب إلزامي، وإنهاؤها فوراً مع توثيق كلتا العمليتين في سجل تدقيق المنصة.
  */
 
-/** مدة صلاحية جلسة الدعم بالثواني (60 دقيقة). */
-const SUPPORT_SESSION_TTL_SECONDS = 60 * 60;
+/**
+ * مدة صلاحية جلسة الدعم بالثواني (15 دقيقة).
+ *
+ * T201 F1: was 60 minutes. The token is a bearer credential for the target
+ * user with no refresh and no server-side revocation at GoTrue, so its life is
+ * the exposure window if it leaks; a support task is started again if needed.
+ */
+const SUPPORT_SESSION_TTL_SECONDS = 15 * 60;
 
 /** رمز الخطأ عند استهداف مستخدم لا ينتمي إلى الشركة المحددة أو غير نشط. */
 export const TARGET_USER_NOT_IN_COMPANY = "TARGET_USER_NOT_IN_COMPANY";
@@ -75,7 +81,7 @@ export function requireJwtSecret(): Uint8Array {
  *
  * Refuses empty reasons, suspended companies, and target users outside the
  * company. The token carries `impersonator` and `impersonation_session` claims
- * and expires with the database row after 60 minutes.
+ * and expires with the database row after 15 minutes.
  */
 export async function platformStartSupportSession(input: {
   companyId: string;

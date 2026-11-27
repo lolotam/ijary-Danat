@@ -7,6 +7,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { requireLandingCompanyId, useLandingCompanyId } from "@/hooks/useLandingSettings";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/database.types";
 
@@ -15,10 +16,15 @@ export type LandingCarouselSlideInsert = TablesInsert<"landing_carousel_slides">
 export type LandingCarouselSlideUpdate = TablesUpdate<"landing_carousel_slides">;
 
 // 5. Landing Carousel Slides Query & Mutations
+/**
+ * شرائح العرض في صفحة الهبوط للشركة صاحبة المضيف.
+ */
 export function useLandingSlides(enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["landing_carousel_slides"],
-    enabled,
+    queryKey: ["landing_carousel_slides", companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<LandingCarouselSlide[]> => {
       const { data, error } = await supabase
         .from("landing_carousel_slides")
@@ -29,6 +35,7 @@ export function useLandingSlides(enabled = true) {
           mobile_media:mobile_media_id ( storage_path )
         `,
         )
+        .eq("company_id", requireLandingCompanyId(companyId))
         .order("display_order", { ascending: true });
 
       if (error) throw error;

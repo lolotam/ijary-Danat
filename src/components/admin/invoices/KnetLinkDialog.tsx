@@ -71,7 +71,10 @@ export function KnetLinkDialog({ link, onClose }: KnetLinkDialogProps) {
         },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      toast.success(t("invoices.knetSendDone"));
+      // The message is queued, not sent: `sendNotification` writes the row and
+      // the notify worker delivers it, so the link is not in the renter's inbox
+      // yet. Saying "sent" would claim a delivery nobody has made.
+      toast.success(t("deferred.messageQueued"));
       onClose();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("common.error"));

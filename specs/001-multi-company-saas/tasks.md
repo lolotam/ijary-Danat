@@ -181,7 +181,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T072 [US2] Event handlers mapping each money event to its existing sender in `src/jobs/handlers/events.ts`; remove the direct sender calls from their call sites
 - [x] T073 [US2] Notices: `src/fns/notices.ts` (`myNotices`, `markNoticeRead`), `src/hooks/useNotices.ts` (Realtime with 30-second polling fallback), `src/components/admin/NoticesBell.tsx`
 - [x] T074 [US2] Failed jobs: `src/fns/companyJobs.ts` (`companyFailedJobs`, `retryJob`) and `src/components/admin/settings/FailedJobsCard.tsx`
-- [ ] T075 [US2] Show the immediate confirmation for deferred actions in the screens that call the functions changed in T067 to T070
+- [x] T075 [US2] Show the immediate confirmation for deferred actions in the screens that call the functions changed in T067 to T070
 - [x] T076 [US2] Schedules and per-company fan-out in `src/worker/scheduler.ts` (`contracts/jobs.md` section 7); delete `src/routes/api/public/cron.ts`; remove the crontab from `deploy/README.md`
 - [ ] T077 [US2] Gate: quickstart.md Phase 1b checks 1 to 5; record SC-003 to SC-006
 
@@ -477,8 +477,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T192 [US13] `platformAddCustomDomain` and `platformVerifyCustomDomain` in `src/platform/domains.ts`, with the Cloudflare client in `src/platform/cloudflare.server.ts`
 - [x] T193 [US13] Domains panel in `src/components/platform/DomainsPanel.tsx`
 - [x] T194 [US13] Accept verified custom hosts in `src/company/hostCompany.server.ts`; document the allow-list update in `deploy/ijary/README.md`
-- [ ] T195 [US13] Per-company landing: scope `src/hooks/useLandingSettings.ts` by the host's company and serve it from `src/routes/index.tsx` when the section is on — settings scoped; `useLandingBrands`, `useLandingSlides`, `useLeasingInquiries` still to scope
-- [ ] T196 [US13] Platform marketing page replacing the temporary page in `src/routes/index.tsx` and `src/components/platform/MarketingPage.tsx`
+- [x] T195 [US13] Per-company landing: scope `src/hooks/useLandingSettings.ts` by the host's company and serve it from `src/routes/index.tsx` when the section is on — settings, `useLandingBrands`, `useLandingSlides` and `useLeasingInquiries` all read `.eq("company_id", requireLandingCompanyId(...))` and wait for the host company id
+- [x] T196 [US13] Platform marketing page replacing the temporary page in `src/routes/index.tsx` and `src/components/platform/MarketingPage.tsx`
 - [ ] T197 [US13] Gate: quickstart.md "Last phase"
 
 **Checkpoint**: All user stories delivered.
@@ -487,8 +487,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ## Phase 16: Polish & Cross-Cutting Concerns
 
-- [ ] T198 [P] Update `README.md`, `db/README.md` and `src/routes/README.md` for the multi-company model, the worker and the new route groups
-- [ ] T199 [P] Write the IJARY deployment and operations runbook in `deploy/ijary/README.md` (stack, environment, migrations, backups with extended attributes preserved, worker, wildcard address)
+- [x] T198 [P] Update `README.md`, `db/README.md` and `src/routes/README.md` for the multi-company model, the worker and the new route groups
+- [x] T199 [P] Write the IJARY deployment and operations runbook in `deploy/ijary/README.md` (stack, environment, migrations, backups with extended attributes preserved, worker, wildcard address)
 - [x] T200 Measure `current_company_id()` cost with the invoice-count benchmark from migration 243 and record it in `specs/001-multi-company-saas/research.md` R1
 - [ ] T201 Run the `security-review` skill over isolation, tokens, secrets and webhooks; fix or record each finding
 - [ ] T202 Run every phase of `specs/001-multi-company-saas/quickstart.md` end to end on a staging stack and record the results

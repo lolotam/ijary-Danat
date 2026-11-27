@@ -89,7 +89,7 @@ export function useLandingCompanyId(enabled = true) {
  * return another company's content — and the row it wants does not exist
  * without it.
  */
-function requireLandingCompanyId(companyId: string | null | undefined): string {
+export function requireLandingCompanyId(companyId: string | null | undefined): string {
   if (!companyId) throw new Error("Landing content is bound to the company that owns the host");
   return companyId;
 }

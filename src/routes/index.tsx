@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link, redirect, useRouteContext } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouteContext } from "@tanstack/react-router";
 
 import { AboutSection } from "@/components/landing/AboutSection";
 import { AnnouncementStrip } from "@/components/landing/AnnouncementStrip";
@@ -32,10 +32,9 @@ import { useI18n } from "@/i18n/provider";
 import { filterExplorerBrands, filterMarqueeBrands } from "@/lib/landingBrandVisibility";
 import { visibleLandingNavigation } from "@/lib/landingNavigation";
 
-import { BrandLogo } from "@/components/BrandLogo";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { getRootPageDecision } from "@/company/rootPageDecision";
-import { brandNameFor, brandStyleFor, type PublicBranding } from "@/fns/publicBranding";
+import { MarketingPage } from "@/components/platform/MarketingPage";
+import { type PublicBranding } from "@/fns/publicBranding";
 import { NotFoundPage } from "./not-found";
 
 /**
@@ -117,67 +116,14 @@ export const Route = createFileRoute("/")({
 });
 
 /**
- * يوجّه الصفحة الجذرية بحسب قرار المضيف: صفحة الهبوط، أو صفحة المنصة، أو 404.
+ * يوجّه الصفحة الجذرية بحسب قرار المضيف: صفحة الهبوط، أو صفحة تسويق المنصة، أو 404.
  */
 function RootPage() {
   const { decision } = Route.useLoaderData();
+  const { branding } = useRouteContext({ from: "__root__" }) as { branding: PublicBranding };
   if (decision.page === "landing") return <LandingPage />;
   if (decision.page === "notFound") return <NotFoundPage />;
-  return <PlatformHomePage />;
-}
-
-/**
- * الصفحة المؤقتة للمنصة (IJARY): اسم المنصة وشعارها ودخول بسيط لتسجيل الدخول.
- *
- * The only page a non-company host serves until the platform marketing page
- * lands (T196). No company's landing content appears here (spec.md US3).
- */
-function PlatformHomePage() {
-  const { t, dir, toggle, locale } = useI18n();
-  const { branding } = useRouteContext({ from: "__root__" }) as { branding: PublicBranding };
-
-  return (
-    <div
-      dir={dir}
-      style={brandStyleFor(branding)}
-      className="relative min-h-dvh overflow-hidden bg-ink text-white"
-    >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,181,167,0.14),transparent_30rem),linear-gradient(110deg,rgba(11,37,35,0.72),rgba(11,37,35,0.96)_68%)]" />
-
-      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-6">
-        <BrandLogo name={brandNameFor(branding, locale)} onDark />
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <button
-            type="button"
-            onClick={toggle}
-            className="min-h-10 rounded-full border border-white/20 px-3 py-1.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-highlight"
-          >
-            {t("nav.language")}
-          </button>
-        </div>
-      </header>
-
-      <main
-        id="main-content"
-        className="relative z-10 mx-auto flex max-w-3xl flex-col items-start gap-6 px-5 py-16 sm:py-24"
-      >
-        <h1 className="text-4xl font-bold leading-[1.05] tracking-[-0.03em] sm:text-6xl">
-          {brandNameFor(branding, locale)}
-        </h1>
-        <p className="text-lg leading-8 text-white/80 sm:text-xl">{t("platformHome.tagline")}</p>
-        <p className="rounded-md border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/70">
-          {t("platformHome.temporary")}
-        </p>
-        <Link
-          to="/auth"
-          className="inline-flex min-h-11 items-center rounded-full bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-highlight"
-        >
-          {t("platformHome.signIn")}
-        </Link>
-      </main>
-    </div>
-  );
+  return <MarketingPage branding={branding} />;
 }
 
 /**

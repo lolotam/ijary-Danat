@@ -7,6 +7,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { requireLandingCompanyId, useLandingCompanyId } from "@/hooks/useLandingSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { assertNotRowCapped } from "@/lib/idChunks";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/database.types";
@@ -31,13 +32,16 @@ export interface ActiveContractOption {
  * exists is more useful than no table at all while this resolves.
  */
 export function useBrandContractLinks(enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["commercial_brand_contracts"],
-    enabled,
+    queryKey: ["commercial_brand_contracts", companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<Map<string, string[]>> => {
       const { data, error } = await supabase
         .from("commercial_brand_contracts")
-        .select("brand_id, contract_id");
+        .select("brand_id, contract_id")
+        .eq("company_id", requireLandingCompanyId(companyId));
       if (error) throw error;
       // Unranged, so the server caps it. Well clear of the limit today, but a
       // clipped list here does not fail — it renders shops as linked to fewer
@@ -89,10 +93,15 @@ export function useSaveBrandContracts() {
 }
 
 // 4. Commercial Brands Query & Mutations
+/**
+ * العلامات التجارية المعروضة في صفحة الهبوط للشركة صاحبة المضيف.
+ */
 export function useLandingBrands(enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["commercial_brands"],
-    enabled,
+    queryKey: ["commercial_brands", companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<CommercialBrand[]> => {
       const { data, error } = await supabase
         .from("commercial_brands")
@@ -103,6 +112,7 @@ export function useLandingBrands(enabled = true) {
           cover:cover_media_id ( storage_path )
         `,
         )
+        .eq("company_id", requireLandingCompanyId(companyId))
         .order("display_order", { ascending: true });
 
       if (error) throw error;
@@ -112,17 +122,23 @@ export function useLandingBrands(enabled = true) {
 }
 
 /**
+ * خيارات العقود النشطة مع اسم المستأجر والوحدة لقائمة ربط المحل بالعقد في نموذج المحل.
+ *
  * Active contracts with tenant + unit labels, for the store ↔ contract link
  * dropdown in the Add/Edit Store dialog.
  */
 export function useActiveContractOptions(enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["active-contract-options"],
-    enabled,
+    queryKey: ["active-contract-options", companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<ActiveContractOption[]> => {
+      const cid = requireLandingCompanyId(companyId);
       const { data: contracts, error } = await supabase
         .from("contracts")
         .select("id, code, tenant_id")
+        .eq("company_id", cid)
         .eq("state", "active")
         .order("code");
       if (error) throw error;
@@ -134,10 +150,12 @@ export function useActiveContractOptions(enabled = true) {
         supabase
           .from("tenants")
           .select("id, name")
+          .eq("company_id", cid)
           .in("id", [...new Set(contracts.map((c) => c.tenant_id))]),
         supabase
           .from("contract_units")
           .select("contract_id, unit_id")
+          .eq("company_id", cid)
           .in(
             "contract_id",
             contracts.map((c) => c.id),
@@ -154,7 +172,7 @@ export function useActiveContractOptions(enabled = true) {
       }
       const unitIds = [...new Set(primaryUnitIdByContract.values())];
       const units = unitIds.length
-        ? await supabase.from("units").select("id, name").in("id", unitIds)
+        ? await supabase.from("units").select("id, name").eq("company_id", cid).in("id", unitIds)
         : { data: [] as { id: string; name: string }[], error: null };
       if (units.error) throw units.error;
       const tenantById = new Map(tenants.data.map((t) => [t.id, t.name]));

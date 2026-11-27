@@ -271,7 +271,10 @@ export function SendManualMessageDialog({
         body: manualBody || null,
         contractId: manualContractId,
       });
-      toast.success(t("notifications.sent"));
+      // The message is queued, not sent: `sendNotification` writes the row and
+      // the notify worker delivers it. Claiming "sent" here would report a
+      // delivery that has not happened — and that no provider has accepted yet.
+      toast.success(t("deferred.messageQueued"));
       onOpenChange(false);
       handleClose();
     } catch (error) {

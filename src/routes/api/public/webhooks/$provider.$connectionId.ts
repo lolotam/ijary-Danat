@@ -175,6 +175,9 @@ export async function handleGatewayWebhook(
     // on webhook_events skip a null id, so a forged request carrying a real
     // event id cannot make the genuine delivery look like a replay and block
     // its settlement. The claimed id is still in raw_payload for review.
+    // T201 F2: the body itself is no longer kept. It is attacker-controlled
+    // until verified, so storing it let any caller write arbitrary JSON into a
+    // company's archive; event type and payment id stay for diagnosis.
     await insertWebhookEvent(db, {
       companyId: lookup.companyId,
       connectionId: params.connectionId,
@@ -182,7 +185,7 @@ export async function handleGatewayWebhook(
       eventType: details.eventType,
       providerEventId: null,
       providerPaymentId: details.paymentId,
-      rawPayload,
+      rawPayload: null,
       signatureValid: false,
       result: "invalid_signature",
       error: "Signature verification failed.",

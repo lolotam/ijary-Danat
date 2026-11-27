@@ -245,6 +245,9 @@ describe("the landing content is read for the host's company only (T189)", () =>
 
     mountLandingHook();
     await settle();
+    // Two chained queries (host company id, then settings) can outlast the
+    // fixed 20 ms settle on a loaded runner; wait for the render itself.
+    await vi.waitFor(() => expect(container.textContent).toBe("أكمي"));
 
     expect(mocks.landingQueries).toHaveLength(1);
     expect(mocks.landingQueries[0].table).toBe("landing_page_settings");

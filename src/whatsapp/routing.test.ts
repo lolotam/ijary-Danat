@@ -115,7 +115,7 @@ describe("Meta Cloud API webhook routing (T157 / T166)", () => {
 
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json).toMatchObject({ ok: true, routedCompanies: [COMPANY_A] });
+    expect(json).toEqual({ ok: true });
     expect(deps.createDb).toHaveBeenCalledWith(COMPANY_A);
     expect(upserts).toHaveLength(2);
     expect(upserts[0]).toMatchObject({
@@ -159,7 +159,7 @@ describe("Meta Cloud API webhook routing (T157 / T166)", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, dropped: 1 });
+    expect(await response.json()).toEqual({ ok: true });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("999999999999"));
     expect(loadAppSecret).not.toHaveBeenCalled();
     expect(createDb).not.toHaveBeenCalled();
@@ -179,23 +179,55 @@ describe("Meta Cloud API webhook routing (T157 / T166)", () => {
         "wrong_secret",
       ),
     },
-  ])("refuses a bad signature ($name) with 401 and writes nothing", async ({ signature }) => {
+  ])(
+    "drops a bad signature ($name) with the same 200 and writes nothing",
+    async ({ signature }) => {
+      const payload = makeInboundMessagePayload(PHONE_NUMBER_ID_A);
+      const { db, upserts } = createFakeCompanyDb();
+      const warn = vi.fn();
+
+      const response = await handleMetaWebhookPost(makeMetaPostRequest(payload, signature), {
+        lookupConnection: async () => ({
+          id: CONNECTION_A,
+          companyId: COMPANY_A,
+          phoneNumberId: PHONE_NUMBER_ID_A,
+          method: "cloud_api",
+        }),
+        loadAppSecret: async () => APP_SECRET_A,
+        createDb: () => db as never,
+        logger: { warn },
+      });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("bad signature"));
+      expect(upserts).toHaveLength(0);
+    },
+  );
+
+  it("drops a known number whose app secret is missing with the same 200", async () => {
     const payload = makeInboundMessagePayload(PHONE_NUMBER_ID_A);
     const { db, upserts } = createFakeCompanyDb();
+    const warn = vi.fn();
 
-    const response = await handleMetaWebhookPost(makeMetaPostRequest(payload, signature), {
-      lookupConnection: async () => ({
-        id: CONNECTION_A,
-        companyId: COMPANY_A,
-        phoneNumberId: PHONE_NUMBER_ID_A,
-        method: "cloud_api",
-      }),
-      loadAppSecret: async () => APP_SECRET_A,
-      createDb: () => db as never,
-    });
+    const response = await handleMetaWebhookPost(
+      makeMetaPostRequest(payload, signMetaBody(JSON.stringify(payload), APP_SECRET_A)),
+      {
+        lookupConnection: async () => ({
+          id: CONNECTION_A,
+          companyId: COMPANY_A,
+          phoneNumberId: PHONE_NUMBER_ID_A,
+          method: "cloud_api",
+        }),
+        loadAppSecret: async () => null,
+        createDb: () => db as never,
+        logger: { warn },
+      },
+    );
 
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "Invalid webhook signature." });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("no app secret"));
     expect(upserts).toHaveLength(0);
   });
 

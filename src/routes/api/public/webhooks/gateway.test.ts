@@ -191,6 +191,8 @@ describe("T137 per-connection gateway webhook route", () => {
       signature_valid: false,
       result: "invalid_signature",
       processed: true,
+      // T201 F2: an unverified body is attacker-controlled and never stored.
+      raw_payload: null,
     });
     expect(enqueueWebhookJob).not.toHaveBeenCalled();
   });

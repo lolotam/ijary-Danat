@@ -1,156 +1,66 @@
-# Danat Al Mustaqbal ERMP — دانة المستقبل العقارية
+# IJARY
 
-Estate Rental Management Platform (ERMP) for **Danat Al Mustaqbal Real Estate** (Kuwait).
-A full-stack TanStack Start application covering property/tenant/contract management, an
-invoice & payment engine (MyFatoorah), a tenant self-service portal, notifications
-(Email + WhatsApp), expenses, deposits, and electricity billing — backed by a
-**self-hosted Supabase** stack.
+IJARY is a multi-company estate rental management SaaS for Kuwait. One deployment serves many customer businesses, each with its own properties, buildings, units, renters, contracts, invoices, payments, staff and integrations.
 
-- **Live app:** https://danat-future.com
-- **Supabase (self-hosted):** https://supabase.danat-future.com
-- **GitHub:** https://github.com/lolotam/Dana-kuwait
-- **Lovable:** connected — commits pushed to `main` sync back to the Lovable editor
+The code was converted in place from a single-company ERMP codebase; the conversion is specified in [`specs/001-multi-company-saas/`](specs/001-multi-company-saas/). The UI is bilingual Arabic (RTL) and English.
 
----
+Terminology used throughout the code and docs:
 
-## Tech stack
+| Term        | Meaning                                                       |
+| ----------- | ------------------------------------------------------------- |
+| Company     | A customer business of the platform; never called a "tenant". |
+| Renter      | A person who rents a unit from a company.                     |
+| Staff       | A company employee using the company admin panel.             |
+| Super admin | The platform owner's account, outside all companies.          |
 
-| Layer                     | Technology                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------- |
-| Runtime / package manager | Bun end-to-end (`bun.lock`, `bunfig.toml`; Docker runs `oven/bun:1-slim`, `NITRO_PRESET=bun`) |
-| Framework                 | TanStack Start (React 19) + Nitro 3 server                                                    |
-| Routing / data            | TanStack Router (file-based, `src/routes/`) + TanStack Query 5                                |
-| UI                        | Tailwind CSS 4, shadcn/ui (Radix primitives), lucide-react, Recharts, sonner                  |
-| Forms / validation        | react-hook-form + Zod                                                                         |
-| Backend-as-a-service      | Self-hosted Supabase (Postgres 17, GoTrue auth, PostgREST, Storage, Realtime, Kong)           |
-| Payments                  | MyFatoorah gateway (Kuwait) — server functions + signed webhook                               |
-| Notifications             | SMTP / Resend (email), WhatsApp Cloud API                                                     |
-| i18n                      | Custom dictionary (`src/i18n/`) — Arabic (RTL) + English                                      |
-| Build / quality           | Vite 8, TypeScript 5.8, ESLint 9, Prettier, Vitest                                            |
-| Containerization          | Multi-stage `Dockerfile` (non-root, healthchecked), `docker-compose.yml`                      |
-| Hosting                   | Dokploy (Docker Swarm + Traefik) on Hetzner Ubuntu 24.04 — the Danat-Future host              |
+## Hosts
 
-## Project structure
+| Host               | Serves                                                                 | Company context    |
+| ------------------ | ---------------------------------------------------------------------- | ------------------ |
+| `ijary.app`        | Temporary platform page with a sign-in entry                           | None               |
+| `admin.ijary.app`  | Super admin panel (`/platform/*`)                                      | None               |
+| `<slug>.ijary.app` | Company sign-in, admin panel (`/admin/*`), renter portal (`/portal/*`) | The owning company |
 
-```
-src/
-  routes/            # File-based routes (see src/routes/README.md)
-    admin.*.tsx      # 15 admin modules: properties, units, tenants, contracts,
-                     # invoices, payments, deposits, expenses, electricity,
-                     # reports, audit, settings (users/roles/lists/notifications)
-    portal.*.tsx     # Tenant portal: invoices, payments, receipts, lease, profile
-    api/public/      # cron.ts (scheduled jobs), myfatoorah-webhook.ts
-    index.tsx        # Public landing page
-    auth.tsx         # Login (staff + tenant)
-  fns/               # Server functions (money-moving logic + jobs + tests)
-  auth/              # AuthProvider, login identifier resolution
-  components/        # UI components (admin/, portal/, ui/ …)
-  i18n/              # AR/EN dictionary + provider
-  integrations/supabase/  # Clients + generated database.types.ts
-db/
-  migrations/        # 00–15 plain SQL migrations, run manually (see db/README.md)
-  policies/          # RLS policies
-supabase/migrations/ # Later incremental migrations (e.g. MyFatoorah v3 webhook events)
-deploy/              # Dokploy/nginx deployment docs (deploy/README.md)
-scripts/gen-types.sh # Regenerate Supabase TS types
-```
+Any other host gets a 404 without revealing a company. `/platform/*` returns 404 on company hosts; `/admin/*` and `/portal/*` return 404 on the platform and super admin hosts. `/api/public/*` provider callbacks are exempt from host gating and resolve their own company in the handler. See [`contracts/company-context.md`](specs/001-multi-company-saas/contracts/company-context.md) and [`src/routes/README.md`](src/routes/README.md).
 
-## Getting started (local dev)
+## Runtime
 
-```bash
-bun install
-cp .env.example .env       # fill in Supabase URL + keys (see below)
-bun run dev                # Vite dev server
-```
+- **Web**: TanStack Start (React 19) on Nitro, built by Vite as a single full-stack application.
+- **Worker**: a second entry point of the same codebase (`src/worker/main.ts`), running BullMQ queue processors, the outbox relay and schedules.
+- **Redis**: queue state for those jobs only. The `job_requests` Postgres outbox is the source of truth; the web app does not use Redis.
+- **Database**: self-hosted Supabase — PostgreSQL, GoTrue, PostgREST, Storage, Realtime and Kong. Company secrets are encrypted in Postgres; storage paths are separated under `companies/<company_id>/...`.
+- **Deployment**: separate Dokploy applications for the web app, the Supabase stack and `deploy/ijary/docker-compose.yml` (Redis and the worker), behind Traefik and Cloudflare.
 
-Quality gates:
+## Commands
 
-```bash
-bun run lint        # ESLint
-bun run typecheck   # tsc --noEmit
-bun run test        # Vitest (money-path unit tests in src/fns/*.test.ts)
-bun run build       # production build
-```
+Every `bun run` command below is declared in [`package.json`](package.json). `bun install` is Bun's own dependency-install command, not a package script.
 
-## Environment variables
+| Command             | What it does                                                                |
+| ------------------- | --------------------------------------------------------------------------- |
+| `bun install`       | Install dependencies from the lockfile.                                     |
+| `bun run dev`       | Start the Vite dev server.                                                  |
+| `bun run build`     | Build the web app for production.                                           |
+| `bun run build:dev` | Build the web app in development mode.                                      |
+| `bun run preview`   | Preview the built web app.                                                  |
+| `bun run lint`      | Run ESLint.                                                                 |
+| `bun run typecheck` | Run TypeScript with `--noEmit`.                                             |
+| `bun run format`    | Format the repository with Prettier.                                        |
+| `bun run test`      | Run the Vitest unit suite.                                                  |
+| `bun run gen:types` | Write `database.types.generated.ts` as a reference for hand-merging.        |
+| `bun run test:db`   | Provision or reuse the Postgres instance used by the SQL integration tests. |
+| `bun run test:sql`  | Run the SQL integration tests against that Postgres instance.               |
+| `bun run worker`    | Run the background worker process locally.                                  |
 
-Copy `.env.example`. Key groups (full list and comments in that file):
+## Database and types
 
-- **Client (baked into the browser bundle at build time):** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN` (optional; empty disables Sentry)
-- **Build-time secret (never baked, never at runtime):** `SENTRY_AUTH_TOKEN` (optional; lets the Vite plugin upload source maps). Supply it as a BuildKit secret (`docker build --secret id=SENTRY_AUTH_TOKEN,env=SENTRY_AUTH_TOKEN`, or Dokploy **Build Secrets**), never as an env var or build arg
-- **Server-only:** `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS — never `VITE_`-prefix it), `SENTRY_DSN` (optional; falls back to `VITE_SENTRY_DSN`)
-- **Payments:** `MYFATOORAH_API_KEY`, `MYFATOORAH_BASE_URL`, `MYFATOORAH_WEBHOOK_SECRET`
-- **Notifications:** `SMTP_*` or `RESEND_*`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`
-- **Cron:** `CRON_SECRET` — required or `POST /api/public/cron` returns 503
+Schema changes are plain SQL migrations, applied manually. See [`db/README.md`](db/README.md) for the numeric run order, the enforced company-isolation rules and the SQL test commands. `src/integrations/supabase/database.types.ts` is hand-maintained; `bun run gen:types` does not overwrite it.
 
-## Database
+## Deployment
 
-All schema ships as **plain SQL migrations applied manually** to the self-hosted
-Supabase Postgres (the project intentionally does _not_ use Lovable Cloud).
-Apply `db/migrations/00_*.sql` → `09_*.sql` in numeric order (`10`–`15` are
-optional: contact inquiries, mock data, reset, option lists, property media,
-Kuwait mock data), then anything under `supabase/migrations/`. All migrations are
-idempotent. After schema changes, regenerate types:
+The stack, environment variables, migration procedure, backups, worker and wildcard address are documented in [`deploy/ijary/README.md`](deploy/ijary/README.md).
 
-```bash
-bun run gen:types   # scripts/gen-types.sh → src/integrations/supabase/database.types.ts
-```
+Danat's production deployment and data are out of bounds. No command or deployment from this repository targets it; IJARY is a separate deployment. Do not touch any server without the owner's explicit go-ahead at that moment.
 
-## Deployment — Dokploy on the Danat-Future host
+## Agent guidance
 
-Production moved to this host in July 2026; the previous one (`WaleedU`,
-`116.202.66.131`) is retired. Managed through Dokploy (full runbook:
-`deploy/README.md`; container names in `CLAUDE.md` → "Production").
-
-| Item            | Value                                                                                                                         |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Server hostname | `danat-future` (OS hostname; `Waleed3` in `CLAUDE.md` names the same machine)                                                 |
-| Public IP       | `49.12.59.137`, behind Cloudflare                                                                                             |
-| OS              | Ubuntu 24.04.4 LTS (kernel 6.8), Docker 29.x in Swarm mode                                                                    |
-| Resources       | 4 vCPU · 15 GiB RAM · 193 GB disk                                                                                             |
-| Panel           | Dokploy (Traefik reverse proxy, auto-TLS)                                                                                     |
-| Dokploy project | app `danatfuture-danatfuture-vk5hnn` + compose `danatfuture-supabase-ozoxsa`                                                  |
-| App URL         | https://danat-future.com (Traefik `Host` rule → container port 3000)                                                          |
-| Supabase stack  | Compose on same host: Postgres 17.6, Kong 3.9, GoTrue, PostgREST 14, Storage, Realtime, Studio, Supavisor, Logflare, imgproxy |
-
-Deploy flow: push to `main` → Dokploy builds the multi-stage `Dockerfile`
-(remember `VITE_*` vars are build args) → Traefik routes the domain to the new
-container. The app joins the Supabase stack's network so `SUPABASE_URL` resolves.
-
-### Scheduled jobs
-
-Ten idempotent jobs — the keys of `JOBS` in `src/fns/cronJobs.ts` — run via
-`POST /api/public/cron` with `Authorization: Bearer $CRON_SECRET`. Cadences,
-crontab entries and the `asOf` rules are in `deploy/README.md`.
-
-## Direction & roadmap
-
-Phases 0–7 of `.lovable/plan.md` are implemented (all 15 admin modules, tenant
-portal, invoice/payment engine, notifications, expenses, electricity), and the
-platform is live at https://danat-future.com with all ten scheduled jobs
-running. What remains is tracked in `TODO.md`:
-
-1. **Smaller gaps** — chronological invoice order as a real invariant, CSV
-   deposit import linking, leasing-request email, the decided 1-day default
-   grace period, fail-fast env validation at startup, civil ID/document
-   retention enforcement.
-2. **Test coverage** — the `evaluateOverdue` day/grace boundary.
-3. **Open business decisions** — whether existing contracts move to the 1-day
-   grace period, final brand colour tokens.
-4. **Out of scope by design** — Phase 8 "Dana-bot", native mobile apps,
-   Lovable Cloud.
-
-## For AI agents
-
-Agent-facing rules live in [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md)
-(MCP server names for SSH/Dokploy access, Lovable git-history rules, graphify
-knowledge-graph usage).
-
-## Testing guide
-
-Use [`docs/ENDPOINTS_GUIDE.md`](docs/ENDPOINTS_GUIDE.md) for the complete route,
-server-function, public HTTP endpoint, authorization, test-data, and TestSprite
-guidance. For direct API tests, use only the allowlist in
-[`docs/TESTSPRITE_BACKEND_TARGETS.md`](docs/TESTSPRITE_BACKEND_TARGETS.md).
-Keep real test credentials only in ignored local files such as
-`.testsprite/test-credentials.local.md`.
+Rules for coding agents are in [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).

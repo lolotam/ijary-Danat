@@ -11,7 +11,8 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { LtrText } from "@/components/ui/ltr-text";
 import { usePortalIdentity } from "@/hooks/usePortalData";
 import { useI18n } from "@/i18n/provider";
-import { supabase } from "@/integrations/supabase/client";
+import { changeOwnPassword } from "@/fns/changeOwnPassword";
+import { describeError } from "@/lib/toastError";
 import { tenantDisplayName } from "@/lib/tenantDisplayName";
 
 export const Route = createFileRoute("/portal/profile")({ component: PortalProfilePage });
@@ -52,14 +53,15 @@ function PortalProfilePage() {
       return;
     }
     setSubmitting(true);
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: parsed.data.password,
-    });
-    setSubmitting(false);
-    if (updateError) {
-      setError(updateError.message);
+    // T201 F1: through the server so a support session cannot change it.
+    try {
+      await changeOwnPassword({ data: { password: parsed.data.password } });
+    } catch (updateError) {
+      setSubmitting(false);
+      setError(describeError(updateError) ?? t("common.error"));
       return;
     }
+    setSubmitting(false);
     setPassword("");
     setConfirmPassword("");
     setMessage(t("portal.profile.passwordChanged"));

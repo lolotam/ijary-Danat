@@ -172,8 +172,8 @@ describe("support session lifecycle (T176)", () => {
     ).rejects.toThrow(TARGET_USER_NOT_IN_COMPANY);
   });
 
-  it("start creates session, mints a 60-minute impersonation JWT, and audits the start", async () => {
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  it("start creates session, mints a 15-minute impersonation JWT, and audits the start", async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     const { writes } = installFakeDb({
       "companies:select": {
         data: { id: COMPANY_ID, slug: "acme", status: "active" },
@@ -207,7 +207,7 @@ describe("support session lifecycle (T176)", () => {
     });
     expect(verified.payload.exp).toBeTypeOf("number");
     expect(verified.payload.iat).toBeTypeOf("number");
-    expect((verified.payload.exp as number) - (verified.payload.iat as number)).toBe(3600);
+    expect((verified.payload.exp as number) - (verified.payload.iat as number)).toBe(15 * 60);
 
     expect(writes).toEqual(
       expect.arrayContaining([

@@ -675,7 +675,9 @@ export async function respondToResendWebhook(
         details,
         error: verification.reason,
         notificationId: null,
-        payload,
+        // T201 F2: an unverified body is attacker-controlled, so only its
+        // headers-derived id and event type are archived, never the JSON.
+        payload: null,
         providerEventId: headers.id,
         result: "unverified",
         signatureValid: false,

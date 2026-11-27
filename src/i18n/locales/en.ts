@@ -27,6 +27,8 @@ import { platformDomains } from "./en/platformDomains";
 import { emailSender } from "./en/emailSender";
 import { whatsappSettings } from "./en/whatsappSettings";
 import { supportSession } from "./en/supportSession";
+import { marketing } from "./en/marketing";
+import { deferred } from "./en/deferred";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -68,4 +70,6 @@ export const en: Record<string, string> = {
   ...emailSender,
   ...whatsappSettings,
   ...supportSession,
+  ...marketing,
+  ...deferred,
 };

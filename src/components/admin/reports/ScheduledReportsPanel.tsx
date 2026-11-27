@@ -49,7 +49,10 @@ export function ScheduledReportsPanel() {
   const runOne = async (scheduleId: string) => {
     try {
       await runSchedule.mutateAsync(scheduleId);
-      toast.success(t("reports.scheduleDone"));
+      // The report is queued, not built: `runReportSchedule` files a
+      // `report.run` job and the worker renders and sends it. "Scheduled
+      // reports were run" would claim work this request never did.
+      toast.success(t("deferred.reportQueued"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("common.error"));
     }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CompaniesTable } from "@/components/platform/CompaniesTable";
 import { CompanyCreateDialog } from "@/components/platform/CompanyCreateDialog";
+import { RenewalWarnings } from "@/components/platform/RenewalWarnings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,6 +137,8 @@ export function PlatformCompaniesPage() {
           {t("platformCompaniesUi.search")}
         </Button>
       </form>
+
+      <RenewalWarnings />
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <CompaniesTable rows={rows} loading={loading} error={error} />

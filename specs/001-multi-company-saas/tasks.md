@@ -263,7 +263,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 - [x] T107 [US5] Write migration `db/migrations/320_company_modules.sql`: `company_modules`, `module_enabled()`, the `has_permission` change, `get_my_modules()` (data-model.md: `company_modules.module_key`; research.md R10)
 - [x] T108 [US5] Section keys and the permission-to-section map in `src/company/modules.ts`
-- [ ] T109 [US5] `platformSetModules` in `src/platform/modules.ts` and `src/components/platform/ModuleSwitches.tsx`
+- [x] T109 [US5] `platformSetModules` in `src/platform/modules.ts` and `src/components/platform/ModuleSwitches.tsx`
 - [x] T110 [US5] `myModules` in `src/fns/myModules.ts` and `src/hooks/useModules.ts` (cache at most 60 seconds)
 - [x] T111 [US5] Build navigation and dashboard from enabled sections in `src/components/admin/AdminSidebar.tsx` and `src/lib/cardRegistry.ts`; add `src/company/requireModule.ts` and call it in the `beforeLoad` of each `src/routes/admin.*.tsx` section route
 - [x] T112 [US5] Skip a switched-off section's jobs in `src/worker/runJob.ts` using the section field of `src/jobs/catalog.ts`
@@ -287,8 +287,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 ### Implementation for User Story 6
 
 - [x] T116 [US6] Write migration `db/migrations/322_company_subscriptions.sql` (data-model.md: `company_subscriptions.status`, `companies.status`)
-- [ ] T117 [US6] `platformRecordSubscription` in `src/platform/subscriptions.ts` and `src/components/platform/SubscriptionPanel.tsx`
-- [ ] T118 [US6] `subscription.remind` handler in `src/jobs/handlers/subscriptionRemind.ts`, its schedule in `src/worker/scheduler.ts`, and the warnings list on `src/routes/platform.companies.tsx`
+- [x] T117 [US6] `platformRecordSubscription` in `src/platform/subscriptions.ts` and `src/components/platform/SubscriptionPanel.tsx`
+- [x] T118 [US6] `subscription.remind` handler in `src/jobs/handlers/subscriptionRemind.ts`, its schedule in `src/worker/scheduler.ts`, and the warnings list on `src/routes/platform.companies.tsx`
 - [x] T119 [US6] Renewal banner: `src/fns/companySubscriptionBanner.ts` and `src/components/admin/SubscriptionBanner.tsx`
 - [x] T120 [US6] `platformSetCompanyStatus` with a required reason in `src/platform/companyStatus.ts` and its control in `src/routes/platform.companies.$id.tsx`
 - [ ] T121 [US6] Suspended page in `src/routes/suspended.tsx`; serve it from `server/middleware/company.ts`; refuse in `src/fns/signInWithIdentifier.ts` and `src/fns/createPayment.ts`

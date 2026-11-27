@@ -41,7 +41,11 @@ export interface RecordSubscriptionInput {
   note?: string | null;
 }
 
-const recordSchema = z
+/** نافذة التحذير قبل التجديد، بالأيام وبتوقيت الشركة. */
+const WARNING_WINDOW_DAYS = 14;
+
+/** مخطط تسجيل اشتراك جديد، مشترك بين العملية وواجهة المتصفح. */
+export const recordSubscriptionSchema = z
   .object({
     companyId: z.string().uuid(),
     planName: z.string().trim().min(1).max(120),
@@ -84,7 +88,7 @@ export async function platformRecordSubscription(
   input: RecordSubscriptionInput,
 ): Promise<CompanySubscriptionRow> {
   const { userId: actorId } = await requirePlatformAdmin();
-  const data = recordSchema.parse(input);
+  const data = recordSubscriptionSchema.parse(input);
 
   const { data: inserted, error } = await supabaseAdmin
     .from("company_subscriptions")
@@ -135,6 +139,114 @@ export async function platformListSubscriptions(
     .order("created_at", { ascending: false });
   if (error) throw new Error(`company_subscriptions lookup failed: ${error.message}`);
   return (data ?? []) as CompanySubscriptionRow[];
+}
+
+/** تحذير تجديد واحد كما يقرأه مشرف المنصة في قائمة الشركات. */
+export interface RenewalWarning {
+  companyId: string;
+  companyNameAr: string;
+  companyNameEn: string;
+  planName: string;
+  renewalDate: string;
+  daysLeft: number;
+}
+
+/** أحدث صف اشتراك لشركة، قبل تطبيق نافذة التحذير. */
+interface LatestSubscription {
+  companyId: string;
+  planName: string;
+  renewalDate: string;
+  status: string;
+}
+
+/** اسم الشركة كما يظهر في تحذير التجديد. */
+interface CompanyName {
+  nameAr: string;
+  nameEn: string;
+}
+
+/**
+ * يقرأ أحدث صف لكل شركة، دون الاكتفاء بصفوف النافذة وحدها.
+ *
+ * An older row can still be inside the window after a renewal pushed a newer
+ * row beyond it. Deciding the window before picking the latest row would then
+ * warn about a subscription that no longer applies.
+ */
+async function readLatestSubscriptions(): Promise<LatestSubscription[]> {
+  const { data, error } = await supabaseAdmin
+    .from("company_subscriptions")
+    .select("company_id, plan_name, renewal_date, status")
+    .order("period_start", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`company_subscriptions warning lookup failed: ${error.message}`);
+
+  const seen = new Set<string>();
+  const latest: LatestSubscription[] = [];
+  for (const row of (data ?? []) as Array<{
+    company_id: string;
+    plan_name: string;
+    renewal_date: string;
+    status: string;
+  }>) {
+    if (seen.has(row.company_id)) continue;
+    seen.add(row.company_id);
+    latest.push({
+      companyId: row.company_id,
+      planName: row.plan_name,
+      renewalDate: row.renewal_date,
+      status: row.status,
+    });
+  }
+  return latest;
+}
+
+/**
+ * يقرأ أسماء الشركات المطلوبة لعرض تحذيرات التجديد.
+ */
+async function readCompanyNames(companyIds: string[]): Promise<Map<string, CompanyName>> {
+  if (companyIds.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin
+    .from("companies")
+    .select("id, name_ar, name_en")
+    .in("id", companyIds);
+  if (error) throw new Error(`companies warning lookup failed: ${error.message}`);
+
+  return new Map((data ?? []).map((row) => [row.id, { nameAr: row.name_ar, nameEn: row.name_en }]));
+}
+
+/**
+ * يسرد اشتراكات الشركات التي تجدَّد خلال أربعة عشر يوماً أو تجاوزت موعدها،
+ * مع المتأخرة أولاً، للعرض في قائمة الشركات.
+ *
+ * The guard runs before any read: this is a platform-only view of every
+ * company's billing record, not the company-facing renewal banner.
+ */
+export async function platformListRenewalWarnings(): Promise<RenewalWarning[]> {
+  await requirePlatformAdmin();
+  const today = companyCalendarDate(new Date());
+  const latest = await readLatestSubscriptions();
+  const due = latest.filter(
+    (row) =>
+      row.status !== "cancelled" && daysBetweenDates(today, row.renewalDate) <= WARNING_WINDOW_DAYS,
+  );
+  if (due.length === 0) return [];
+
+  const names = await readCompanyNames([...new Set(due.map((row) => row.companyId))]);
+  const warnings = due.map((row) => {
+    const name = names.get(row.companyId) as CompanyName;
+    return {
+      companyId: row.companyId,
+      companyNameAr: name.nameAr,
+      companyNameEn: name.nameEn,
+      planName: row.planName,
+      renewalDate: row.renewalDate,
+      daysLeft: daysBetweenDates(today, row.renewalDate),
+    };
+  });
+  return warnings.sort(
+    (left, right) =>
+      left.daysLeft - right.daysLeft || left.companyId.localeCompare(right.companyId),
+  );
 }
 
 /**

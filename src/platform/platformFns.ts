@@ -14,6 +14,20 @@ import {
 } from "@/platform/companies";
 import { companyStatusSchema, platformSetCompanyStatus } from "@/platform/companyStatus";
 import {
+  platformGetModules,
+  platformSetModules,
+  setModulesSchema,
+  type PlatformModuleMap,
+} from "@/platform/modules";
+import {
+  platformListRenewalWarnings,
+  platformListSubscriptions,
+  platformRecordSubscription,
+  recordSubscriptionSchema,
+  type CompanySubscriptionRow,
+  type RenewalWarning,
+} from "@/platform/subscriptions";
+import {
   platformCreateUser,
   platformListUsers,
   platformResetPassword,
@@ -130,6 +144,12 @@ export type SetPlatformCompanyUserActiveInput = z.input<typeof setCompanyUserAct
 /** مدخل إعادة تعيين كلمة مرور كما تقبله اللوحة. */
 export type ResetPlatformCompanyUserPasswordInput = z.input<typeof resetCompanyUserPasswordSchema>;
 
+/** مدخل تسجيل اشتراك جديد كما تقبله اللوحة. */
+export type RecordPlatformSubscriptionInput = z.input<typeof recordSubscriptionSchema>;
+
+/** مدخل تعديل أقسام شركة كما تقبله اللوحة. */
+export type SetPlatformModulesInput = z.input<typeof setModulesSchema>;
+
 /**
  * ينفّذ عملية لوحة منصة، مرفقاً بها رمز جلسة المشرف العام.
  *
@@ -198,6 +218,31 @@ const resetPlatformCompanyUserPasswordFn = createServerFn({ method: "POST" })
   .validator((data: unknown) => parseServerInput(resetCompanyUserPasswordSchema, data))
   .handler(async ({ data }) => platformResetPassword(data));
 
+/** يسرد سجل اشتراكات شركة واحدة. */
+const listSubscriptionsFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => parseServerInput(fetchCompanySchema, data))
+  .handler(async ({ data }) => platformListSubscriptions(data.companyId));
+
+/** يسجّل اشتراكاً جديداً لشركة. */
+const recordSubscriptionFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => parseServerInput(recordSubscriptionSchema, data))
+  .handler(async ({ data }) => platformRecordSubscription(data));
+
+/** يسرد تحذيرات التجديد القادمة أو المتأخرة. */
+const listRenewalWarningsFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => parseServerInput(z.object({}), data))
+  .handler(async () => platformListRenewalWarnings());
+
+/** يقرأ حالة أقسام شركة واحدة. */
+const fetchModulesFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => parseServerInput(fetchCompanySchema, data))
+  .handler(async ({ data }) => platformGetModules(data.companyId));
+
+/** يحدّث أقسام شركة ويعيد حالتها النهائية. */
+const setModulesFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => parseServerInput(setModulesSchema, data))
+  .handler(async ({ data }) => platformSetModules(data));
+
 /** يقرأ شركات المنصة من المتصفح، مع رمز الجلسة. */
 export function fetchPlatformCompanies(input: ListPlatformCompaniesInput) {
   return callPlatformOperation(listPlatformCompaniesFn, input);
@@ -241,6 +286,35 @@ export function setPlatformCompanyUserActive(input: SetPlatformCompanyUserActive
 /** يعيد تعيين كلمة مرور حساب موظف من المتصفح. */
 export function resetPlatformCompanyUserPassword(input: ResetPlatformCompanyUserPasswordInput) {
   return callPlatformOperation(resetPlatformCompanyUserPasswordFn, input);
+}
+
+/** يقرأ سجل اشتراكات شركة من المتصفح، مع رمز الجلسة. */
+export function fetchPlatformSubscriptions(input: {
+  companyId: string;
+}): Promise<CompanySubscriptionRow[]> {
+  return callPlatformOperation(listSubscriptionsFn, input);
+}
+
+/** يسجّل اشتراكاً جديداً من المتصفح، مع رمز الجلسة. */
+export function recordPlatformSubscription(
+  input: RecordPlatformSubscriptionInput,
+): Promise<CompanySubscriptionRow> {
+  return callPlatformOperation(recordSubscriptionFn, input);
+}
+
+/** يقرأ تحذيرات التجديد من المتصفح، مع رمز الجلسة. */
+export function fetchPlatformRenewalWarnings(): Promise<RenewalWarning[]> {
+  return callPlatformOperation(listRenewalWarningsFn, {});
+}
+
+/** يقرأ حالة أقسام شركة من المتصفح، مع رمز الجلسة. */
+export function fetchPlatformModules(input: { companyId: string }): Promise<PlatformModuleMap> {
+  return callPlatformOperation(fetchModulesFn, input);
+}
+
+/** يحدّث أقسام شركة من المتصفح، مع رمز الجلسة. */
+export function setPlatformModules(input: SetPlatformModulesInput): Promise<PlatformModuleMap> {
+  return callPlatformOperation(setModulesFn, input);
 }
 
 /**

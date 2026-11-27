@@ -14,6 +14,12 @@ import type {
   WhatsappConnectionStatus,
 } from "@/integrations/supabase/database.types";
 import {
+  completeEmbeddedSignup,
+  getEmbeddedSignupConfig,
+  saveCloudCredentials,
+  type EmbeddedSignupPublicConfig,
+} from "@/whatsapp/embeddedSignup";
+import {
   ensureEvolutionInstance,
   fetchEvolutionQr,
   logoutEvolutionInstance,
@@ -257,4 +263,87 @@ export const whatsappActivate = createServerFn({ method: "POST" })
 
     const activated = await activateConnectionRow(db, target.id);
     return toSummary(activated);
+  });
+
+const embeddedSignupConfigSchema = z.object({
+  coexistence: z.boolean().default(true),
+});
+
+const completeEmbeddedSignupSchema = z.object({
+  code: z.string().trim().min(1),
+  phoneNumberId: z.string().trim().min(1),
+  wabaId: z.string().trim().min(1),
+  coexistence: z.boolean().optional(),
+});
+
+const saveCloudCredentialsSchema = z.object({
+  phoneNumberId: z.string().trim().min(1),
+  wabaId: z.string().trim().min(1),
+  accessToken: z.string().trim().min(1),
+});
+
+/**
+ * يعيد الإعدادات العامة اللازمة لفتح Meta Embedded Signup في المتصفح دون كشف أي أسرار.
+ */
+export const whatsappEmbeddedSignupConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .validator(embeddedSignupConfigSchema)
+  .handler(async ({ data, context }): Promise<EmbeddedSignupPublicConfig> => {
+    await assertCanManageIntegrations(
+      context as never,
+      "whatsapp.embedded_signup_config",
+      "You do not have permission to view WhatsApp settings.",
+    );
+
+    requireRequestCompany();
+    return getEmbeddedSignupConfig({ coexistence: data.coexistence });
+  });
+
+/**
+ * يتمم ربط واتساب عبر Meta Embedded Signup ويخزّن رمز الوصول مشفّراً للشركة الحالية.
+ */
+export const whatsappCompleteEmbeddedSignup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(completeEmbeddedSignupSchema)
+  .handler(async ({ data, context }): Promise<WhatsappConnectionSummary> => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
+    await assertCanManageIntegrations(
+      context as never,
+      "whatsapp.complete_embedded_signup",
+      "You do not have permission to manage the WhatsApp connection.",
+    );
+
+    const companyId = requireRequestCompany().id;
+    const connection = await completeEmbeddedSignup({
+      companyId,
+      code: data.code,
+      phoneNumberId: data.phoneNumberId,
+      wabaId: data.wabaId,
+      coexistence: data.coexistence,
+    });
+    return toSummary(connection);
+  });
+
+/**
+ * يحفظ بيانات اعتماد WhatsApp Cloud API المُدخلة يدوياً ويفعّل الاتصال للشركة الحالية.
+ */
+export const whatsappSaveCloudCredentials = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(saveCloudCredentialsSchema)
+  .handler(async ({ data, context }): Promise<WhatsappConnectionSummary> => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
+    await assertCanManageIntegrations(
+      context as never,
+      "whatsapp.save_cloud_credentials",
+      "You do not have permission to manage the WhatsApp connection.",
+    );
+
+    const companyId = requireRequestCompany().id;
+    const connection = await saveCloudCredentials({
+      companyId,
+      phoneNumberId: data.phoneNumberId,
+      wabaId: data.wabaId,
+      accessToken: data.accessToken,
+    });
+    return toSummary(connection);
   });

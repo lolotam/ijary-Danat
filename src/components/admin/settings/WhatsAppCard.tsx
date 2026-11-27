@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Link2Off, MessageCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
+import { WhatsAppEmbeddedSignupButton } from "@/components/admin/settings/WhatsAppEmbeddedSignupButton";
 import { WhatsAppSyncButtons } from "@/components/admin/settings/WhatsAppSyncButtons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -222,10 +223,13 @@ export function WhatsAppCard({ enabled, dateFormatter }: WhatsAppCardProps) {
               {t("whatsappSettings.disconnect")}
             </Button>
           ) : (
-            <Button disabled={busy} onClick={() => void onStartQr()}>
-              <Link2 className="size-4" />
-              {t("whatsappSettings.startQr")}
-            </Button>
+            <>
+              <Button disabled={busy} onClick={() => void onStartQr()}>
+                <Link2 className="size-4" />
+                {t("whatsappSettings.startQr")}
+              </Button>
+              <WhatsAppEmbeddedSignupButton enabled={enabled} disabled={busy} />
+            </>
           )}
         </div>
 

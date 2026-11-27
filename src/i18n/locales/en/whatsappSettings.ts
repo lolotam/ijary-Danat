@@ -22,6 +22,11 @@ export const whatsappSettings: Record<string, string> = {
     "Scan a QR code with your company WhatsApp phone to start sending and receiving messages.",
 
   "whatsappSettings.startQr": "Connect with QR",
+  "whatsappSettings.connectWithFacebook": "Connect with Facebook",
+  "whatsappSettings.embeddedSignupConnectedToast": "WhatsApp Business connected.",
+  "whatsappSettings.embeddedSignupCancelledToast": "Facebook sign-up was cancelled or incomplete.",
+  "whatsappSettings.embeddedSignupNumberInUseToast":
+    "This WhatsApp number is already connected to another company.",
   "whatsappSettings.refreshQr": "Refresh QR",
   "whatsappSettings.scanHint": "Open WhatsApp on your phone → Linked Devices → Link a Device.",
   "whatsappSettings.disconnect": "Disconnect",

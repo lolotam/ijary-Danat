@@ -385,7 +385,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [ ] T164 [US9] ⛔ BLOCKED(owner: Meta app id, app secret, Embedded Signup configuration id) VERIFY current Embedded Signup parameters for coexistence and the Graph API version in research.md R15
 - [x] T165 [US9] Official API sending with the approved-template check in `src/whatsapp/cloudApi.ts`
 - [x] T166 [US9] Meta webhook route `src/routes/api/public/webhooks/meta.ts` and routing in `src/whatsapp/routing.ts`
-- [ ] T167 [US9] Embedded Signup with coexistence in `src/whatsapp/embeddedSignup.ts`; `whatsappEmbeddedSignupConfig`, `whatsappCompleteEmbeddedSignup`, `whatsappSaveCloudCredentials` in `src/fns/whatsappSettings.ts`; the sign-up button in `WhatsAppCard.tsx`
+- [x] T167 [US9] Embedded Signup with coexistence in `src/whatsapp/embeddedSignup.ts`; `whatsappEmbeddedSignupConfig`, `whatsappCompleteEmbeddedSignup`, `whatsappSaveCloudCredentials` in `src/fns/whatsappSettings.ts`; the sign-up button in `WhatsAppCard.tsx`. Both save paths confirm through `GET /{waba-id}/phone_numbers` that the number belongs to the WABA (`NUMBER_NOT_IN_WABA` otherwise). The live check against the owner's Meta app (coexistence without `/register`) stays in T164.
 - [ ] T168 [US9] Gate: quickstart.md Phase 4 steps 1 to 6; record SC-013
 
 **Checkpoint**: Each company sends and receives on its own number.

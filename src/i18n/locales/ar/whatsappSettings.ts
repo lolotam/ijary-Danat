@@ -22,6 +22,10 @@ export const whatsappSettings: Record<string, string> = {
     "امسح رمز QR بهاتف واتساب الخاص بالشركة لبدء إرسال الرسائل واستقبالها.",
 
   "whatsappSettings.startQr": "الربط عبر QR",
+  "whatsappSettings.connectWithFacebook": "الربط عبر فيسبوك",
+  "whatsappSettings.embeddedSignupConnectedToast": "تم ربط واتساب للأعمال بنجاح.",
+  "whatsappSettings.embeddedSignupCancelledToast": "تم إلغاء الربط عبر فيسبوك أو لم يكتمل.",
+  "whatsappSettings.embeddedSignupNumberInUseToast": "رقم واتساب هذا مربوط بشركة أخرى بالفعل.",
   "whatsappSettings.refreshQr": "تحديث رمز QR",
   "whatsappSettings.scanHint": "افتح واتساب في هاتفك ← الأجهزة المرتبطة ← ربط جهاز.",
   "whatsappSettings.disconnect": "فصل الاتصال",

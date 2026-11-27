@@ -15,6 +15,7 @@ import { platformCompanies } from "./en/platformCompanies";
 import { platformCompaniesUi } from "./en/platformCompaniesUi";
 import { subscriptions } from "./en/subscriptions";
 import { platformBilling } from "./en/platformBilling";
+import { gatewaySettingsUi } from "./en/gatewaySettingsUi";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -44,4 +45,5 @@ export const en: Record<string, string> = {
   ...platformCompaniesUi,
   ...subscriptions,
   ...platformBilling,
+  ...gatewaySettingsUi,
 };

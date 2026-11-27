@@ -1,12 +1,18 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download } from "lucide-react";
 import { useMemo } from "react";
 
 import { ContractSwitcher } from "@/components/portal/ContractSwitcher";
+import { PayOnlineUnavailable } from "@/components/portal/PayOnlineUnavailable";
 import { PaymentRowActions } from "@/components/portal/PaymentRowActions";
 import { PaymentStatusBadge } from "@/components/shared/dashboardCards";
 import { SectionCard } from "@/components/shared/SectionCard";
 import { Button } from "@/components/ui/button";
+import {
+  PORTAL_PAYMENT_AVAILABILITY_KEY,
+  portalPaymentAvailability,
+} from "@/fns/portalPaymentAvailability";
 import { usePortalContractSelection } from "@/hooks/usePortalContractSelection";
 import { useCompany } from "@/hooks/useCompany";
 import {
@@ -36,6 +42,12 @@ function PortalPaymentsPage() {
   const payments = usePortalPayments(tenantId);
   const contracts = usePortalContracts(tenantId);
   const company = useCompany();
+  // The payments list itself holds no online-payment control, but the note has
+  // to agree with the invoices page: no active gateway means pay at the office.
+  const gatewayAvailable = useQuery({
+    queryKey: PORTAL_PAYMENT_AVAILABILITY_KEY,
+    queryFn: (): Promise<boolean> => portalPaymentAvailability(),
+  });
   /**
    * معرّفات العقود المكبوتة للمستأجر — استعلام واحد للصفحة كلها.
    *
@@ -96,6 +108,7 @@ function PortalPaymentsPage() {
           </Button>
         </div>
       </div>
+      {gatewayAvailable.data === false ? <PayOnlineUnavailable /> : null}
       {payments.isLoading ? (
         <SectionCard
           title={t("portal.payments.title")}

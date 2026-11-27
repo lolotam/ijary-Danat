@@ -4,6 +4,7 @@ import { Link2, Link2Off, Mail, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { ModuleHeader } from "@/components/admin/Phase2Ui";
+import { PaymentGatewayCard } from "@/components/admin/settings/PaymentGatewayCard";
 import { EvolutionConnectionCard } from "@/components/admin/whatsapp/EvolutionConnectionCard";
 import { Badge } from "@/components/ui/badge";
 import { LtrText } from "@/components/ui/ltr-text";
@@ -180,6 +181,7 @@ function IntegrationsPage() {
         </CardContent>
       </Card>
 
+      <PaymentGatewayCard />
       <EvolutionConnectionCard
         enabled={!permissions.isLoading && canManage}
         dateFormatter={dateFormatter}

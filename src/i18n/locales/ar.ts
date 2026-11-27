@@ -15,6 +15,7 @@ import { platformCompanies } from "./ar/platformCompanies";
 import { platformCompaniesUi } from "./ar/platformCompaniesUi";
 import { subscriptions } from "./ar/subscriptions";
 import { platformBilling } from "./ar/platformBilling";
+import { gatewaySettingsUi } from "./ar/gatewaySettingsUi";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -47,4 +48,5 @@ export const ar: Record<string, string> = {
   ...platformCompaniesUi,
   ...subscriptions,
   ...platformBilling,
+  ...gatewaySettingsUi,
 };

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { LockKeyhole } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -7,11 +8,16 @@ import { toast } from "sonner";
 import { ApplePayQrDialog } from "@/components/portal/ApplePayQrDialog";
 import { ContractSwitcher } from "@/components/portal/ContractSwitcher";
 import { PayNowMenu } from "@/components/portal/PayNowMenu";
+import { PayOnlineUnavailable } from "@/components/portal/PayOnlineUnavailable";
 import { InvoiceStatusBadge } from "@/components/shared/dashboardCards";
 import { InvoicePartialIndicator } from "@/components/shared/InvoicePartialIndicator";
 import { SectionCard } from "@/components/shared/SectionCard";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { HostedPaymentMethod } from "@/fns/createPayment";
+import {
+  PORTAL_PAYMENT_AVAILABILITY_KEY,
+  portalPaymentAvailability,
+} from "@/fns/portalPaymentAvailability";
 import { useCompany } from "@/hooks/useCompany";
 import { useCreatePayment } from "@/hooks/useCreatePayment";
 import { useDeviceProfile } from "@/hooks/useDeviceProfile";
@@ -46,6 +52,14 @@ function PortalInvoicesPage() {
   const createPayment = useCreatePayment();
   const device = useDeviceProfile();
   const company = useCompany();
+  // Online payment is offered only after the server confirms the company has
+  // an active gateway. While the answer is unknown the controls stay hidden,
+  // so a deactivated gateway cannot leave a payable-looking button behind.
+  const gatewayAvailable = useQuery({
+    queryKey: PORTAL_PAYMENT_AVAILABILITY_KEY,
+    queryFn: (): Promise<boolean> => portalPaymentAvailability(),
+  });
+  const canPayOnline = gatewayAvailable.data === true;
   // KNET is unconditional; the company row only says whether the two extras are
   // offered on top of it. Intersecting with the device here — not inside
   // PayNowMenu — is what lets `paySelected` refuse a method the menu never drew.
@@ -235,6 +249,8 @@ function PortalInvoicesPage() {
         <ContractSwitcher tenantId={tenant?.id ?? null} />
       </div>
 
+      {gatewayAvailable.data === false ? <PayOnlineUnavailable /> : null}
+
       {invoices.isLoading ? (
         <SectionCard
           title={t("portal.invoices.title")}
@@ -354,7 +370,7 @@ function PortalInvoicesPage() {
         when a selection exists so an empty bar does not sit over the list;
         transparent (no card chrome) and pointer-events-none so invoice rows
         behind it stay scrollable/tappable until the Pay control itself. */}
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && canPayOnline && (
         <div className="pointer-events-none sticky bottom-[calc(1rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-3 p-4 text-center">
           <div>
             <p className="text-xs text-muted-foreground">{t("portal.invoices.selectedTotal")}</p>

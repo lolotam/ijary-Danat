@@ -351,8 +351,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T146 [US8] Reconcile per company and connection in `src/fns/paymentReconcileJob.ts`
 - [x] T147 [US8] Make the return page session-free and company-bound in `src/routes/portal_.payments.callback_.$preq.tsx` (`contracts/webhooks.md`)
 - [x] T148 [US8] `gatewayList`, `gatewaySaveCredentials`, `gatewayTestConnection`, `gatewayActivate`, `gatewayDeactivate` in `src/fns/gatewaySettings.ts`
-- [ ] T149 [US8] Payment gateway card in `src/components/admin/settings/PaymentGatewayCard.tsx`, shown from `src/routes/admin.settings.integrations.tsx`
-- [ ] T150 [US8] Hide online payment in the portal when no gateway is active, in `src/routes/portal.invoices.tsx` and `src/routes/portal.payments.tsx`
+- [x] T149 [US8] Payment gateway card in `src/components/admin/settings/PaymentGatewayCard.tsx`, shown from `src/routes/admin.settings.integrations.tsx`
+- [x] T150 [US8] Hide online payment in the portal when no gateway is active, in `src/routes/portal.invoices.tsx` and `src/routes/portal.payments.tsx`
 - [ ] T151 [US8] `platformSetGatewayLiveAllowed` in `src/platform/gateways.ts` and its switch in `src/components/platform/GatewayLaunchPanel.tsx`
 - [ ] T152 [US8] Run quickstart.md Phase 3 for MyFatoorah in sandbox and record SC-011 and SC-012
 - [ ] T153 [US8] ⛔ BLOCKED(owner: Tap sandbox account) VERIFY Tap's API version, webhook signature and KWD precision in research.md R14; implement `src/gateways/tap.ts`; run quickstart.md Phase 3 for Tap

@@ -493,7 +493,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T201 Run the `security-review` skill over isolation, tokens, secrets and webhooks; fix or record each finding. Fixed: F1 renter password change moved server-side (`src/fns/changeOwnPassword.ts`) and Kong refuses `PUT`/`PATCH /auth/v1/user` locally; F2 unverified webhook bodies are no longer stored; F3 the Meta webhook answers the same 200 for every outcome; F4 `db/migrations/336_platform_email_owner_explicit_claim.sql` makes the cross-company email owner lookup require `service_role` or the all-zero platform claim (guarded by `src/db/platformEmailOwner.sqltest.ts`); F5 the Meta app secret no longer loads for a suspended company. Recorded, not fixed: GoTrue `POST /auth/v1/factors` still accepts a support-session token (blocking it breaks `/platform/mfa`); the production Kong rule waits for the owner's go-ahead (see `deploy/ijary/README.md`); bind `company_id` as AES-GCM additional data at the next `key_version`
 - [ ] T202 Run every phase of `specs/001-multi-company-saas/quickstart.md` end to end on a staging stack and record the results
 - [x] T203 Confirm SC-016: no command, migration or deployment in this feature targeted Danat's production
-- [ ] T204 [P] Run `graphify update .` and refresh `graphify-out/`
+- [x] T204 [P] Run `graphify update .` and refresh `graphify-out/` — installed `graphifyy[sql]` 0.9.121 (uv tool); graph rebuilt locally (15621 nodes, 47221 edges, 751 communities). `graphify-out/` stays gitignored, so each machine regenerates it.
 
 ---
 

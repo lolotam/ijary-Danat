@@ -32,6 +32,18 @@ CRON_SECRET
 The optional names (email, WhatsApp, MyFatoorah) are listed in the comment
 above the `worker` service in the compose file.
 
+## Supabase stack environment
+
+The Supabase stack is configured by its own deployment, not this compose file.
+`supabase.env.example` is its placeholder template: GoTrue's
+`GOTRUE_SITE_URL` / `SITE_URL` and redirect allow-list
+(`GOTRUE_URI_ALLOW_LIST` / `ADDITIONAL_REDIRECT_URLS`) covering
+`https://ijary.app/**`, `https://admin.ijary.app/**` and `https://*.ijary.app/**`,
+`API_CORS_ORIGINS` for the Kong `cors` plugin, and placeholder values for the
+three server-only secrets (`SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`,
+`INTEGRATIONS_MASTER_KEY` — never `VITE_`-prefixed). Verified custom domains
+are added to both lists per company later, never by widening the wildcard.
+
 ## Deploying
 
 Nothing here is deployed without the owner's explicit go-ahead at that moment.

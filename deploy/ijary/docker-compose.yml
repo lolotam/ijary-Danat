@@ -1,7 +1,9 @@
 # IJARY background stack — Redis and the worker, and nothing else.
 # The web application and the whole Supabase stack (Postgres, GoTrue, PostgREST,
 # Storage, Realtime, Kong) are deployed separately as Dokploy applications on
-# the same host; this file covers the two pieces that have no web front.
+# the same host; this file covers the two pieces that have no web front. The
+# Supabase stack's environment template is `supabase.env.example` in this
+# directory — nothing in this file reads it.
 # Nothing here is public: no published ports and no Traefik labels.
 name: ijary
 

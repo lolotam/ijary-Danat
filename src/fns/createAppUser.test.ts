@@ -166,11 +166,17 @@ describe("createAppUser", () => {
     expect(mocks.createUser).not.toHaveBeenCalled();
   });
 
+  /**
+   * Regression (migration 255): the unique index is named
+   * `profiles_company_tenant_id_unique` now, and only that name reaches the
+   * friendly message — a fixture with the pre-rename name hid the mismatch.
+   */
   it("rolls back and explains when a concurrent save linked the tenant first", async () => {
     mocks.profileUpsert.mockResolvedValueOnce({
       error: {
         code: "23505",
-        message: 'duplicate key value violates unique constraint "profiles_tenant_id_unique"',
+        message:
+          'duplicate key value violates unique constraint "profiles_company_tenant_id_unique"',
       },
     });
 

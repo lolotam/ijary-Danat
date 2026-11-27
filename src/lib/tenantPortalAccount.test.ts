@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest";
 import { isTenantAccountConflict } from "./tenantPortalAccount";
 
 describe("isTenantAccountConflict", () => {
-  it("recognises migration 224's one-account-per-tenant refusal", () => {
+  /**
+   * Regression (migration 255): the one-account-per-renter index became
+   * `profiles_company_tenant_id_unique`; matching its pre-rename name left the
+   * raw constraint error instead of the friendly message.
+   */
+  it("recognises the one-account-per-renter refusal under its migration 255 name", () => {
     const error = {
       code: "23505",
-      message: 'duplicate key value violates unique constraint "profiles_tenant_id_unique"',
+      message: 'duplicate key value violates unique constraint "profiles_company_tenant_id_unique"',
     };
     expect(isTenantAccountConflict(error)).toBe(true);
   });

@@ -9,11 +9,16 @@ export const TENANT_ALREADY_HAS_ACCOUNT = userConflictMessage(
 /**
  * يتعرّف على رفض قاعدة البيانات لحساب بوابة ثانٍ لنفس المستأجر.
  *
- * Matches the index from migration 224 by name as well as 23505, so another
- * unique violation on `profiles` (a taken username, say) keeps its own message.
+ * Matches the index by name as well as 23505, so another unique violation on
+ * `profiles` (a taken username, say) keeps its own message. Regression
+ * (migration 255): the index was renamed `profiles_company_tenant_id_unique`
+ * and the old name dropped, so matching the pre-rename name stopped this from
+ * firing and leaked the raw constraint to the user.
  */
 export function isTenantAccountConflict(
   error: { code?: string; message?: string } | null | undefined,
 ): boolean {
-  return error?.code === "23505" && Boolean(error.message?.includes("profiles_tenant_id_unique"));
+  return (
+    error?.code === "23505" && Boolean(error.message?.includes("profiles_company_tenant_id_unique"))
+  );
 }

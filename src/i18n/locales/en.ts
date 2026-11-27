@@ -23,6 +23,8 @@ import { limitsUi } from "./en/limitsUi";
 import { platformOverview } from "./en/platformOverview";
 import { platformOverviewUsage } from "./en/platformOverviewUsage";
 import { importLimits } from "./en/importLimits";
+import { platformDomains } from "./en/platformDomains";
+import { emailSender } from "./en/emailSender";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -60,4 +62,6 @@ export const en: Record<string, string> = {
   ...platformOverview,
   ...platformOverviewUsage,
   ...importLimits,
+  ...platformDomains,
+  ...emailSender,
 };

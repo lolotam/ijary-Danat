@@ -9,12 +9,16 @@ import type { EvolutionClient, Fetcher } from "@/lib/evolution/client";
 import { evolutionLocalPacer } from "@/lib/providers/evolutionLocalPacing";
 import type { ProviderResult, WhatsAppProviderMessage } from "@/lib/providers/types";
 import {
+  assertPlatformEndpoint,
   configValue,
   DELIVERY_INDETERMINATE,
   requiredEnv,
   toInternationalDigits,
 } from "@/lib/providers/types";
 import { evolutionSessionDisconnectedReason } from "@/lib/whatsappSkipReasons";
+
+/** عنوان خادم Evolution داخل شبكة المنصة كما زرعه الترحيل 178. */
+const EVOLUTION_SEEDED_API_BASE = "http://evolution:8080";
 
 /**
  * خطأ من مزوّد Evolution يحمل كوداً مُنمّطاً تقرأه مهمة التصريف.
@@ -47,6 +51,9 @@ export function resolveEvolutionCredentials(config: Json): { apiBase: string; ap
   const apiBase = configValue(config, "api_base");
   if (!apiBase) throw new Error("Evolution provider config is missing api_base.");
   const apiKey = requiredEnv(config, "api_key_env");
+  // The key comes from the platform's environment, so it may only reach the
+  // platform's Evolution server: the seeded in-network address or EVOLUTION_API_URL.
+  assertPlatformEndpoint(apiBase, [EVOLUTION_SEEDED_API_BASE, process.env.EVOLUTION_API_URL]);
   return { apiBase, apiKey };
 }
 

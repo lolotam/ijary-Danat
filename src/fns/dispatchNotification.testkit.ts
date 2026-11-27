@@ -154,7 +154,7 @@ export const RESEND = {
   provider: "resend",
   is_enabled: true,
   is_primary: false,
-  config: { secret_env: "TEST_RESEND_KEY" },
+  config: { secret_env: "RESEND_API_KEY" },
   from_email: "billing@danat-future.com",
   from_whatsapp: null,
 };
@@ -162,14 +162,14 @@ export const SMTP = {
   provider: "smtp",
   is_enabled: true,
   is_primary: false,
-  config: { host_env: "TEST_SMTP_HOST", secret_env: "TEST_SMTP_PASS" },
+  config: { host_env: "SMTP_HOST", secret_env: "SMTP_PASS" },
   from_email: "smtp@danat-future.com",
   from_whatsapp: null,
 };
 export const CLOUD = {
   provider: "whatsapp_cloud_api",
   is_enabled: true,
-  config: { secret_env: "TEST_WA_TOKEN", phone_number_id_env: "TEST_WA_PHONE_ID" },
+  config: { secret_env: "WHATSAPP_ACCESS_TOKEN", phone_number_id_env: "WHATSAPP_PHONE_NUMBER_ID" },
   from_email: null,
   from_whatsapp: "+96522220000",
 };
@@ -177,9 +177,9 @@ export const TWILIO = {
   provider: "twilio",
   is_enabled: true,
   config: {
-    account_sid_env: "TEST_TWILIO_SID",
-    secret_env: "TEST_TWILIO_TOKEN",
-    from_whatsapp_env: "TEST_TWILIO_FROM",
+    account_sid_env: "TWILIO_ACCOUNT_SID",
+    secret_env: "TWILIO_AUTH_TOKEN",
+    from_whatsapp_env: "TWILIO_WHATSAPP_FROM",
   },
   from_email: null,
   from_whatsapp: "whatsapp:+14155238886",
@@ -189,7 +189,7 @@ export const POSTORA = {
   is_enabled: true,
   config: {
     api_base: "https://api.postora.cloud/functions/v1/partner-api",
-    api_key_env: "TEST_POSTORA_KEY",
+    api_key_env: "POSTORA_API_KEY",
   },
   from_email: null,
   from_whatsapp: null,
@@ -197,7 +197,7 @@ export const POSTORA = {
 export const EVOLUTION = {
   provider: "evolution_api",
   is_enabled: true,
-  config: { api_base: "http://evolution:8080", api_key_env: "TEST_EVOLUTION_KEY" },
+  config: { api_base: "http://evolution:8080", api_key_env: "EVOLUTION_API_KEY" },
   from_email: null,
   from_whatsapp: null,
 };
@@ -240,14 +240,14 @@ export function requestedUrls() {
 /** Fresh fetch stub, provider secrets, and a paired tenant with no providers. */
 export function resetDispatchFixtures() {
   vi.stubGlobal("fetch", vi.fn());
-  vi.stubEnv("TEST_RESEND_KEY", "re_key");
-  vi.stubEnv("TEST_WA_TOKEN", "meta-token");
-  vi.stubEnv("TEST_WA_PHONE_ID", "999");
-  vi.stubEnv("TEST_TWILIO_SID", "AC123");
-  vi.stubEnv("TEST_TWILIO_TOKEN", "auth-token");
-  vi.stubEnv("TEST_TWILIO_FROM", "whatsapp:+14155238886");
-  vi.stubEnv("TEST_POSTORA_KEY", "pk_live_test");
-  vi.stubEnv("TEST_EVOLUTION_KEY", "evo-global-key");
+  vi.stubEnv("RESEND_API_KEY", "re_key");
+  vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "meta-token");
+  vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID", "999");
+  vi.stubEnv("TWILIO_ACCOUNT_SID", "AC123");
+  vi.stubEnv("TWILIO_AUTH_TOKEN", "auth-token");
+  vi.stubEnv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886");
+  vi.stubEnv("POSTORA_API_KEY", "pk_live_test");
+  vi.stubEnv("EVOLUTION_API_KEY", "evo-global-key");
 
   db.notification = notification();
   db.connection = { instance_name: "danat", last_connection_state: "open" };

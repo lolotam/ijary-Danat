@@ -403,6 +403,15 @@ export async function seedCompanyOpsGroup(
       evoStmt.params,
     );
   }
+  if (colMap.has("whatsapp_connections")) {
+    // Inactive on purpose: an active row would make the insert trigger stamp
+    // connection_id on the chats below and tie this seed to migration 333.
+    await insertRow(client, colMap, "whatsapp_connections", cid, {
+      method: "evolution_qr",
+      is_active: false,
+      status: "disconnected",
+    });
+  }
   const chatNumber = `9655000${tag.slice(0, 4)}@s.whatsapp.net`;
   const chatStmt = buildScopedInsert(colMap, "whatsapp_chats", cid, {
     chat_number: chatNumber,

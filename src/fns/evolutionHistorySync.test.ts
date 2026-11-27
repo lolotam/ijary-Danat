@@ -35,7 +35,7 @@ const db = {
   provider: {
     provider: "evolution_api",
     is_enabled: true,
-    config: { api_base: "http://evolution:8080", api_key_env: "TEST_EVOLUTION_KEY" },
+    config: { api_base: "http://evolution:8080", api_key_env: "EVOLUTION_API_KEY" },
   } as Record<string, unknown>,
   contactUpserts: [] as Record<string, unknown>[][],
   ingestBatches: [] as Record<string, unknown>[][],
@@ -150,7 +150,7 @@ function baileysMessage(id: string, jid: string, body: string) {
 describe("runEvolutionHistorySweep", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
+    vi.stubEnv("EVOLUTION_API_KEY", "evo-key");
     db.connection = { instance_name: "danat", last_connection_state: "open" };
     db.contactUpserts = [];
     db.ingestBatches = [];
@@ -308,7 +308,7 @@ describe("runEvolutionHistorySweep", () => {
 describe("runEvolutionHistorySync (the server function)", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
+    vi.stubEnv("EVOLUTION_API_KEY", "evo-key");
     db.connection = { instance_name: "danat", last_connection_state: "open" };
     db.contactUpserts = [];
     db.ingestBatches = [];

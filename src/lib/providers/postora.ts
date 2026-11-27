@@ -3,11 +3,15 @@ import { z } from "zod";
 import type { Json } from "@/integrations/supabase/database.types";
 import type { ProviderResult, WhatsAppProviderMessage } from "@/lib/providers/types";
 import {
+  assertPlatformEndpoint,
   configValue,
   PROVIDER_TIMEOUT_MS,
   requiredEnv,
   toInternationalDigits,
 } from "@/lib/providers/types";
+
+/** عنوان واجهة Postora كما زرعه الترحيل 134. */
+const POSTORA_API_BASE = "https://api.postora.cloud/functions/v1/partner-api";
 
 const successSchema = z.object({
   message_id: z.string(),
@@ -128,6 +132,8 @@ function resolvePostoraCredentials(config: Json): { apiBase: string; apiKey: str
   const apiBase = configValue(config, "api_base");
   if (!apiBase) throw new Error("Postora provider config is missing api_base.");
   const apiKey = requiredEnv(config, "api_key_env");
+  // The key comes from the platform's environment, so it may only reach Postora itself.
+  assertPlatformEndpoint(apiBase, [POSTORA_API_BASE]);
   return { apiBase, apiKey };
 }
 

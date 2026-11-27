@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
+import { assertNotSupportSession } from "@/company/supportSessionGuard";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { parseServerInput } from "@/lib/parseServerInput";
@@ -55,6 +56,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => parseServerInput(schema, data))
   .handler(async ({ data, context }) => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
     await requireRole(context, "admin", {
       attempted: "user.update",
       refusal: "Only an admin may update a user account.",

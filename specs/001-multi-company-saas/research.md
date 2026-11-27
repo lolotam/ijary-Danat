@@ -29,6 +29,16 @@ It returns `null` when the company is suspended, unless the JWT carries `allow_s
 | Application adds `.eq("company_id", …)` everywhere | Fails FR-003: a forgotten filter exposes data. This is the current state. |
 | One schema or database per company | 248 migrations and 186 functions per company; cross-company platform views become hard; no gain at tens of companies. |
 
+**Measured cost (T200, 2026-11-27)**: This uses the count benchmark from migration 243 (4,628 rows counted, where migration 243 counted invoices on production). The run was on the local test database (`bun run test:db`, Postgres 17) with two companies of 4,628 `notifications` rows each. Each figure is `explain analyze select count(*)`, the median of 9 runs:
+
+| Caller | Rows seen | Median | Min |
+|---|---|---|---|
+| superuser, no RLS (both companies) | 9,256 | 1.12 ms | 1.04 ms |
+| `authenticated` company admin | 4,628 | 1.46 ms | 1.05 ms |
+| `company_service` | 4,628 | 0.87 ms | 0.74 ms |
+
+The hoisted `(select public.current_company_id())` runs once per statement as an InitPlan, so the policy adds well under 1 ms. This is the same order as migration 243's 0.8 ms, far from the 47.9 ms of the per-row form. The test database's data volume is synthetic, so the production figure stays to be confirmed in T202.
+
 ## R2. Server and worker code must not bypass RLS
 
 **Decision**: Add a Postgres role `company_service` (no `BYPASSRLS`, granted to `authenticator`). Server functions and worker jobs obtain a client from `companyClient(companyId)`, which signs a short-lived JWT (`role: company_service`, `company_id`, optional `allow_suspended`) with the project JWT secret. PostgREST switches to that role, so RLS applies with the company fixed by the token. `companyClient` throws when `companyId` is missing.

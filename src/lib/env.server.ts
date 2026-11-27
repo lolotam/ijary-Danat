@@ -159,6 +159,14 @@ export const envSchema = z
         .refine(isValidHttpUrl, "EVOLUTION_API_URL must be a valid http:// or https:// URL"),
     ),
     EVOLUTION_API_KEY: optionalEnv(z.string().trim().min(1, "EVOLUTION_API_KEY must not be empty")),
+    // Cloudflare zone that hosts the platform, used for the custom-hostname
+    // (Cloudflare for SaaS) flow of the custom domains.
+    CLOUDFLARE_API_TOKEN: optionalEnv(
+      z.string().trim().min(1, "CLOUDFLARE_API_TOKEN must not be empty"),
+    ),
+    CLOUDFLARE_ZONE_ID: optionalEnv(
+      z.string().trim().min(1, "CLOUDFLARE_ZONE_ID must not be empty"),
+    ),
   })
   .superRefine((data, ctx) => {
     if (data.PLATFORM_ROOT_HOST.toLowerCase() === data.PLATFORM_ADMIN_HOST.toLowerCase()) {
@@ -221,6 +229,21 @@ export const envSchema = z
         message: "EVOLUTION_API_KEY is required when EVOLUTION_API_URL is set",
       });
     }
+
+    if (data.CLOUDFLARE_API_TOKEN && !data.CLOUDFLARE_ZONE_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLOUDFLARE_ZONE_ID"],
+        message: "CLOUDFLARE_ZONE_ID is required when CLOUDFLARE_API_TOKEN is set",
+      });
+    }
+    if (data.CLOUDFLARE_ZONE_ID && !data.CLOUDFLARE_API_TOKEN) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLOUDFLARE_API_TOKEN"],
+        message: "CLOUDFLARE_API_TOKEN is required when CLOUDFLARE_ZONE_ID is set",
+      });
+    }
   });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -254,6 +277,22 @@ export function parseServerEnv(rawEnv: Record<string, string | undefined>): Serv
     );
   }
   return result.data;
+}
+
+/**
+ * يقرأ رمز Cloudflare ومعرّف منطقة المنصة، أو `null` إن لم يُضبطا معاً.
+ *
+ * The custom-domain flow stays off until the owner provides the zone and a
+ * token with the "SSL and Certificates Write" permission (T190 is still open),
+ * so a missing pair is a configuration state the caller reports in its own
+ * words — not a broken deployment. The names live in the schema above, so the
+ * validated names and the read names cannot drift apart.
+ */
+export function readCloudflareConfig(): { apiToken: string; zoneId: string } | null {
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+  const zoneId = process.env.CLOUDFLARE_ZONE_ID?.trim();
+  if (!apiToken || !zoneId) return null;
+  return { apiToken, zoneId };
 }
 
 /**

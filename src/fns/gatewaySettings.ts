@@ -5,6 +5,7 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requireModule } from "@/company/requireModule";
+import { assertNotSupportSession } from "@/company/supportSessionGuard";
 import { requirePermission, type PermissionContext } from "@/fns/requirePermission";
 import { loadGatewayConnection, saveGatewayCredentials } from "@/gateways/connectionStore.server";
 import { gatewayRegistry } from "@/gateways/registry";
@@ -256,6 +257,7 @@ export const gatewaySaveCredentials = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(saveGatewayCredentialsSchema)
   .handler(async ({ data, context }) => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
     const db = await requireGatewayContext(
       context as never,
       "gateway.save_credentials",
@@ -298,6 +300,7 @@ export const gatewayTestConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(providerSchema)
   .handler(async ({ data, context }) => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
     const db = await requireGatewayContext(
       context as never,
       "gateway.test",
@@ -351,6 +354,7 @@ export const gatewayActivate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(providerSchema)
   .handler(async ({ data, context }) => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
     const db = await requireGatewayContext(
       context as never,
       "gateway.activate",
@@ -407,6 +411,7 @@ export const gatewayDeactivate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(providerSchema)
   .handler(async ({ data, context }) => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
     const db = await requireGatewayContext(
       context as never,
       "gateway.deactivate",

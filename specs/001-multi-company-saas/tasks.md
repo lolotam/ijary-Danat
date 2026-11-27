@@ -371,12 +371,12 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 9
 
-- [ ] T156 [P] [US9] SQL tests: one active method per company, one number on one company, another company cannot read a connection, in `src/db/whatsapp/connections.sqltest.ts`
+- [x] T156 [P] [US9] SQL tests: one active method per company, one number on one company, another company cannot read a connection, in `src/db/whatsapp/connections.sqltest.ts`
 - [ ] T157 [P] [US9] Routing tests: Evolution event by connection id and secret; Meta event by `phone_number_id`; unknown number dropped, in `src/whatsapp/routing.test.ts`
 
 ### Implementation for User Story 9
 
-- [ ] T158 [US9] Write migration `db/migrations/<next free number>_whatsapp_connections.sql` (295 is taken since the T052l split): `whatsapp_connections` replacing `evolution_connections`; `connection_id` on the four `whatsapp_*` tables (data-model.md: `whatsapp_connections.method`, `whatsapp_connections.status`, `whatsapp_connections.is_active`, `whatsapp_connections.connected_number`, `whatsapp_connections.phone_number_id`)
+- [x] T158 [US9] Write migration `db/migrations/<next free number>_whatsapp_connections.sql` (295 is taken since the T052l split): `whatsapp_connections` replacing `evolution_connections`; `connection_id` on the four `whatsapp_*` tables (data-model.md: `whatsapp_connections.method`, `whatsapp_connections.status`, `whatsapp_connections.is_active`, `whatsapp_connections.connected_number`, `whatsapp_connections.phone_number_id`) (done as `333_whatsapp_connections.sql`)
 - [ ] T159 [US9] Per-company Evolution instance lifecycle in `src/whatsapp/evolutionInstance.ts`
 - [ ] T160 [US9] Route `src/routes/api/public/webhooks/evolution.$connectionId.ts` and connection lookup in `src/fns/evolutionWebhook.ts`; delete `src/routes/api/public/evolution-webhook.ts`
 - [ ] T161 [US9] Per-company disconnect detection and alert in `src/fns/evolutionSessionWatch.ts` and `src/fns/notifyWhatsappSessionDisconnected.ts`
@@ -400,14 +400,14 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 10
 
-- [ ] T169 [P] [US10] Tests: no company sender uses the platform sender with company name and reply-to; own sender takes precedence; a possibly-delivered failure is not resent, in `src/fns/dispatchEmailChannel.test.ts`
+- [x] T169 [P] [US10] Tests: no company sender uses the platform sender with company name and reply-to; own sender takes precedence; a possibly-delivered failure is not resent, in `src/fns/dispatchEmailChannel.test.ts`
 
 ### Implementation for User Story 10
 
-- [ ] T170 [US10] Write migration `db/migrations/296_email_sender_per_company.sql`: move `provider_configs` secret references to `company_secrets`
-- [ ] T171 [US10] ⛔ BLOCKED(owner: platform default sender address and provider) Default sender in `src/fns/dispatchEmailChannel.ts`; read company secrets in `src/lib/providers/smtp.ts` and `src/lib/providers/types.ts`
-- [ ] T172 [US10] Routes `src/routes/api/public/webhooks/resend.$companyId.ts` and `src/routes/api/public/webhooks/resend-platform.ts`; update `src/fns/resendWebhook.ts`; delete `src/routes/api/public/resend-webhook.ts`
-- [ ] T173 [US10] `emailSenderStatus` in `src/fns/emailSenderStatus.ts` and its display in `src/routes/admin.settings.notifications.tsx`
+- [x] T170 [US10] Write migration `db/migrations/296_email_sender_per_company.sql`: move `provider_configs` secret references to `company_secrets` (done as `332_email_sender_per_company.sql`)
+- [ ] T171 [US10] ⛔ BLOCKED(owner: platform default sender address and provider) Default sender in `src/fns/dispatchEmailChannel.ts`; read company secrets in `src/lib/providers/smtp.ts` and `src/lib/providers/types.ts` — code done (`PLATFORM_EMAIL_PROVIDER`, `PLATFORM_EMAIL_FROM`, `PLATFORM_RESEND_WEBHOOK_SECRET`); open only for the owner's sender address
+- [x] T172 [US10] Routes `src/routes/api/public/webhooks/resend.$companyId.ts` and `src/routes/api/public/webhooks/resend-platform.ts`; update `src/fns/resendWebhook.ts`; delete `src/routes/api/public/resend-webhook.ts`
+- [x] T173 [US10] `emailSenderStatus` in `src/fns/emailSenderStatus.ts` and its display in `src/routes/admin.settings.notifications.tsx`
 - [ ] T174 [US10] Gate: quickstart.md Phase 4 step 7; record SC-014
 
 **Checkpoint**: Plan Phase 4 gate reached.
@@ -422,16 +422,16 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 11
 
-- [ ] T175 [P] [US11] SQL tests: an open session grants the company, an ended or expired one grants nothing, `write_audit` records the impersonator, in `src/db/platform/impersonation.sqltest.ts`
-- [ ] T176 [P] [US11] Tests: start refused without a reason; credential and secret functions refuse during a session, in `src/platform/supportSession.test.ts`
+- [x] T175 [P] [US11] SQL tests: an open session grants the company, an ended or expired one grants nothing, `write_audit` records the impersonator, in `src/db/platform/impersonation.sqltest.ts`
+- [x] T176 [P] [US11] Tests: start refused without a reason; credential and secret functions refuse during a session, in `src/platform/supportSession.test.ts`
 
 ### Implementation for User Story 11
 
-- [ ] T177 [US11] Write migration `db/migrations/297_impersonation_sessions.sql`: the table, the session branch of `current_company_id()`, the impersonator in `write_audit` (data-model.md: `impersonation_sessions.reason`, `impersonation_sessions.expires_at`; research.md R17)
-- [ ] T178 [US11] `platformStartSupportSession` and `platformEndSupportSession` with token minting in `src/platform/supportSession.ts`
+- [x] T177 [US11] Write migration `db/migrations/297_impersonation_sessions.sql`: the table, the session branch of `current_company_id()`, the impersonator in `write_audit` (data-model.md: `impersonation_sessions.reason`, `impersonation_sessions.expires_at`; research.md R17) (done as `330_impersonation_sessions.sql`)
+- [x] T178 [US11] `platformStartSupportSession` and `platformEndSupportSession` with token minting in `src/platform/supportSession.ts`
 - [ ] T179 [US11] Accept the support token on the company host in `src/routes/support-session.tsx` and `src/auth/AuthProvider.tsx`
 - [ ] T180 [US11] Persistent red banner in `src/components/admin/SupportSessionBanner.tsx`, mounted in `src/routes/admin.tsx`
-- [ ] T181 [US11] Refuse with `SUPPORT_SESSION_FORBIDDEN` in `src/fns/gatewaySettings.ts`, `src/fns/whatsappSettings.ts`, `src/fns/updateAppUser.ts` and `src/fns/passwordReset.ts`
+- [ ] T181 [US11] Refuse with `SUPPORT_SESSION_FORBIDDEN` in `src/fns/gatewaySettings.ts`, `src/fns/whatsappSettings.ts`, `src/fns/updateAppUser.ts` and `src/fns/passwordReset.ts` — done in gatewaySettings, updateAppUser, passwordReset; `whatsappSettings.ts` gets it when US9 T159–T163 creates it
 - [ ] T182 [US11] Start and end controls in `src/routes/platform.companies.$id.tsx`
 - [ ] T183 [US11] Gate: quickstart.md Phase 5 steps 1 to 5
 
@@ -468,16 +468,16 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 13
 
-- [ ] T189 [P] [US13] Tests: a verified custom host resolves to its company, an unverified one does not; landing content is the host company's only, in `src/company/customDomain.test.ts`
+- [x] T189 [P] [US13] Tests: a verified custom host resolves to its company, an unverified one does not; landing content is the host company's only, in `src/company/customDomain.test.ts`
 
 ### Implementation for User Story 13
 
 - [ ] T190 [US13] VERIFY Cloudflare for SaaS custom hostname limits and API on the owner's plan; record in research.md R5
-- [ ] T191 [US13] Write migration `db/migrations/299_custom_domains.sql` for custom rows and their state (data-model.md: `company_domains.kind`, `company_domains.verification_status`)
-- [ ] T192 [US13] `platformAddCustomDomain` and `platformVerifyCustomDomain` in `src/platform/domains.ts`, with the Cloudflare client in `src/platform/cloudflare.server.ts`
-- [ ] T193 [US13] Domains panel in `src/components/platform/DomainsPanel.tsx`
-- [ ] T194 [US13] Accept verified custom hosts in `src/company/hostCompany.server.ts`; document the allow-list update in `deploy/ijary/README.md`
-- [ ] T195 [US13] Per-company landing: scope `src/hooks/useLandingSettings.ts` by the host's company and serve it from `src/routes/index.tsx` when the section is on
+- [x] T191 [US13] Write migration `db/migrations/299_custom_domains.sql` for custom rows and their state (data-model.md: `company_domains.kind`, `company_domains.verification_status`) (done as `331_custom_domains.sql`)
+- [x] T192 [US13] `platformAddCustomDomain` and `platformVerifyCustomDomain` in `src/platform/domains.ts`, with the Cloudflare client in `src/platform/cloudflare.server.ts`
+- [x] T193 [US13] Domains panel in `src/components/platform/DomainsPanel.tsx`
+- [x] T194 [US13] Accept verified custom hosts in `src/company/hostCompany.server.ts`; document the allow-list update in `deploy/ijary/README.md`
+- [ ] T195 [US13] Per-company landing: scope `src/hooks/useLandingSettings.ts` by the host's company and serve it from `src/routes/index.tsx` when the section is on — settings scoped; `useLandingBrands`, `useLandingSlides`, `useLeasingInquiries` still to scope
 - [ ] T196 [US13] Platform marketing page replacing the temporary page in `src/routes/index.tsx` and `src/components/platform/MarketingPage.tsx`
 - [ ] T197 [US13] Gate: quickstart.md "Last phase"
 
@@ -489,10 +489,10 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 - [ ] T198 [P] Update `README.md`, `db/README.md` and `src/routes/README.md` for the multi-company model, the worker and the new route groups
 - [ ] T199 [P] Write the IJARY deployment and operations runbook in `deploy/ijary/README.md` (stack, environment, migrations, backups with extended attributes preserved, worker, wildcard address)
-- [ ] T200 Measure `current_company_id()` cost with the invoice-count benchmark from migration 243 and record it in `specs/001-multi-company-saas/research.md` R1
+- [x] T200 Measure `current_company_id()` cost with the invoice-count benchmark from migration 243 and record it in `specs/001-multi-company-saas/research.md` R1
 - [ ] T201 Run the `security-review` skill over isolation, tokens, secrets and webhooks; fix or record each finding
 - [ ] T202 Run every phase of `specs/001-multi-company-saas/quickstart.md` end to end on a staging stack and record the results
-- [ ] T203 Confirm SC-016: no command, migration or deployment in this feature targeted Danat's production
+- [x] T203 Confirm SC-016: no command, migration or deployment in this feature targeted Danat's production
 - [ ] T204 [P] Run `graphify update .` and refresh `graphify-out/`
 
 ---

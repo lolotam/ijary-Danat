@@ -1,3 +1,4 @@
+import { resolveEmailSender, type EmailSenderProvider } from "@/fns/emailSenderStatus";
 import { emailLogoFor } from "@/fns/publicBranding";
 import { readPublicBranding } from "@/fns/publicBranding.server";
 import {
@@ -62,17 +63,14 @@ function errorMessage(error: unknown): string {
  * the fallback like any other refusal.
  */
 async function sendThrough(
-  config: EmailConfig,
+  provider: EmailSenderProvider,
   message: Omit<EmailProviderMessage, "config" | "from">,
 ): Promise<{ messageId: string; from: string }> {
-  const from =
-    config.from_email ??
-    (config.provider === "resend" ? process.env.RESEND_FROM : process.env.SMTP_FROM);
-  if (!from) throw new Error(`${config.provider} sender address is not configured.`);
-  const request = { ...message, config: config.config, from };
+  if (!provider.from) throw new Error(`${provider.provider} sender address is not configured.`);
+  const request = { ...message, config: provider.config, from: provider.from };
   const result =
-    config.provider === "resend" ? await sendWithResend(request) : await sendWithSmtp(request);
-  return { messageId: result.messageId, from };
+    provider.provider === "resend" ? await sendWithResend(request) : await sendWithSmtp(request);
+  return { messageId: result.messageId, from: provider.from };
 }
 
 /**
@@ -84,18 +82,23 @@ async function sendThrough(
  * job has to reason about.
  */
 async function sendWithFallback(
-  [primary, fallback]: EmailConfig[],
+  [primary, fallback]: EmailSenderProvider[],
   message: Omit<EmailProviderMessage, "config" | "from">,
-): Promise<{ config: EmailConfig; messageId: string; from: string; issue?: NotificationIssue }> {
+): Promise<{
+  provider: EmailSenderProvider;
+  messageId: string;
+  from: string;
+  issue?: NotificationIssue;
+}> {
   try {
-    return { config: primary, ...(await sendThrough(primary, message)) };
+    return { provider: primary, ...(await sendThrough(primary, message)) };
   } catch (primaryError) {
     if (!fallback || mayHaveDelivered(primaryError)) throw primaryError;
     const cause = `${primary.provider}: ${errorMessage(primaryError)}`;
     try {
       const sent = await sendThrough(fallback, message);
       return {
-        config: fallback,
+        provider: fallback,
         ...sent,
         issue: {
           kind: "failure",
@@ -149,12 +152,24 @@ export async function sendEmailChannel(input: ChannelInput): Promise<ChannelOutc
     ...stringArray(notification.payload, "recipients"),
   ];
   const uniqueRecipients = [...new Set(recipients.filter(Boolean))];
-  const providers = emailProviders(configs);
   if (!uniqueRecipients.length) {
     issues.push({ kind: "skip", message: "No email recipient is available." });
     return { messageIds, issues, provider: null, senderAddress: input.senderAddress };
   }
-  if (!providers.length) {
+
+  // The sender comes from the company, not from a global setting: its own
+  // provider rows when it configured one, the platform's default sender when
+  // it did not (FR-068). The resolution also carries the company's reply
+  // address, so an answer reaches the office rather than the sender.
+  const sender = await resolveEmailSender({
+    companyId: notification.company_id,
+    locale: notification.locale === "en" ? "en" : "ar",
+    ownProviders: emailProviders(configs),
+  });
+  if (!sender.providers.length) {
+    // Neither the company nor the platform has a sender. The message is not
+    // sent and the row is not retried: no retry configures a sender that is
+    // not there, and the Notification Log carries the reason.
     issues.push({ kind: "skip", message: "No email provider is enabled." });
     return { messageIds, issues, provider: null, senderAddress: input.senderAddress };
   }
@@ -176,7 +191,7 @@ export async function sendEmailChannel(input: ChannelInput): Promise<ChannelOutc
     emailLogoFor(branding),
     emailBrandName(notification.locale === "en" ? "en" : "ar"),
   );
-  const sent = await sendWithFallback(providers, {
+  const sent = await sendWithFallback(sender.providers, {
     body: htmlBody,
     subject: notification.subject ?? "",
     to: uniqueRecipients,
@@ -185,11 +200,12 @@ export async function sendEmailChannel(input: ChannelInput): Promise<ChannelOutc
     // again and a send that timed out after acceptance is recognised rather
     // than delivered twice.
     idempotencyKey: notification.id,
+    ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
   });
   messageIds.push(sent.messageId);
   if (sent.issue) issues.push(sent.issue);
 
-  if (sent.config.provider === "resend") {
+  if (sent.provider.provider === "resend") {
     // A notification sent through Resend is mail this company sent, and the
     // mailbox is where sent mail is read. Only the manual compose screen
     // recorded it before, so the Resend filter showed an empty folder while
@@ -215,5 +231,10 @@ export async function sendEmailChannel(input: ChannelInput): Promise<ChannelOutc
     }
   }
 
-  return { messageIds, issues, provider: sent.config.provider, senderAddress: sent.from };
+  return {
+    messageIds,
+    issues,
+    provider: sent.provider.provider,
+    senderAddress: sent.from,
+  };
 }

@@ -6,7 +6,7 @@ import { PROVIDER_TIMEOUT_MS } from "./types";
 
 const CONFIG = {
   api_base: "https://api.postora.cloud/functions/v1/partner-api",
-  api_key_env: "TEST_POSTORA_KEY",
+  api_key_env: "POSTORA_API_KEY",
 };
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
@@ -31,7 +31,7 @@ const template = {
 describe("sendWithPostora", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_POSTORA_KEY", "pk_live_test");
+    vi.stubEnv("POSTORA_API_KEY", "pk_live_test");
     vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
@@ -216,7 +216,7 @@ describe("sendWithPostora", () => {
 describe("getPostoraStatus", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_POSTORA_KEY", "pk_live_test");
+    vi.stubEnv("POSTORA_API_KEY", "pk_live_test");
     vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
@@ -279,7 +279,7 @@ describe("getPostoraStatus", () => {
 describe("listPostoraTemplates", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_POSTORA_KEY", "pk_live_test");
+    vi.stubEnv("POSTORA_API_KEY", "pk_live_test");
     vi.spyOn(console, "info").mockImplementation(() => {});
   });
 

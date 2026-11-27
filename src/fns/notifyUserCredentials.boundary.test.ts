@@ -56,8 +56,8 @@ describe("credential rows survive the dispatcher's recipient expansion", () => {
     resetCredentialBoundary();
     sendMail.mockReset();
     sendMail.mockResolvedValue({ messageId: "smtp-1" });
-    vi.stubEnv("TEST_SMTP_HOST", "smtp.test");
-    vi.stubEnv("TEST_SMTP_PASS", "smtp-pass");
+    vi.stubEnv("SMTP_HOST", "smtp.test");
+    vi.stubEnv("SMTP_PASS", "smtp-pass");
   });
 
   afterEach(() => {

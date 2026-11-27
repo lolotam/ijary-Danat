@@ -141,6 +141,26 @@ const SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
 const EMAIL_ID = "56761188-7520-42d8-8898-ff6fc54ce618";
 
 /**
+ * هدف الطلب كما تسلّمه المسارات: الشركة التي أرسلت الرسالة وسرّها.
+ *
+ * The company comes from the route, never from the payload, so the handler
+ * takes it as an argument — these cases exercise a company that configured
+ * its own sender.
+ */
+const TARGET = {
+  kind: "company" as const,
+  companyId: TEST_COMPANY.id,
+  secret: SECRET,
+};
+
+/**
+ * يستدعي المعالج بهدف الشركة ووقت الاختبار.
+ */
+function respond(request: Request, now: number = NOW): Promise<Response> {
+  return respondToResendWebhook(request, TARGET, now);
+}
+
+/**
  * يوقّع الطلب كما يوقّعه Svix تمامًا، عبر WebCrypto مباشرة.
  *
  * Signed here with the raw platform API rather than by calling the project's
@@ -254,13 +274,16 @@ describe("resendWebhook signature verification", () => {
     vi.restoreAllMocks();
   });
 
-  it("fails closed and says so when RESEND_WEBHOOK_SECRET is unset", async () => {
-    delete process.env.RESEND_WEBHOOK_SECRET;
+  it("fails closed and says so when the webhook secret is unset", async () => {
+    // The platform's default sender verifies with the environment's secret;
+    // an unconfigured one must stop the endpoint rather than accept anything.
+    delete process.env.PLATFORM_RESEND_WEBHOOK_SECRET;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     seedSentNotification(EMAIL_ID);
 
     const response = await respondToResendWebhook(
       await signedRequest(bouncePayload("Permanent")),
+      { kind: "platform" },
       NOW,
     );
 
@@ -285,7 +308,7 @@ describe("resendWebhook signature verification", () => {
       body,
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(401);
     // The half that makes this non-vacuous: a 401 that still mutated would pass
@@ -310,7 +333,7 @@ describe("resendWebhook signature verification", () => {
       body: JSON.stringify(bouncePayload("Permanent")),
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(401);
     // Without a svix-id the partial unique index cannot dedupe, so archiving
@@ -332,8 +355,8 @@ describe("resendWebhook signature verification", () => {
         body: JSON.stringify(bouncePayload("Permanent")),
       });
 
-    await respondToResendWebhook(build(), NOW);
-    await respondToResendWebhook(build(), NOW);
+    await respond(build(), NOW);
+    await respond(build(), NOW);
 
     expect(fake.store.tables.email_webhook_events).toHaveLength(1);
   });
@@ -350,7 +373,7 @@ describe("resendWebhook signature verification", () => {
       body: JSON.stringify({ type: "email.bounced", padding: "x".repeat(300 * 1024) }),
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(413);
     expect(fake.store.tables.email_webhook_events).toHaveLength(0);
@@ -376,7 +399,7 @@ describe("resendWebhook signature verification", () => {
       body: "small body, large declared length",
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(413);
     expect(request.bodyUsed).toBe(false);
@@ -406,7 +429,7 @@ describe("resendWebhook signature verification", () => {
       duplex: "half",
     } as unknown as RequestInit);
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(413);
     // Cut off rather than drained: stopping only at the end would mean the cap
@@ -430,7 +453,7 @@ describe("resendWebhook signature verification", () => {
       body: "ف".repeat(200 * 1024),
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(413);
     expect(fake.store.tables.email_webhook_events).toHaveLength(0);
@@ -441,7 +464,7 @@ describe("resendWebhook signature verification", () => {
     seedSentNotification(EMAIL_ID);
     const stale = NOW - 10 * 60 * 1000;
 
-    const response = await respondToResendWebhook(
+    const response = await respond(
       await signedRequest(bouncePayload("Permanent"), { timestampMs: stale }),
       NOW,
     );
@@ -460,7 +483,7 @@ describe("resendWebhook signature verification", () => {
       body: JSON.stringify(bouncePayload("Permanent")),
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(401);
     // No svix-id, so nothing is archived — see the flood test above.
@@ -481,7 +504,7 @@ describe("resendWebhook signature verification", () => {
       body,
     });
 
-    const response = await respondToResendWebhook(request, NOW);
+    const response = await respond(request, NOW);
 
     expect(response.status).toBe(200);
     expect(notificationById("notif-1")?.state).toBe("needs_review");
@@ -586,10 +609,7 @@ describe("resendWebhook notification handling", () => {
   it("moves a permanently bounced notification to needs_review, not failed", async () => {
     seedSentNotification(EMAIL_ID);
 
-    const response = await respondToResendWebhook(
-      await signedRequest(bouncePayload("Permanent")),
-      NOW,
-    );
+    const response = await respond(await signedRequest(bouncePayload("Permanent")), NOW);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ok: true, applied: true });
@@ -603,10 +623,7 @@ describe("resendWebhook notification handling", () => {
   it("leaves a transiently bounced notification alone", async () => {
     seedSentNotification(EMAIL_ID);
 
-    const response = await respondToResendWebhook(
-      await signedRequest(bouncePayload("Transient")),
-      NOW,
-    );
+    const response = await respond(await signedRequest(bouncePayload("Transient")), NOW);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ignored: true });
@@ -623,7 +640,7 @@ describe("resendWebhook notification handling", () => {
   it("records a delivered event without touching the notification", async () => {
     seedSentNotification(EMAIL_ID);
 
-    const response = await respondToResendWebhook(
+    const response = await respond(
       await signedRequest({ type: "email.delivered", data: { email_id: EMAIL_ID } }),
       NOW,
     );
@@ -638,10 +655,7 @@ describe("resendWebhook notification handling", () => {
     // lookup would silently skip every notification sent by two channels.
     seedSentNotification(`${EMAIL_ID},wamid.HBgLOTY1...`);
 
-    const response = await respondToResendWebhook(
-      await signedRequest(bouncePayload("Permanent")),
-      NOW,
-    );
+    const response = await respond(await signedRequest(bouncePayload("Permanent")), NOW);
 
     expect(response.status).toBe(200);
     expect(notificationById("notif-1")?.state).toBe("needs_review");
@@ -654,7 +668,7 @@ describe("resendWebhook notification handling", () => {
   it("does not match a notification whose id merely contains the event id", async () => {
     seedSentNotification(`${EMAIL_ID}-extra-suffix`);
 
-    const response = await respondToResendWebhook(
+    const response = await respond(
       await signedRequest(bouncePayload("Permanent", EMAIL_ID, SETTLED)),
       NOW,
     );
@@ -664,7 +678,7 @@ describe("resendWebhook notification handling", () => {
   });
 
   it("acknowledges an event for mail this app never sent", async () => {
-    const response = await respondToResendWebhook(
+    const response = await respond(
       await signedRequest(bouncePayload("Permanent", "unknown-email-id", SETTLED)),
       NOW,
     );
@@ -681,7 +695,7 @@ describe("resendWebhook notification handling", () => {
     // invisible failure this endpoint exists to prevent.
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const response = await respondToResendWebhook(
+    const response = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_race" }),
       NOW,
     );
@@ -694,14 +708,14 @@ describe("resendWebhook notification handling", () => {
 
   it("applies the retry once the notification row lands", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const early = await respondToResendWebhook(
+    const early = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_race" }),
       NOW,
     );
     expect(early.status).toBe(503);
 
     seedSentNotification(EMAIL_ID);
-    const retry = await respondToResendWebhook(
+    const retry = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_race" }),
       NOW,
     );
@@ -720,7 +734,7 @@ describe("resendWebhook notification handling", () => {
     const body = JSON.stringify(bouncePayload("Permanent"));
     const timestamp = Math.floor(NOW / 1000).toString();
 
-    await respondToResendWebhook(
+    await respond(
       new Request("https://danat-future.com/api/public/resend-webhook", {
         method: "POST",
         headers: {
@@ -734,7 +748,7 @@ describe("resendWebhook notification handling", () => {
     );
     expect(fake.store.tables.email_webhook_events[0]).toMatchObject({ signature_valid: false });
 
-    const fixed = await respondToResendWebhook(
+    const fixed = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_setup" }),
       NOW,
     );
@@ -755,14 +769,14 @@ describe("resendWebhook notification handling", () => {
   it("treats a redelivery of the same svix-id as a no-op", async () => {
     seedSentNotification(EMAIL_ID);
 
-    const first = await respondToResendWebhook(
+    const first = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_replay" }),
       NOW,
     );
     expect(await first.json()).toMatchObject({ applied: true });
 
     // Svix retries with the SAME id until it gets a 2xx.
-    const second = await respondToResendWebhook(
+    const second = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_replay" }),
       NOW,
     );
@@ -783,7 +797,7 @@ describe("resendWebhook notification handling", () => {
       failure_reason: null,
     });
 
-    const response = await respondToResendWebhook(
+    const response = await respond(
       await signedRequest(bouncePayload("Permanent"), { id: "msg_late" }),
       NOW,
     );

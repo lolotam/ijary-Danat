@@ -23,6 +23,8 @@ import { limitsUi } from "./ar/limitsUi";
 import { platformOverview } from "./ar/platformOverview";
 import { platformOverviewUsage } from "./ar/platformOverviewUsage";
 import { importLimits } from "./ar/importLimits";
+import { platformDomains } from "./ar/platformDomains";
+import { emailSender } from "./ar/emailSender";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -63,4 +65,6 @@ export const ar: Record<string, string> = {
   ...platformOverview,
   ...platformOverviewUsage,
   ...importLimits,
+  ...platformDomains,
+  ...emailSender,
 };

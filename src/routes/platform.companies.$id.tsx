@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CompanyStatusControl } from "@/components/platform/CompanyStatusControl";
 import { CompanyUsersPanel } from "@/components/platform/CompanyUsersPanel";
+import { DomainsPanel } from "@/components/platform/DomainsPanel";
 import { LimitsPanel } from "@/components/platform/LimitsPanel";
 import { ModuleSwitches } from "@/components/platform/ModuleSwitches";
 import { SubscriptionPanel } from "@/components/platform/SubscriptionPanel";
@@ -300,6 +301,7 @@ export function PlatformCompanyDetailPage() {
       <SubscriptionPanel companyId={companyId} />
       <LimitsPanel companyId={companyId} />
       <ModuleSwitches companyId={companyId} />
+      <DomainsPanel companyId={companyId} />
       <CompanyUsersPanel companyId={companyId} />
     </section>
   );

@@ -13,6 +13,7 @@ import {
 import { companyClient } from "@/company/companyClient.server";
 import { companyOrigin } from "@/company/companyUrl.server";
 import { requireRequestCompany, type RequestCompany } from "@/company/requestCompany.server";
+import { assertNotSupportSession } from "@/company/supportSessionGuard";
 import { enqueueNotification } from "@/fns/enqueueNotification";
 import { loadTemplateCopy } from "@/fns/loadTemplateCopy";
 import { recordFailedLoginAttempt } from "@/fns/loginAudit";
@@ -511,6 +512,7 @@ export const changeOwnPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => parseServerInput(changeSchema, data))
   .handler(async ({ data, context }) => {
+    assertNotSupportSession((context as { claims?: unknown } | undefined)?.claims);
     const company = requireRequestCompany();
     const db = companyClient(company.id);
 

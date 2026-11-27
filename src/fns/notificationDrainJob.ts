@@ -12,7 +12,7 @@ import {
 } from "@/fns/dispatchNotification";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 import { notificationDispatchDedupeKey } from "@/jobs/catalog";
-import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
+import { DELIVERY_INDETERMINATE, EMAIL_SENDER_NOT_CONFIGURED } from "@/lib/providers/types";
 
 /**
  * Sweeps the notifications that no dispatch job holds.
@@ -117,6 +117,8 @@ export const EVOLUTION_NEEDS_REVIEW: Readonly<Record<string, string>> = {
 export const PROVIDER_NEEDS_REVIEW: Readonly<Record<string, string>> = {
   [DELIVERY_INDETERMINATE]:
     "The provider (WhatsApp or SMTP) did not answer in time, and it cannot tell a retry apart from a new message, so the tenant may already have received this. Retrying risks a duplicate. Check the provider's message log, then either treat this as sent or send a replacement.",
+  [EMAIL_SENDER_NOT_CONFIGURED]:
+    "Neither the company nor the platform has an email sender that can send this message. Retrying cannot configure one. Store the company's sender credential in Settings → Notifications, or set the platform default sender, then send the message again.",
 };
 
 /** Merged provider code → reason lookup used by the drain sweep. */

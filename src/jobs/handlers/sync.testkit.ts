@@ -332,7 +332,7 @@ export function seedEvolution(fake: SyncFake, companyId: string): void {
     {
       provider: "evolution_api",
       is_enabled: true,
-      config: { api_base: "http://evolution:8080", api_key_env: "TEST_EVOLUTION_KEY" },
+      config: { api_base: "http://evolution:8080", api_key_env: "EVOLUTION_API_KEY" },
     },
   ]);
 }

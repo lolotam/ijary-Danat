@@ -5,8 +5,8 @@ import { stubHungFetch } from "./hungProvider.fixture";
 import { DELIVERY_INDETERMINATE, PROVIDER_TIMEOUT_MS } from "./types";
 
 const CONFIG = {
-  secret_env: "TEST_WA_TOKEN",
-  phone_number_id_env: "TEST_WA_PHONE_ID",
+  secret_env: "WHATSAPP_ACCESS_TOKEN",
+  phone_number_id_env: "WHATSAPP_PHONE_NUMBER_ID",
 };
 
 function jsonResponse(status: number, body: unknown) {
@@ -23,8 +23,8 @@ function lastCall() {
 describe("sendWithWhatsApp", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_WA_TOKEN", "meta-token");
-    vi.stubEnv("TEST_WA_PHONE_ID", "1234567890");
+    vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "meta-token");
+    vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID", "1234567890");
   });
 
   afterEach(() => {
@@ -150,7 +150,7 @@ describe("sendWithWhatsApp", () => {
   });
 
   it("fails before making a request when the token variable is unset", async () => {
-    vi.stubEnv("TEST_WA_TOKEN", "");
+    vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "");
 
     await expect(
       sendWithWhatsApp({
@@ -159,14 +159,14 @@ describe("sendWithWhatsApp", () => {
         template: arabicTemplate,
         to: "+96550123456",
       }),
-    ).rejects.toThrow(/TEST_WA_TOKEN is not set/);
+    ).rejects.toThrow(/WHATSAPP_ACCESS_TOKEN is not set/);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("fails when the phone number id is not configured", async () => {
     await expect(
       sendWithWhatsApp({
-        config: { secret_env: "TEST_WA_TOKEN" },
+        config: { secret_env: "WHATSAPP_ACCESS_TOKEN" },
         from: null,
         template: arabicTemplate,
         to: "+96550123456",

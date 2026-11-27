@@ -4,6 +4,7 @@ import { buildGatewayMatrixTargets } from "@/db/isolation/gatewayMatrixTargets";
 import { buildLimitsMatrixTargets } from "@/db/isolation/limitsMatrixTargets";
 import { buildModuleMatrixTargets } from "@/db/isolation/moduleMatrixTargets";
 import { buildSubscriptionMatrixTargets } from "@/db/isolation/subscriptionMatrixTargets";
+import { buildWhatsappConnectionMatrixTargets } from "@/db/isolation/whatsappConnectionMatrixTargets";
 import {
   buildScopedInsert,
   makeTarget,
@@ -510,22 +511,7 @@ export function buildCompanyMatrixTargets(
   targets.push(...buildModuleMatrixTargets(cid, colMap));
   targets.push(...buildSubscriptionMatrixTargets(cid, colMap));
 
-  if (colMap.has("evolution_connections")) {
-    targets.push({
-      table: "evolution_connections",
-      whereSql: "id = 1",
-      whereParams: [],
-      updateSetSql: "instance_name = 'mutated'",
-      updateParams: [],
-      buildCrossCompanyInsert: (foreignCid, cm) =>
-        buildScopedInsert(cm, "evolution_connections", foreignCid, {
-          id: 1,
-          company_id: foreignCid,
-          instance_name: `inst-x-${randomUUID().slice(0, 6)}`,
-          webhook_secret: "sec-x",
-        }),
-    });
-  }
+  targets.push(...buildWhatsappConnectionMatrixTargets(cid, colMap));
 
   if (colMap.has("company_counters")) {
     targets.push({

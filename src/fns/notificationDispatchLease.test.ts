@@ -264,7 +264,7 @@ function seedFixtures(): void {
       provider: "resend",
       is_enabled: true,
       is_primary: true,
-      config: { secret_env: "TEST_RESEND_KEY" },
+      config: { secret_env: "RESEND_API_KEY" },
       from_email: "billing@example.test",
       from_whatsapp: null,
     },

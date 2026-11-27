@@ -5,9 +5,9 @@ import { stubHungFetch } from "./hungProvider.fixture";
 import { DELIVERY_INDETERMINATE, PROVIDER_TIMEOUT_MS } from "./types";
 
 const CONFIG = {
-  account_sid_env: "TEST_TWILIO_SID",
-  secret_env: "TEST_TWILIO_TOKEN",
-  from_whatsapp_env: "TEST_TWILIO_FROM",
+  account_sid_env: "TWILIO_ACCOUNT_SID",
+  secret_env: "TWILIO_AUTH_TOKEN",
+  from_whatsapp_env: "TWILIO_WHATSAPP_FROM",
 };
 
 function jsonResponse(status: number, body: unknown) {
@@ -24,9 +24,9 @@ function lastCall() {
 describe("sendWithTwilio", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_TWILIO_SID", "AC123");
-    vi.stubEnv("TEST_TWILIO_TOKEN", "auth-token");
-    vi.stubEnv("TEST_TWILIO_FROM", "whatsapp:+14155238886");
+    vi.stubEnv("TWILIO_ACCOUNT_SID", "AC123");
+    vi.stubEnv("TWILIO_AUTH_TOKEN", "auth-token");
+    vi.stubEnv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886");
   });
 
   afterEach(() => {
@@ -134,7 +134,7 @@ describe("sendWithTwilio", () => {
   });
 
   it("fails when no sender is configured", async () => {
-    vi.stubEnv("TEST_TWILIO_FROM", "");
+    vi.stubEnv("TWILIO_WHATSAPP_FROM", "");
 
     await expect(sendWithTwilio(contentMessage)).rejects.toThrow(
       /sender \(from\) is not configured/i,
@@ -143,9 +143,9 @@ describe("sendWithTwilio", () => {
   });
 
   it("fails before making a request when the auth token variable is unset", async () => {
-    vi.stubEnv("TEST_TWILIO_TOKEN", "");
+    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
 
-    await expect(sendWithTwilio(contentMessage)).rejects.toThrow(/TEST_TWILIO_TOKEN is not set/);
+    await expect(sendWithTwilio(contentMessage)).rejects.toThrow(/TWILIO_AUTH_TOKEN is not set/);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 

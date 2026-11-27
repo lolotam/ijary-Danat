@@ -156,3 +156,5 @@ Pass condition for SC-011: an admin unfamiliar with the screen completes steps 1
 ## Danat safety check (SC-016)
 
 Before any deployment step, confirm the target is the IJARY stack on the Contabo server and not Danat's. No command in this feature runs against `ssh-danatfuture-mcp` or the `danatfuture-*` containers.
+
+> **SC-016 check (T203, 2026-11-27, branch `001-multi-company-saas`)**: PASS so far. Every line this branch adds outside `specs/` and `CLAUDE.md` (`git diff $(git merge-base main 001-multi-company-saas) 001-multi-company-saas`) contains no `danatfuture` or `ssh-danatfuture` reference. The only references in the repository are the legacy Danat runbooks and handovers under `docs/` and the Danat row in `README.md`, all written before this feature and untouched by it. The deploy files this branch adds or changes (`Dockerfile` worker stage, `deploy/ijary/*`) target the IJARY stack only. No migration, script or deployment from this feature has been run against Danat's server or database. Nothing has been deployed yet, so this check runs again before the first staging deployment (T202).

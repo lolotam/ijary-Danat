@@ -43,8 +43,8 @@ function smtpMidSendTimeout(): Error {
 describe("email default and fallback provider", () => {
   beforeEach(() => {
     resetDispatchFixtures();
-    vi.stubEnv("TEST_SMTP_HOST", "smtp.test");
-    vi.stubEnv("TEST_SMTP_PASS", "smtp-pass");
+    vi.stubEnv("SMTP_HOST", "smtp.test");
+    vi.stubEnv("SMTP_PASS", "smtp-pass");
     sendMail.mockReset();
     sendMail.mockResolvedValue({ messageId: "smtp-1" });
   });

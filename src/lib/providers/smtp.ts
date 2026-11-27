@@ -1,10 +1,13 @@
 import type { EmailProviderMessage, ProviderResult } from "@/lib/providers/types";
 import {
   configValue,
+  DECRYPTED_SECRET_KEY,
   DELIVERY_INDETERMINATE,
   PROVIDER_TIMEOUT_MS,
   ProviderDeliveryError,
-  requiredEnv,
+  providerSecret,
+  providerSetting,
+  readProviderEnv,
 } from "@/lib/providers/types";
 import { stripMarkup } from "@/lib/templateRender";
 
@@ -35,18 +38,37 @@ function isAmbiguousTimeout(error: unknown): boolean {
   return !/connection timeout|greeting never received/i.test(error.message);
 }
 
+/**
+ * يرسل رسالة بريد عبر خادم SMTP ويعيد معرّف الرسالة.
+ *
+ * The host, the port and the user come from the provider config — either
+ * written directly by the company that owns the sender or read through the
+ * environment reference the platform's own rows were seeded with. The password
+ * comes from the encrypted company secret when there is one, and from the
+ * environment otherwise.
+ */
 export async function sendWithSmtp(message: EmailProviderMessage): Promise<ProviderResult> {
   const nodemailer = (await import("nodemailer")).default;
-  const host = requiredEnv(message.config, "host_env");
-  const portRaw = configValue(message.config, "port_env");
-  const port = portRaw ? Number(process.env[portRaw] ?? portRaw) : 587;
+  const host = providerSetting(message.config, "host");
+  if (!host) throw new Error("SMTP host is not configured.");
+  // The platform's SMTP password may only go to the platform's SMTP host: a
+  // company that types its own host must store its own password as well.
+  if (!configValue(message.config, DECRYPTED_SECRET_KEY) && configValue(message.config, "host")) {
+    throw new Error("A platform credential can only be sent to the platform's own endpoint.");
+  }
+  // The port may be written directly or named through `port_env`. An unset
+  // variable used to make the port NaN and the send fail loudly, and that is
+  // still the safer reading than quietly defaulting to 587.
+  const portValue = configValue(message.config, "port");
+  const portEnvName = configValue(message.config, "port_env");
+  const port = portValue
+    ? Number(portValue)
+    : portEnvName
+      ? Number(readProviderEnv(portEnvName) ?? Number.NaN)
+      : 587;
   if (!Number.isFinite(port)) throw new Error("SMTP port is invalid.");
-  const user = configValue(message.config, "user_env")
-    ? process.env[configValue(message.config, "user_env")!]
-    : undefined;
-  const pass = configValue(message.config, "secret_env")
-    ? process.env[configValue(message.config, "secret_env")!]
-    : undefined;
+  const user = providerSetting(message.config, "user") ?? undefined;
+  const pass = providerSecret(message.config) ?? undefined;
 
   const transporter = nodemailer.createTransport({
     host,
@@ -73,6 +95,9 @@ export async function sendWithSmtp(message: EmailProviderMessage): Promise<Provi
       // already shipped broken plain-text to tenants — no line breaks, raw
       // `&amp;` entities (audit M33).
       text: stripMarkup(message.body),
+      // The reply address is the company's own, so an answer reaches the office
+      // rather than the no-reply address the message was sent from.
+      ...(message.replyTo ? { replyTo: message.replyTo } : {}),
       attachments: message.attachments?.map((attachment) => ({
         filename: attachment.filename,
         content: attachment.content,

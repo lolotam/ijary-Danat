@@ -4,7 +4,7 @@ import { EvolutionProviderError, getEvolutionStatus, sendWithEvolution } from ".
 import { resetEvolutionLocalPacing } from "./evolutionLocalPacing";
 import { DELIVERY_INDETERMINATE } from "./types";
 
-const CONFIG = { api_base: "http://evolution:8080", api_key_env: "TEST_EVOLUTION_KEY" };
+const CONFIG = { api_base: "http://evolution:8080", api_key_env: "EVOLUTION_API_KEY" };
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -16,7 +16,7 @@ function jsonResponse(status: number, body: unknown) {
 describe("sendWithEvolution", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
+    vi.stubEnv("EVOLUTION_API_KEY", "evo-key");
     // The pacing clock is per connection and lives in the process, so a test
     // must not inherit the wait of the test before it.
     resetEvolutionLocalPacing();
@@ -293,7 +293,7 @@ describe("sendWithEvolution", () => {
 describe("getEvolutionStatus", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
+    vi.stubEnv("EVOLUTION_API_KEY", "evo-key");
   });
 
   afterEach(() => {

@@ -1,5 +1,6 @@
 import { useCompany, useUpdateCompany } from "@/hooks/useCompany";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +26,7 @@ import {
 } from "@/components/admin/Phase2Ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCronJobs } from "@/hooks/useCronJobs";
@@ -44,6 +45,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useProviderConfigs, useUpdateProviderConfig } from "@/hooks/useProviderConfigs";
 import { useRunContractExpiry } from "@/hooks/useRunContractExpiry";
 import { useDebounce } from "@/hooks/useDebounce";
+import { emailSenderStatus, type EmailSenderStatus } from "@/fns/emailSenderStatus";
 import { useI18n } from "@/i18n/provider";
 import type { NotificationState, Tables } from "@/integrations/supabase/database.types";
 import { resolveNotificationsPageAccess } from "@/lib/notificationsPageAccess";
@@ -82,6 +84,62 @@ function stateBadgeClass(state: NotificationState) {
   if (state === "skipped") return "border-orange-200 bg-orange-50 text-orange-900";
   if (state === "needs_review") return "border-purple-200 bg-purple-50 text-purple-900";
   return "";
+}
+
+/**
+ * بطاقة حالة مُرسِل البريد: أي مُرسّل في الخدمة، ومن أين تُرسَل الرسائل، وأين تصل الردود.
+ *
+ * The admin's question is "who does my mail come from?", and the answer is
+ * the sender address and the reply address. A credential is never part of it:
+ * the status is shown on a screen.
+ */
+function EmailSenderStatusCard({
+  failed,
+  loading,
+  status,
+}: {
+  failed: boolean;
+  loading: boolean;
+  status?: EmailSenderStatus;
+}) {
+  const { t } = useI18n();
+  const modeLabel =
+    status?.mode === "own"
+      ? t("emailSender.own")
+      : status?.mode === "platform"
+        ? t("emailSender.platform")
+        : t("emailSender.none");
+
+  return (
+    <Card>
+      <CardHeader className="space-y-0 border-b p-3">
+        <CardTitle className="text-base">{t("emailSender.title")}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1 p-3 text-sm">
+        {loading ? (
+          <p className="text-muted-foreground">{t("common.loading")}</p>
+        ) : failed ? (
+          <p className="text-destructive">{t("emailSender.loadError")}</p>
+        ) : (
+          <>
+            <p>
+              <span className="text-muted-foreground">{t("emailSender.mode")}: </span>
+              {modeLabel}
+            </p>
+            <p>
+              <span className="text-muted-foreground">{t("emailSender.from")}: </span>
+              <span dir="ltr">{status?.from ?? "—"}</span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">{t("emailSender.replyTo")}: </span>
+              <span dir="ltr">{status?.replyTo ?? "—"}</span>
+            </p>
+            <p className="text-muted-foreground text-xs">{t("emailSender.hint")}</p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /**
@@ -154,6 +212,14 @@ function NotificationsPage() {
     return names;
   }, [locale, workflowJobs.data]);
   const providers = useProviderConfigs(canManageIntegrations);
+  // Which sender is in use: a company that configured its own, or the
+  // platform's default one. Read on the server, because whether the platform
+  // has a default sender is a fact about its environment.
+  const senderStatus = useQuery({
+    queryKey: ["email-sender-status", locale],
+    enabled: canManageIntegrations,
+    queryFn: () => emailSenderStatus({ data: { locale: locale === "en" ? "en" : "ar" } }),
+  });
   const retry = useRetryNotification();
   const cancel = useCancelNotification();
   const deleteNotification = useDeleteNotification();
@@ -360,7 +426,12 @@ function NotificationsPage() {
         )}
 
         {canManageIntegrations && (
-          <TabsContent value="providers">
+          <TabsContent value="providers" className="space-y-4">
+            <EmailSenderStatusCard
+              failed={senderStatus.isError}
+              loading={senderStatus.isLoading}
+              status={senderStatus.data}
+            />
             {/* Grouped by the channel each provider actually delivers on, because
               that is the choice an admin is making: email goes out through
               exactly one of Resend or SMTP, WhatsApp through exactly one of the

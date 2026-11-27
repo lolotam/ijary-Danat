@@ -1,10 +1,24 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { companyClient } from "@/company/companyClient.server";
-import { requireRequestCompany } from "@/company/requestCompany.server";
-import type { Json } from "@/integrations/supabase/database.types";
+import { decodeByteaHex } from "@/gateways/connectionStore.server";
+import type { Database, Json } from "@/integrations/supabase/database.types";
 import { constantTimeEquals, decodeBase64, hmacBase64 } from "@/lib/webhookSignature";
 
 /** الفارق الزمني المسموح به بين ختم الطلب وساعتنا، بالمللي ثانية. */
 const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
+
+/**
+ * معرّف الشركة المستخدَم في استدعاء قاعدة البيانات عبر كل الشركات.
+ *
+ * The platform's default sender serves every company without a sender of its
+ * own, so the webhook that reports its deliveries has no company of its own
+ * either. The token it signs carries this id on purpose: `current_company_id()`
+ * resolves it to null, which is what tells the lookup function that the caller
+ * is the platform — and it makes every company-scoped read through this
+ * client return nothing, so a mistake here cannot read another company's rows.
+ */
+const PLATFORM_LOOKUP_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
  * أقصى حجم مقبول لجسم الطلب.
@@ -69,6 +83,32 @@ function stringAt(source: unknown, path: string): string | null {
   return typeof cursor === "string" && cursor.trim() ? cursor.trim() : null;
 }
 
+/**
+ * الجهة التي أرسلت الرسالة التي يهمّها هذا الحدث.
+ *
+ * `company` is a company that configured its own Resend sender: the company
+ * comes from the route that received the delivery, never from the payload —
+ * a payload is the attacker's to write. `platform` is the platform's default
+ * sender, which serves every company without one; its company is only known
+ * from the message id.
+ */
+export type ResendWebhookTarget =
+  | { kind: "company"; companyId: string; secret: string }
+  | { kind: "platform" };
+
+/**
+ * نطاق الحدث: الشركة التي تخصّه الرسالة، وإشعارها، وعميلها المحصور.
+ */
+interface EventScope {
+  companyId: string;
+  db: SupabaseClient<Database>;
+  /** The notification the message id names, when one is known. */
+  notificationId: string | null;
+}
+
+/**
+ * تفاصيل حدث التسليم كما يصفه مزوّد البريد.
+ */
 export interface ResendEventDetails {
   /**
    * لحظة وقوع الحدث عند Resend، لا لحظة محاولة التسليم.
@@ -241,8 +281,11 @@ function escapeLikePattern(value: string): string {
  * requiring `provider = 'resend'` would exclude those same rows again. A Resend
  * `email_id` is unique on its own.
  */
-async function findNotificationIdByMessageId(emailId: string): Promise<string | null> {
-  const query = await companyClient(requireRequestCompany().id)
+async function findNotificationIdByMessageId(
+  db: SupabaseClient<Database>,
+  emailId: string,
+): Promise<string | null> {
+  const query = await db
     .from("notifications")
     .select("id, provider_message_id")
     .like("provider_message_id", `%${escapeLikePattern(emailId)}%`)
@@ -252,6 +295,53 @@ async function findNotificationIdByMessageId(emailId: string): Promise<string | 
     (row.provider_message_id ?? "").split(",").some((id) => id.trim() === emailId),
   );
   return match?.id ?? null;
+}
+
+/**
+ * يبحث عن الشركة المالكة لرسالة مُرسَلة عبر المُرسِل الافتراضي للمنصة.
+ *
+ * The platform's default sender serves every company that has no sender of
+ * its own, so a bounce arrives with no company in the URL. The lookup crosses
+ * companies on purpose and lives in the database (migration 332); the token
+ * that calls it carries no company, which is what tells the function that the
+ * caller is the platform.
+ */
+async function findPlatformMessageOwner(
+  messageId: string,
+): Promise<{ company_id: string; notification_id: string } | null> {
+  const db = companyClient(PLATFORM_LOOKUP_COMPANY_ID, { allowSuspended: true });
+  const result = await db.rpc("platform_email_notification_owner", { p_message_id: messageId });
+  if (result.error) throw new Error(`platform email owner lookup failed: ${result.error.message}`);
+  const row = (result.data ?? [])[0];
+  return row ? { company_id: row.company_id, notification_id: row.notification_id } : null;
+}
+
+/**
+ * يحدّد نطاق الحدث: الشركة التي تخصّه الرسالة، وإشعارها.
+ *
+ * A company that configured its own sender names its company in the route, so
+ * its notification is found inside that company alone. The platform's sender
+ * has no company in the route, and its owner is resolved from the message id
+ * — the one lookup that crosses companies.
+ */
+async function eventScope(
+  target: ResendWebhookTarget,
+  emailId: string | null,
+): Promise<EventScope | null> {
+  if (target.kind === "company") {
+    const db = companyClient(target.companyId, { allowSuspended: true });
+    const notificationId = emailId ? await findNotificationIdByMessageId(db, emailId) : null;
+    return { companyId: target.companyId, db, notificationId };
+  }
+
+  if (!emailId) return null;
+  const owner = await findPlatformMessageOwner(emailId);
+  if (!owner) return null;
+  return {
+    companyId: owner.company_id,
+    db: companyClient(owner.company_id, { allowSuspended: true }),
+    notificationId: owner.notification_id,
+  };
 }
 
 interface EventRecordInput {
@@ -286,11 +376,12 @@ export type EventRecordOutcome = "inserted" | "corrected" | "replay";
  * moved says otherwise. So an unverified row is overwritten by the verified
  * delivery; only a collision between two *verified* rows is a true replay.
  */
-async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome> {
-  const companyId = requireRequestCompany().id;
-  const db = companyClient(companyId);
+async function recordEvent(
+  scope: EventScope,
+  input: EventRecordInput,
+): Promise<EventRecordOutcome> {
   const row = {
-    company_id: companyId,
+    company_id: scope.companyId,
     provider: "resend" as const,
     event_type: input.details.eventType,
     provider_event_id: input.providerEventId,
@@ -306,7 +397,7 @@ async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome>
     error: input.error ?? null,
   };
 
-  const insert = await db.from("email_webhook_events").insert(row).select("id").single();
+  const insert = await scope.db.from("email_webhook_events").insert(row).select("id").single();
   if (!insert.error) return "inserted";
   if (insert.error.code !== "23505") throw new Error(insert.error.message);
 
@@ -317,7 +408,7 @@ async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome>
   // does not cover null ids — so a collision without one is unreachable rather
   // than merely unlikely. Reported as a replay instead of guessed at.
   if (!input.signatureValid || !input.providerEventId) return "replay";
-  const correction = await db
+  const correction = await scope.db
     .from("email_webhook_events")
     .update(row)
     .eq("provider", "resend")
@@ -337,10 +428,11 @@ async function recordEvent(input: EventRecordInput): Promise<EventRecordOutcome>
  * bounce reporting down with it.
  */
 async function archiveAndAcknowledge(
+  scope: EventScope,
   input: EventRecordInput,
   outcome: Record<string, boolean>,
 ): Promise<Response> {
-  const recorded = await recordEvent(input);
+  const recorded = await recordEvent(scope, input);
   return Response.json({ ok: true, ...outcome, replay: recorded === "replay" });
 }
 
@@ -410,6 +502,107 @@ function parsedPayload(rawBody: string): Json {
 }
 
 /**
+ * هل وصل الحدث قبل أن يُكتب صفّ الإشعار؟
+ *
+ * Deliberately `details.createdAtMs` and not `svix-timestamp`: Svix re-signs
+ * each retry with the current clock, so every attempt would look brand new
+ * and the handler would answer 503 forever — retrying until Resend disables
+ * the endpoint and takes real bounce reporting down with it. An unparsable
+ * `created_at` is treated as old rather than fresh, because an endless retry
+ * is the worse of the two failures.
+ *
+ * Bounded on both sides. A future-dated `created_at` — a skewed clock at
+ * either end — would otherwise read as permanently fresh and reproduce the
+ * endless retry from the other direction.
+ */
+function isWithinRaceWindow(details: ResendEventDetails, now: number): boolean {
+  const eventAgeMs = details.createdAtMs === null ? Infinity : now - details.createdAtMs;
+  return eventAgeMs < EARLY_MISS_WINDOW_MS && eventAgeMs > -EARLY_MISS_WINDOW_MS;
+}
+
+/**
+ * يؤر”事件ً ليس فشلاً نهائياً: تسليم أو فتح أو ارتداد مؤقّت.
+ *
+ * Nothing is written to a notification; the archive keeps the event so the
+ * "was this a soft bounce?" question has an answer.
+ */
+function archiveIgnoredEvent(
+  scope: EventScope,
+  details: ResendEventDetails,
+  payload: Json,
+  providerEventId: string | null,
+): Promise<Response> {
+  return archiveAndAcknowledge(
+    scope,
+    {
+      details,
+      notificationId: null,
+      payload,
+      providerEventId,
+      result: details.transientBounce
+        ? "transient_bounce"
+        : details.eventType
+          ? "ignored_event_type"
+          : "unparsable_payload",
+      signatureValid: true,
+    },
+    { ignored: true },
+  );
+}
+
+/**
+ * يؤرّف حدثاً لا ينتمي إلى إشعارٍ عندنا، ويؤكّده حتى يتوقّف المزوّد عن إعادة إرساله.
+ */
+function archiveUnmatchedEvent(
+  scope: EventScope,
+  details: ResendEventDetails,
+  payload: Json,
+  providerEventId: string | null,
+  error?: string,
+): Promise<Response> {
+  return archiveAndAcknowledge(
+    scope,
+    {
+      details,
+      error,
+      notificationId: null,
+      payload,
+      providerEventId,
+      result: "unmatched",
+      signatureValid: true,
+    },
+    { unmatched: true },
+  );
+}
+
+/**
+ * ينقل إشعاراً إلى مراجعة بشرية بعد فشل تسليم نهائي.
+ *
+ * `.eq("state", "sent")` is the whole idempotency mechanism: a row already
+ * moved to needs_review matches nothing, so a redelivery, an out-of-order
+ * event and a duplicate all resolve to the same harmless no-op — and a
+ * notification a human has since re-queued is never quietly overwritten.
+ */
+async function applyDeliveryFailure(
+  scope: EventScope,
+  notificationId: string,
+  details: ResendEventDetails,
+): Promise<boolean> {
+  const update = await scope.db
+    .from("notifications")
+    .update({
+      state: "needs_review",
+      failure_reason: details.failureReason ?? "Resend reported a delivery failure.",
+    })
+    .eq("id", notificationId)
+    .eq("state", "sent")
+    .select("id")
+    .maybeSingle();
+  if (update.error) throw new Error(update.error.message);
+  return Boolean(update.data);
+}
+
+/**
  * يستقبل أحداث تسليم البريد من Resend ويحوّل الفشل النهائي إلى مراجعة بشرية.
  *
  * WHY `needs_review` AND NOT `failed`
@@ -420,19 +613,28 @@ function parsedPayload(rawBody: string): Json {
  * delivery that can never succeed. `needs_review` is terminal for the drain job
  * and visible to a human, which is what a bounce actually calls for.
  *
+ * The company comes from `target` — the route that received the delivery — and
+ * never from the payload, which is the attacker's to write.
+ *
  * `now` is injectable only so the timestamp window can be tested; production
  * always passes the real clock.
  */
 export async function respondToResendWebhook(
   request: Request,
+  target: ResendWebhookTarget,
   now: number = Date.now(),
 ): Promise<Response> {
-  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  const secret =
+    target.kind === "company" ? target.secret : process.env.PLATFORM_RESEND_WEBHOOK_SECRET;
   if (!secret) {
     // Fail closed, and say so. Resend disables an endpoint that keeps failing,
     // so an unconfigured secret must be loud in the logs rather than look like
     // an endpoint nobody ever called.
-    console.warn("[resendWebhook] rejected a webhook because RESEND_WEBHOOK_SECRET is not set");
+    console.warn(
+      target.kind === "company"
+        ? "[resendWebhook] rejected a webhook because the company's Resend webhook secret is not configured"
+        : "[resendWebhook] rejected a webhook because PLATFORM_RESEND_WEBHOOK_SECRET is not set",
+    );
     return Response.json({ error: "Resend webhook secret is not configured." }, { status: 503 });
   }
 
@@ -455,14 +657,19 @@ export async function respondToResendWebhook(
       "[resendWebhook] signature rejected",
       JSON.stringify({ event: details.eventType, reason: verification.reason, id: headers.id }),
     );
+    // The archive row belongs to a company. The company's own sender names it
+    // in the route; the platform's sender has none, and an unverified delivery
+    // is not trusted to name one — so it is archived only where the company is
+    // already known.
+    const scope = await eventScope(target, details.emailId);
     // Archived only when the delivery carries a `svix-id`. Without one the
     // partial unique index cannot dedupe, so any client on the internet could
     // POST an unsigned body in a loop and grow this table without bound. With
     // one, a repeat collapses onto the same row. The trade is deliberate: the
     // rows worth keeping are the ones that diagnose *our* secret being wrong —
     // real Resend deliveries being rejected — and those always carry the id.
-    if (headers.id) {
-      await recordEvent({
+    if (headers.id && scope) {
+      await recordEvent(scope, {
         details,
         error: verification.reason,
         notificationId: null,
@@ -475,61 +682,44 @@ export async function respondToResendWebhook(
     return Response.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
 
+  // The company the event belongs to, and the notification it names. The
+  // platform's sender resolves its owner from the message id; a company that
+  // configured its own sender never crosses a company boundary.
+  const scope = await eventScope(target, details.emailId);
+
   if (!details.terminal) {
     // Delivered, opened, clicked, delayed, transient bounces, and every
     // contact/domain/suppression event: archived, never written to a
     // notification.
-    return archiveAndAcknowledge(
-      {
-        details,
-        notificationId: null,
-        payload,
-        providerEventId: headers.id,
-        result: details.transientBounce
-          ? "transient_bounce"
-          : details.eventType
-            ? "ignored_event_type"
-            : "unparsable_payload",
-        signatureValid: true,
-      },
-      { ignored: true },
-    );
+    if (!scope) {
+      // The platform's sender and no company to attribute the event to: there
+      // is nothing to archive it under, and acknowledging it stops Resend from
+      // retrying a delivery event that changes nothing.
+      return Response.json({ ok: true, ignored: true });
+    }
+    return archiveIgnoredEvent(scope, details, payload, headers.id);
   }
 
   if (!details.emailId) {
-    return archiveAndAcknowledge(
-      {
-        details,
-        error: "The event carried no data.email_id.",
-        notificationId: null,
-        payload,
-        providerEventId: headers.id,
-        result: "unmatched",
-        signatureValid: true,
-      },
-      { unmatched: true },
+    if (!scope) {
+      return Response.json({ ok: true, unmatched: true });
+    }
+    return archiveUnmatchedEvent(
+      scope,
+      details,
+      payload,
+      headers.id,
+      "The event carried no data.email_id.",
     );
   }
 
-  const notificationId = await findNotificationIdByMessageId(details.emailId);
-  if (!notificationId) {
+  const notificationId = scope?.notificationId ?? null;
+  if (!scope || !notificationId) {
     // A terminal event whose notification row may simply not be written yet —
     // dispatchNotification stores provider_message_id only after the send
     // returns. Nothing is archived here on purpose: a stored row would collide
     // with the retry's own svix-id, and the retry is the whole point.
-    // Deliberately `details.createdAtMs` and not `svix-timestamp`: Svix re-signs
-    // each retry with the current clock, so every attempt would look brand new
-    // and this branch would answer 503 forever — retrying until Resend disables
-    // the endpoint and takes real bounce reporting down with it. An unparsable
-    // `created_at` is treated as old rather than fresh, because an endless retry
-    // is the worse of the two failures.
-    // Bounded on both sides. A future-dated `created_at` — a skewed clock at
-    // either end — would otherwise read as permanently fresh and reproduce the
-    // endless retry from the other direction.
-    const eventAgeMs = details.createdAtMs === null ? Infinity : now - details.createdAtMs;
-    const isWithinRaceWindow =
-      eventAgeMs < EARLY_MISS_WINDOW_MS && eventAgeMs > -EARLY_MISS_WINDOW_MS;
-    if (isWithinRaceWindow) {
+    if (isWithinRaceWindow(details, now)) {
       console.warn(
         "[resendWebhook] terminal event arrived before its notification row; asking Svix to retry",
         JSON.stringify({ emailId: details.emailId, event: details.eventType, id: headers.id }),
@@ -543,37 +733,15 @@ export async function respondToResendWebhook(
     // Old enough that the row would exist if it were ours: mail sent from the
     // same Resend account by something other than this app. Recorded so it
     // stays explainable, acknowledged so Resend stops retrying.
-    return archiveAndAcknowledge(
-      {
-        details,
-        notificationId: null,
-        payload,
-        providerEventId: headers.id,
-        result: "unmatched",
-        signatureValid: true,
-      },
-      { unmatched: true },
-    );
+    if (!scope) {
+      return Response.json({ ok: true, unmatched: true });
+    }
+    return archiveUnmatchedEvent(scope, details, payload, headers.id);
   }
 
-  // `.eq("state", "sent")` is the whole idempotency mechanism: a row already
-  // moved to needs_review matches nothing, so a redelivery, an out-of-order
-  // event and a duplicate all resolve to the same harmless no-op — and a
-  // notification a human has since re-queued is never quietly overwritten.
-  const update = await companyClient(requireRequestCompany().id)
-    .from("notifications")
-    .update({
-      state: "needs_review",
-      failure_reason: details.failureReason ?? "Resend reported a delivery failure.",
-    })
-    .eq("id", notificationId)
-    .eq("state", "sent")
-    .select("id")
-    .maybeSingle();
-  if (update.error) throw new Error(update.error.message);
-
-  const applied = Boolean(update.data);
+  const applied = await applyDeliveryFailure(scope, notificationId, details);
   return archiveAndAcknowledge(
+    scope,
     {
       details,
       notificationId,

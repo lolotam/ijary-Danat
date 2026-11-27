@@ -184,6 +184,10 @@ export type CompanyDomainRow = {
   is_primary: boolean;
   verification_status: DomainVerificationStatus;
   provider_ref: string | null;
+  /** Migration 331 — ownership-check records the provider returned for a custom host. */
+  verification_records: Json | null;
+  /** Migration 331 — when the status was last read from the provider. */
+  last_checked_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -910,6 +914,18 @@ export type PlatformAuditLogRow = {
   created_at: string;
 };
 
+/** جلسة دعم فني يفتحها مشرف المنصة على مستخدم شركة (ترحيل 330)؛ تنتهي بعد 60 دقيقة افتراضياً. */
+export type ImpersonationSessionRow = {
+  id: string;
+  platform_admin_id: string;
+  company_id: string;
+  target_user_id: string;
+  reason: string;
+  started_at: string;
+  expires_at: string;
+  ended_at: string | null;
+};
+
 /** حالة قسم واحد لشركة (ترحيل 320)؛ غياب الصف يعني القيمة الافتراضية للقسم. */
 export type CompanyModuleRow = {
   company_id: string;
@@ -1113,6 +1129,8 @@ export type ProviderConfigRow = {
   /** The default email provider (migration 225); the other enabled email row is the fallback. */
   is_primary: boolean;
   provider: NotificationProvider;
+  /** Which credential the row sends with: 0 = the platform's env reference, N = the company's own encrypted secret version (migration 332). */
+  secrets_version: number;
   updated_at: string;
 };
 
@@ -1560,9 +1578,43 @@ export type EvolutionConnectionRow = {
   updated_at: string;
 };
 
+/** طريقة ربط واتساب لشركة (ترحيل 333). */
+export type WhatsappConnectionMethod = "evolution_qr" | "cloud_api" | "cloud_coexistence";
+
+/** حالة اتصال واتساب لشركة (ترحيل 333). */
+export type WhatsappConnectionStatus = "disconnected" | "pairing" | "connected" | "error";
+
+/**
+ * اتصال واتساب واحد لشركة (ترحيل 333)؛ صف نشط واحد على الأكثر لكل شركة.
+ *
+ * `last_qr` is outside the `authenticated` column grant; read it only through
+ * a server client.
+ */
+export type WhatsappConnectionRow = {
+  id: string;
+  company_id: string;
+  method: WhatsappConnectionMethod;
+  is_active: boolean;
+  status: WhatsappConnectionStatus;
+  connected_number: string | null;
+  instance_name: string | null;
+  phone_number_id: string | null;
+  waba_id: string | null;
+  last_qr: string | null;
+  last_seen_at: string | null;
+  last_error: string | null;
+  disconnect_alert_armed: boolean;
+  disconnected_at: string | null;
+  connected_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 /** Migration 180 — one WhatsApp message (inbound or outbound) in the inbox. */
 export type WhatsappMessageRow = {
   company_id: string;
+  /** Migration 333 — the company WhatsApp connection; filled by trigger on insert. */
+  connection_id: string | null;
   id: string;
   message_id: string;
   chat_number: string;
@@ -1582,6 +1634,8 @@ export type WhatsappMessageRow = {
 /** Migration 180 — chat-list summary row, keyed by bare international digits. */
 export type WhatsappChatRow = {
   company_id: string;
+  /** Migration 333 — the company WhatsApp connection; filled by trigger on insert. */
+  connection_id: string | null;
   chat_number: string;
   display_name: string | null;
   /** Migration 184 — WhatsApp CDN profile picture; expires, refreshed by Sync history. */
@@ -1596,6 +1650,8 @@ export type WhatsappChatRow = {
 /** Migration 186 — links a WhatsApp contact to one of a tenant's contracts. */
 export type WhatsappContactContractRow = {
   company_id: string;
+  /** Migration 333 — the company WhatsApp connection; filled by trigger on insert. */
+  connection_id: string | null;
   contact_id: string;
   contract_id: string;
   created_at: string;
@@ -1604,6 +1660,8 @@ export type WhatsappContactContractRow = {
 /** Migration 180 — saved WhatsApp contact, auto-captured or admin-entered. */
 export type WhatsappContactRow = {
   company_id: string;
+  /** Migration 333 — the company WhatsApp connection; filled by trigger on insert. */
+  connection_id: string | null;
   id: string;
   phone: string;
   name: string | null;
@@ -1816,6 +1874,10 @@ export interface Database {
       company_modules: TableDefinition<CompanyModuleRow, "company_id" | "module_key" | "enabled">;
       platform_admins: TableDefinition<PlatformAdminRow, "user_id" | "full_name">;
       platform_audit_log: TableDefinition<PlatformAuditLogRow, "action" | "entity">;
+      impersonation_sessions: TableDefinition<
+        ImpersonationSessionRow,
+        "platform_admin_id" | "company_id" | "target_user_id" | "reason"
+      >;
       company_subscriptions: TableDefinition<
         CompanySubscriptionRow,
         "plan_name" | "price" | "period_start" | "renewal_date"
@@ -2396,6 +2458,7 @@ export interface Database {
       >;
       email_signatures: TableDefinition<EmailSignatureRow, "admin_id" | "name">;
       evolution_connections: TableDefinition<EvolutionConnectionRow, "webhook_secret">;
+      whatsapp_connections: TableDefinition<WhatsappConnectionRow, "method">;
       whatsapp_messages: TableDefinition<
         WhatsappMessageRow,
         "message_id" | "chat_number" | "direction"
@@ -3075,6 +3138,10 @@ export interface Database {
           p_identifier: string;
         };
         Returns: number;
+      };
+      platform_email_notification_owner: {
+        Args: { p_message_id: string };
+        Returns: { company_id: string; notification_id: string }[];
       };
       write_audit: {
         Args: {

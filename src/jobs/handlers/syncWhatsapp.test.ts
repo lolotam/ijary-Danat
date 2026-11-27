@@ -69,7 +69,7 @@ beforeEach(() => {
   fake.ingested.clear();
   seedSyncTable(fake, "cron_jobs", []);
   vi.stubGlobal("fetch", vi.fn());
-  vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
+  vi.stubEnv("EVOLUTION_API_KEY", "evo-key");
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });

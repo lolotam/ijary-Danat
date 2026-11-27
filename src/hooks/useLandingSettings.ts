@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { getLandingCompanyId } from "@/company/rootPageDecision";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/database.types";
 import { logAuditForCurrentSession } from "@/lib/audit";
@@ -64,11 +65,42 @@ export type LandingPageSettingsWithMedia = LandingPageSettings & {
   about_secondary: MediaRef;
 };
 
+/**
+ * معرّف الشركة التي تخصّها صفحة الهبوط في هذا الطلب.
+ *
+ * The landing content belongs to the company that owns the host: the visitor
+ * may hold no session at all, so only the server can say which company is
+ * being looked at. The admin panel runs on the same company host, so one rule
+ * serves both the public page and the editor.
+ */
+export function useLandingCompanyId(enabled = true) {
+  return useQuery({
+    queryKey: ["landing_company_id"],
+    enabled,
+    queryFn: async (): Promise<string | null> => getLandingCompanyId(),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * يطلب معرّف الشركة صاحبة المضيف، ويرفض القراءة بلا صاحب.
+ *
+ * The read is bound to that company, so a query without one would be able to
+ * return another company's content — and the row it wants does not exist
+ * without it.
+ */
+function requireLandingCompanyId(companyId: string | null | undefined): string {
+  if (!companyId) throw new Error("Landing content is bound to the company that owns the host");
+  return companyId;
+}
+
 // 1. Landing Settings Query & Mutation
 export function useLandingSettings(locale: "ar" | "en", enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["landing_settings", locale],
-    enabled,
+    queryKey: ["landing_settings", locale, companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<LandingPageSettingsWithMedia | null> => {
       const { data, error } = await supabase
         .from("landing_page_settings")
@@ -81,6 +113,7 @@ export function useLandingSettings(locale: "ar" | "en", enabled = true) {
           about_secondary:about_secondary_media_id ( storage_path )
         `,
         )
+        .eq("company_id", requireLandingCompanyId(companyId))
         .eq("locale", locale)
         .maybeSingle();
 
@@ -99,13 +132,16 @@ export type LandingCategory = Pick<
 >;
 
 export function useLandingCategories(enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["building_categories", "landing"],
-    enabled,
+    queryKey: ["building_categories", "landing", companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<LandingCategory[]> => {
       const { data, error } = await supabase
         .from("building_categories")
         .select("id, code, name_ar, name_en")
+        .eq("company_id", requireLandingCompanyId(companyId))
         .order("sort_order", { ascending: true });
 
       // Anonymous visitors need migration 20 (public read policy). Until it
@@ -154,13 +190,16 @@ export function useUpdateLandingSettings() {
 
 // 2. Landing Sections Query & Mutation
 export function useLandingSections(enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["landing_sections"],
-    enabled,
+    queryKey: ["landing_sections", companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<LandingPageSection[]> => {
       const { data, error } = await supabase
         .from("landing_page_sections")
         .select("*")
+        .eq("company_id", requireLandingCompanyId(companyId))
         .order("display_order", { ascending: true });
 
       if (error) throw error;
@@ -202,13 +241,16 @@ export type LandingMediaCategory =
   | "gallery";
 
 export function useLandingMedia(category?: LandingMediaCategory, enabled = true) {
+  const { data: companyId } = useLandingCompanyId(enabled);
+
   return useQuery({
-    queryKey: ["landing_media", category],
-    enabled,
+    queryKey: ["landing_media", category, companyId],
+    enabled: enabled && Boolean(companyId),
     queryFn: async (): Promise<LandingMedia[]> => {
       let query = supabase
         .from("landing_media")
         .select("*")
+        .eq("company_id", requireLandingCompanyId(companyId))
         .order("display_order", { ascending: true });
       if (category) {
         query = query.eq("category", category);

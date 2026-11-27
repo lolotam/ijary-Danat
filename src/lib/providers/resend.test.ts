@@ -4,7 +4,7 @@ import { sendWithResend } from "./resend";
 import { stubHungFetch } from "./hungProvider.fixture";
 import { PROVIDER_TIMEOUT_MS } from "./types";
 
-const CONFIG = { secret_env: "TEST_RESEND_KEY" };
+const CONFIG = { secret_env: "RESEND_API_KEY" };
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status });
@@ -19,7 +19,7 @@ function lastCall() {
 describe("sendWithResend", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    vi.stubEnv("TEST_RESEND_KEY", "re_live_key");
+    vi.stubEnv("RESEND_API_KEY", "re_live_key");
   });
 
   afterEach(() => {
@@ -176,9 +176,9 @@ describe("sendWithResend", () => {
   });
 
   it("fails before making a request when the API key variable is unset", async () => {
-    vi.stubEnv("TEST_RESEND_KEY", "");
+    vi.stubEnv("RESEND_API_KEY", "");
 
-    await expect(sendWithResend(message)).rejects.toThrow(/TEST_RESEND_KEY is not set/);
+    await expect(sendWithResend(message)).rejects.toThrow(/RESEND_API_KEY is not set/);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 

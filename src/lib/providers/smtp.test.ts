@@ -18,13 +18,13 @@ const { DELIVERY_INDETERMINATE, PROVIDER_TIMEOUT_MS } = await import("@/lib/prov
 beforeEach(() => {
   sendMail.mockReset().mockResolvedValue({ messageId: "m1" });
   createTransport.mockClear();
-  process.env.TEST_SMTP_HOST = "smtp.test";
+  process.env.SMTP_HOST = "smtp.test";
 });
 
 describe("sendWithSmtp text alternative", () => {
   it("keeps line breaks and decodes entities rather than flattening the HTML", async () => {
     await sendWithSmtp({
-      config: { host_env: "TEST_SMTP_HOST" },
+      config: { host_env: "SMTP_HOST" },
       from: "no-reply@test",
       to: ["tenant@test"],
       subject: "s",
@@ -41,7 +41,7 @@ describe("sendWithSmtp text alternative", () => {
 describe("sendWithSmtp timeouts", () => {
   it("bounds connect, greeting and idle time instead of nodemailer's 2 and 10 minute defaults", async () => {
     await sendWithSmtp({
-      config: { host_env: "TEST_SMTP_HOST" },
+      config: { host_env: "SMTP_HOST" },
       from: "no-reply@test",
       to: ["tenant@test"],
       subject: "s",
@@ -70,7 +70,7 @@ describe("sendWithSmtp Message-ID", () => {
       // SMTP has no idempotency key; a retry that repeats the Message-ID lets
       // the recipient's mail store collapse the duplicate copy.
       await sendWithSmtp({
-        config: { host_env: "TEST_SMTP_HOST" },
+        config: { host_env: "SMTP_HOST" },
         from,
         to: ["tenant@test"],
         subject: "s",
@@ -102,7 +102,7 @@ describe("sendWithSmtp ambiguous timeouts", () => {
       sendMail.mockRejectedValue(error);
 
       const failure = await sendWithSmtp({
-        config: { host_env: "TEST_SMTP_HOST" },
+        config: { host_env: "SMTP_HOST" },
         from: "no-reply@test",
         to: ["tenant@test"],
         subject: "s",

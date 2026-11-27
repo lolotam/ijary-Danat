@@ -15,7 +15,7 @@ import type { JobHandler, JobHandlerContext } from "@/worker/runJob";
  * معالجات أحداث المال: كل حدث يبعثه SQL من صندوق المخرجات إلى مُرسِله القائم.
  *
  * The money mutations commit their change and `enqueue_job` in one transaction
- * (migrations 308–310, FR-018); the relay delivers the row and these handlers
+ * (migrations 308–313, FR-018); the relay delivers the row and these handlers
  * run the send that the request used to run inline. Each handler only loads
  * what its sender needs in company scope and calls that sender untouched — the
  * senders own their wording, their pause switches and their idempotency, so a
@@ -289,10 +289,13 @@ export const refundRecordedHandler: JobHandler = async (ctx: JobHandlerContext) 
  *
  * The reason lives in the operational event `write_off_invoice` writes beside
  * the state change (migration 309), not on the invoice row — the sender's own
- * input contract says so — so it is loaded from there and passed on untouched.
+ * input contract says so — so that row is loaded by the id the payload carries
+ * (GR-005): in close → restore → close sequences "the latest write-off row"
+ * could belong to a different write-off, and this event's notice would carry
+ * the wrong reason.
  */
 export const invoiceWrittenOffHandler: JobHandler = async (ctx: JobHandlerContext) => {
-  const { invoiceId } = ctx.payload as JobPayload<"invoice.written_off">;
+  const { invoiceId, operationalEventId } = ctx.payload as JobPayload<"invoice.written_off">;
   const db = companyClient(ctx.companyId);
   const invoice = await requireOwnedRow(
     db
@@ -308,14 +311,13 @@ export const invoiceWrittenOffHandler: JobHandler = async (ctx: JobHandlerContex
     db
       .from("contract_operational_events")
       .select("note")
+      .eq("id", operationalEventId)
       .eq("company_id", ctx.companyId)
       .eq("event_type", "invoice_written_off")
       .contains("payload", { invoice_id: invoiceId })
-      .order("created_at", { ascending: false })
-      .limit(1)
       .maybeSingle(),
     "write-off event",
-    invoiceId,
+    operationalEventId,
   );
   const reason = detail.note?.trim();
   if (!reason) throw new Error(`write-off event for invoice ${invoiceId} carries no reason`);
@@ -352,23 +354,25 @@ export const invoiceDisputedHandler: JobHandler = async (ctx: JobHandlerContext)
 /**
  * يعالج حدث `contract.closed_out`: يرسل تنبيه إتمام التصفية إلى الإدارة.
  *
- * The event payload names the contract, while the sender deduplicates on the
- * close-out itself — a contract that is restored and closed out again is owed
- * a second notice — so the close-out row is loaded for the contract.
+ * The sender deduplicates on the close-out itself — a contract that is
+ * restored and closed out again is owed a second notice — so the handler loads
+ * the close-out row the event's own payload names (GR-005): in a
+ * close → restore → close sequence "the latest close-out" is the second one,
+ * and a late first event would send the second close-out's notice twice while
+ * the first is never told.
  */
 export const contractClosedOutHandler: JobHandler = async (ctx: JobHandlerContext) => {
-  const { contractId } = ctx.payload as JobPayload<"contract.closed_out">;
+  const { contractId, closeoutId } = ctx.payload as JobPayload<"contract.closed_out">;
   const closeout = await requireOwnedRow(
     companyClient(ctx.companyId)
       .from("contract_closeouts")
       .select("*")
+      .eq("id", closeoutId)
       .eq("contract_id", contractId)
       .eq("company_id", ctx.companyId)
-      .order("created_at", { ascending: false })
-      .limit(1)
       .maybeSingle(),
     "close-out",
-    contractId,
+    closeoutId,
   );
   const result = await inCompany(ctx.companyId, () => notifyContractCloseoutRecord(closeout.id));
   assertSendSucceeded("contract.closed_out", result);
@@ -378,13 +382,15 @@ export const contractClosedOutHandler: JobHandler = async (ctx: JobHandlerContex
 /**
  * يعالج حدث `contract.restored`: يرسل تنبيه الاستعادة بالحالة والسبب.
  *
- * The strict payload carries the contract id only, while the sender's message
- * names the state the contract was restored to and why — both written to the
- * operational event `restore_contract` records in the same transaction
- * (migration 310), so that row is what travels to the sender.
+ * The sender's message names the state the contract was restored to and why —
+ * both written to the operational event `restore_contract` records in the same
+ * transaction (migration 310). That row is what travels to the sender, loaded
+ * by the id the event's own payload carries (GR-005): a contract restored
+ * twice has two `restored` rows, and "the latest" would answer the late first
+ * event with the second restore's state and reason.
  */
 export const contractRestoredHandler: JobHandler = async (ctx: JobHandlerContext) => {
-  const { contractId } = ctx.payload as JobPayload<"contract.restored">;
+  const { contractId, operationalEventId } = ctx.payload as JobPayload<"contract.restored">;
   const db = companyClient(ctx.companyId);
   const contract = await requireOwnedRow(
     db
@@ -400,14 +406,13 @@ export const contractRestoredHandler: JobHandler = async (ctx: JobHandlerContext
     db
       .from("contract_operational_events")
       .select("note, payload")
+      .eq("id", operationalEventId)
       .eq("company_id", ctx.companyId)
       .eq("event_type", "restored")
       .eq("contract_id", contractId)
-      .order("created_at", { ascending: false })
-      .limit(1)
       .maybeSingle(),
     "restore event",
-    contractId,
+    operationalEventId,
   );
   const targetState = (detail.payload as { contract_state?: string } | null)?.contract_state;
   const reason = detail.note?.trim();

@@ -172,14 +172,38 @@ export const JOB_CATALOG = {
     z.object({ renewalDate: day, offsetDays: z.number().int() }).strict(),
   ),
   // Money events, emitted from SQL with enqueue_job in the same transaction (FR-018).
+  //
+  // Three of them carry the id of the row their SQL function wrote
+  // (`closeoutId`, `operationalEventId`) alongside the entity id (GR-005): the
+  // handler must load THAT row, not "the latest one for this entity" — in a
+  // close → restore → close sequence a late first event would otherwise
+  // resolve to the second close-out and its notice is lost. The ids are
+  // required, not optional: the SQL emitter (migration 313) and the handlers
+  // ship together on this branch and nothing on `main` can have queued a job
+  // under the old shape, so no queued row ever needs the fallback parse.
   "payment.succeeded": spec("notify", "payments", "none", z.object({ paymentId: id }).strict()),
   "payment.reversed": spec("notify", "payments", "none", z.object({ paymentId: id }).strict()),
   "deposit.confirmed": spec("notify", "deposits", "none", z.object({ depositId: id }).strict()),
   "refund.recorded": spec("notify", "payments", "none", z.object({ refundId: id }).strict()),
-  "invoice.written_off": spec("notify", "invoices", "none", z.object({ invoiceId: id }).strict()),
+  "invoice.written_off": spec(
+    "notify",
+    "invoices",
+    "none",
+    z.object({ invoiceId: id, operationalEventId: id }).strict(),
+  ),
   "invoice.disputed": spec("notify", "invoices", "none", z.object({ invoiceId: id }).strict()),
-  "contract.closed_out": spec("notify", "contracts", "none", z.object({ contractId: id }).strict()),
-  "contract.restored": spec("notify", "contracts", "none", z.object({ contractId: id }).strict()),
+  "contract.closed_out": spec(
+    "notify",
+    "contracts",
+    "none",
+    z.object({ contractId: id, closeoutId: id }).strict(),
+  ),
+  "contract.restored": spec(
+    "notify",
+    "contracts",
+    "none",
+    z.object({ contractId: id, operationalEventId: id }).strict(),
+  ),
 } as const;
 
 export type JobKind = keyof typeof JOB_CATALOG;

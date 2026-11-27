@@ -313,7 +313,13 @@ const scenarios: MoneyScenario[] = [
         prepared.invoiceId,
         "unrecoverable",
       ]);
-      return { invoiceId: prepared.invoiceId };
+      // الحمولة تحمل الآن معرّف الحدث التشغيلي الذي كتبه الشطب (GR-005).
+      const { rows } = await client.query<{ id: string }>(
+        `select id from public.contract_operational_events
+          where event_type = 'invoice_written_off' and payload->>'invoice_id' = $1`,
+        [prepared.invoiceId],
+      );
+      return { invoiceId: prepared.invoiceId, operationalEventId: rows[0].id };
     },
     repeat: async (client, _companyId, prepared) => {
       await client.query(`select public.write_off_invoice($1::uuid, $2)`, [
@@ -356,8 +362,12 @@ const scenarios: MoneyScenario[] = [
       return { contractId: fx.contractId, idempotencyKey: `idem-${randomUUID()}` };
     },
     act: async (client, _companyId, prepared) => {
-      await closeOut(client, prepared.contractId, prepared.idempotencyKey);
-      return { contractId: prepared.contractId };
+      const result = await closeOut(client, prepared.contractId, prepared.idempotencyKey);
+      // الحمولة تحمل الآن معرّف صف الإغلاق نفسه (GR-005).
+      return {
+        contractId: prepared.contractId,
+        closeoutId: String(result.closeout_id),
+      };
     },
     repeat: async (client, _companyId, prepared) => {
       await closeOut(client, prepared.contractId, prepared.idempotencyKey);
@@ -374,7 +384,13 @@ const scenarios: MoneyScenario[] = [
     act: async (client, _companyId, prepared) => {
       await closeOut(client, prepared.contractId);
       await restoreContract(client, prepared.contractId);
-      return { contractId: prepared.contractId };
+      // الحمولة تحمل الآن معرّف الحدث التشغيلي الذي كتبته الاستعادة (GR-005).
+      const { rows } = await client.query<{ id: string }>(
+        `select id from public.contract_operational_events
+          where contract_id = $1 and event_type = 'restored'`,
+        [prepared.contractId],
+      );
+      return { contractId: prepared.contractId, operationalEventId: rows[0].id };
     },
     repeat: async (client, _companyId, prepared) => {
       await restoreContract(client, prepared.contractId);

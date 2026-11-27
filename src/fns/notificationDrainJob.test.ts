@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dispatchMock = vi.fn();
+const retryMock = vi.fn();
 
 vi.mock("@/fns/dispatchNotification", () => ({
   dispatchNotificationRecord: (id: string) => dispatchMock(id),
+  retryFailedNotificationRecord: (id: string, seenRetryCount: number) =>
+    retryMock(id, seenRetryCount),
 }));
 
 /**
@@ -189,6 +192,8 @@ describe("runNotificationDrainJob", () => {
     db.jobRequestsSelect = null;
     dispatchMock.mockReset();
     dispatchMock.mockResolvedValue({ state: "sent" });
+    retryMock.mockReset();
+    retryMock.mockResolvedValue({ state: "sent" });
   });
 
   afterEach(() => {
@@ -243,8 +248,27 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).toHaveBeenCalledWith("fail-1");
+    // إعادة المحاولة تمرّ عبر الحجز أولاً (GR-010): ما قرأته الصفّ هو ما يُحجز به.
+    expect(retryMock).toHaveBeenCalledWith("fail-1", 1);
     expect(result.retried).toEqual(["fail-1"]);
+  });
+
+  it("does not dispatch a failed row another retry path claimed first", async () => {
+    // GR-010: مهمة التقرير قد تكون حجزت الصف الفاشل وصرّفته قبل هذا المسح؛
+    // الحجز المفقود يعني أن محاولة أخرى تملك الصف الآن، والإرسال هنا كان
+    // سيصل المستأجر بالرسالة مرتين.
+    db.pending = [row({ id: "claimed-1", state: "failed", channel: "whatsapp", retry_count: 1 })];
+    retryMock.mockResolvedValue(null);
+
+    const result = await runNotificationDrainJob();
+
+    expect(retryMock).toHaveBeenCalledWith("claimed-1", 1);
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(result.retried).toEqual([]);
+    expect(result.skippedInFlight).toBe(1);
+    expect(db.audit).toMatchObject({
+      p_after: { scanned: 1, retried: 0, skipped_in_flight: 1 },
+    });
   });
 
   it.each([{ error_code: null }, { error_code: "rate_limited" }, { error_code: "unknown_error" }])(
@@ -262,7 +286,7 @@ describe("runNotificationDrainJob", () => {
 
       const result = await runNotificationDrainJob();
 
-      expect(dispatchMock).toHaveBeenCalledWith("fail-retry");
+      expect(retryMock).toHaveBeenCalledWith("fail-retry", 1);
       expect(result.retried).toEqual(["fail-retry"]);
       expect(result.heldForReview).toBe(0);
       expect(db.updates).toEqual([]);
@@ -282,7 +306,7 @@ describe("runNotificationDrainJob", () => {
       const result = await runNotificationDrainJob();
 
       expect(result.heldForReview).toBe(0);
-      expect(dispatchMock).toHaveBeenCalledWith("proto-1");
+      expect(retryMock).toHaveBeenCalledWith("proto-1", 1);
     },
   );
 
@@ -299,7 +323,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(retryMock).not.toHaveBeenCalled();
     expect(result.retried).toEqual([]);
     expect(result.heldForReview).toBe(1);
     expect(db.updates).toHaveLength(1);
@@ -350,7 +374,7 @@ describe("runNotificationDrainJob", () => {
 
       const result = await runNotificationDrainJob();
 
-      expect(dispatchMock).not.toHaveBeenCalled();
+      expect(retryMock).not.toHaveBeenCalled();
       expect(result.heldForReview).toBe(1);
       expect(db.updates).toHaveLength(1);
       expect(db.updates[0].values).toEqual({
@@ -380,7 +404,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).toHaveBeenCalledWith("in-flight-1");
+    expect(retryMock).toHaveBeenCalledWith("in-flight-1", 1);
     expect(result.retried).toEqual(["in-flight-1"]);
     expect(result.heldForReview).toBe(0);
     expect(db.updates).toEqual([]);
@@ -405,6 +429,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
+    expect(retryMock).not.toHaveBeenCalled();
     expect(result.cancelled).toEqual([]);
     expect(result.heldForReview).toBe(1);
     expect(db.updates).toHaveLength(1);
@@ -428,6 +453,7 @@ describe("runNotificationDrainJob", () => {
 
       const result = await runNotificationDrainJob();
 
+      expect(retryMock).not.toHaveBeenCalled();
       expect(result.cancelled).toEqual([]);
       expect(result.heldForReview).toBe(1);
       expect(db.updates[0].values).toMatchObject({
@@ -470,7 +496,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(retryMock).not.toHaveBeenCalled();
     expect(result.heldForReview).toBe(1);
     expect(db.updates).toHaveLength(1);
     expect(db.updates[0].id).toBe("fail-2");
@@ -489,7 +515,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(retryMock).not.toHaveBeenCalled();
     expect(result.heldForReview).toBe(1);
     expect(result.retried).toEqual([]);
   });
@@ -579,7 +605,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(retryMock).not.toHaveBeenCalled();
     expect(result.heldForReview).toBe(1);
     expect(db.updates[0].values).toEqual({
       state: "needs_review",
@@ -600,7 +626,7 @@ describe("runNotificationDrainJob", () => {
 
     const result = await runNotificationDrainJob();
 
-    expect(dispatchMock).toHaveBeenCalledWith("evo-transient");
+    expect(retryMock).toHaveBeenCalledWith("evo-transient", 1);
     expect(result.retried).toEqual(["evo-transient"]);
     expect(result.heldForReview).toBe(0);
   });

@@ -2,7 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany, runWithRequestCompany } from "@/company/requestCompany.server";
-import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
+import {
+  dispatchNotificationRecord,
+  retryFailedNotificationRecord,
+} from "@/fns/dispatchNotification";
 import type {
   Database,
   Json,
@@ -207,35 +210,28 @@ export async function runReportScheduleRecord(
 }
 
 /**
- * يعيد صف تسليم تقرير فاشل إلى الطابور ثم يصرّفه كما تصرّف مهمة التفريغ صفّاً فاشلاً.
+ * يعيد صف تسليم تقرير فاشل إلى الطابور ثم يصرّفه، بحجز يضمن أن محاولة واحدة فقط ترسل.
  *
  * With `failed` inside migration 312's delivery index a retry can no longer
  * write a fresh row under the same key, so the retry IS the delivery: the row
- * is put back to `queued` exactly like the Notification Log's Retry button —
- * clearing `failure_reason` and `error_code` so the partner code that parked
- * it cannot judge the new attempt — then dispatched through
- * `dispatchNotificationRecord`, the same call `runNotificationDrainJob`'s
- * retry of a failed row makes.
+ * is claimed back exactly the way the Notification Log's Retry button puts it
+ * in `queued` — `retryFailedNotificationRecord` clears `failure_reason` and
+ * `error_code` so the partner code that parked it cannot judge the new
+ * attempt — and then dispatched through the same call
+ * `runNotificationDrainJob`'s retry of a failed row makes.
  *
- * The `.eq("state", "failed")` guard means a row some other sender already
- * re-queued is left alone: that sender owns this delivery, and dispatching it
- * here as well would reach the renter twice.
+ * The claim is a compare-and-swap on the state and retry count this caller
+ * read (GR-010): the drain job retries failed rows too, and only the caller
+ * Postgres lets update the row dispatches — a row some other sender already
+ * re-queued or is sending comes back untouched, and reaching the renter twice
+ * is exactly what the claim exists to prevent.
  */
 async function requeueFailedReportDelivery(
-  db: SupabaseClient<Database>,
   row: Tables<"notifications">,
   companyId: string,
 ): Promise<Tables<"notifications">> {
-  const reset = await db
-    .from("notifications")
-    .update({ state: "queued", failure_reason: null, error_code: null })
-    .eq("id", row.id)
-    .eq("state", "failed")
-    .select("*")
-    .maybeSingle();
-  if (reset.error) throw new Error(reset.error.message);
-  if (!reset.data) return row;
-  return dispatchNotificationRecord(reset.data.id, { companyId });
+  const dispatched = await retryFailedNotificationRecord(row.id, row.retry_count, companyId);
+  return dispatched ?? row;
 }
 
 /**
@@ -292,7 +288,7 @@ export async function resendGeneratedReportRecord(
 
   let dispatched: Tables<"notifications">;
   if (prior) {
-    dispatched = await requeueFailedReportDelivery(db, prior, resolvedCompanyId);
+    dispatched = await requeueFailedReportDelivery(prior, resolvedCompanyId);
   } else {
     // Reuses the stored document when this exact report was already printed,
     // and renders when it was not — a report generated before migration 109 has

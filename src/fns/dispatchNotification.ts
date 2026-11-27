@@ -235,6 +235,41 @@ export async function dispatchNotificationRecord(
 
 export type DispatchNotificationInput = z.infer<typeof schema>;
 
+/**
+ * يعيد محاولة صف إشعار فاشل واحد: يحجزه بتحديث شرطي، ثم يصرّفه إن كان له وحده.
+ *
+ * GR-010: the notification drain's retry of a failed row and the report
+ * delivery re-queue could both dispatch the same row — each read `failed` and
+ * sent, so one tenant could get the same message twice. The claim is a
+ * compare-and-swap: `state = 'failed' AND retry_count = <seen>` is exactly the
+ * row this caller read, and the update moves it to `queued`, so of two
+ * concurrent callers only the one Postgres lets update the row gets it back —
+ * and only that caller dispatches. A caller that gets `null` holds nothing and
+ * must send nothing.
+ *
+ * Clearing `failure_reason` and `error_code` on the claim is the Notification
+ * Log's Retry button behaviour: the partner code that parked the row must not
+ * judge the new attempt before it runs.
+ */
+export async function retryFailedNotificationRecord(
+  notificationId: string,
+  seenRetryCount: number,
+  companyId: string,
+): Promise<Tables<"notifications"> | null> {
+  const db = companyClient(companyId);
+  const claimed = await db
+    .from("notifications")
+    .update({ state: "queued", failure_reason: null, error_code: null })
+    .eq("id", notificationId)
+    .eq("state", "failed")
+    .eq("retry_count", seenRetryCount)
+    .select("*")
+    .maybeSingle();
+  if (claimed.error) throw new Error(claimed.error.message);
+  if (!claimed.data) return null;
+  return dispatchNotificationRecord(claimed.data.id, { companyId });
+}
+
 export const dispatchNotification = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(schema)

@@ -19,6 +19,9 @@ import {
   seedPayment,
   seedRefund,
   seedRestoredContract,
+  seedTwoCloseOuts,
+  seedTwoRestores,
+  seedTwoWriteOffs,
   seedWrittenOffInvoice,
   sentMarkers,
   CLOSEOUT_ID,
@@ -28,6 +31,9 @@ import {
   OTHER_COMPANY_ID,
   PAYMENT_ID,
   REFUND_ID,
+  RESTORE_EVENT_ID,
+  SECOND_CLOSEOUT_ID,
+  WRITE_OFF_EVENT_ID,
   WRITE_OFF_INVOICE_ID,
 } from "./events.testkit";
 import { MONEY_EVENT_KINDS, eventHandlers, type MoneyEventKind } from "./events";
@@ -117,7 +123,7 @@ const scenarios: MoneyScenario[] = [
   {
     kind: "invoice.written_off",
     expectation: "sends one invoice_written_off carrying the reason from the operational event",
-    payload: { invoiceId: WRITE_OFF_INVOICE_ID },
+    payload: { invoiceId: WRITE_OFF_INVOICE_ID, operationalEventId: WRITE_OFF_EVENT_ID },
     seed: seedWrittenOffInvoice,
     expectSentOnce: () => {
       const rows = rowsOf("notifications");
@@ -148,7 +154,7 @@ const scenarios: MoneyScenario[] = [
   {
     kind: "contract.closed_out",
     expectation: "sends one contract_closeout with the close-out loaded for the contract",
-    payload: { contractId: CONTRACT_ID },
+    payload: { contractId: CONTRACT_ID, closeoutId: CLOSEOUT_ID },
     seed: seedCloseOut,
     expectSentOnce: () => {
       const rows = rowsOf("notifications");
@@ -163,7 +169,7 @@ const scenarios: MoneyScenario[] = [
   {
     kind: "contract.restored",
     expectation: "sends one contract_restored with the state and reason of the restore event",
-    payload: { contractId: CONTRACT_ID },
+    payload: { contractId: CONTRACT_ID, operationalEventId: RESTORE_EVENT_ID },
     seed: seedRestoredContract,
     expectSentOnce: () => {
       const rows = rowsOf("notifications");
@@ -218,4 +224,76 @@ describe("money event handlers", () => {
       expect(sentMarkers()).toEqual([]);
     },
   );
+});
+
+/**
+ * سيناريو حدث متأخر في تسلسل إغلاق → استعادة → إغلاق (GR-005).
+ *
+ * Each seed writes the event's own row FIRST and a newer row for the same
+ * entity after it; the payload names the first row. A handler that loads "the
+ * latest row" answers with the second one and the assertion on the first
+ * row's data fails.
+ */
+interface LateEventScenario {
+  kind: MoneyEventKind;
+  expectation: string;
+  payload: Record<string, string>;
+  seed: (companyId: string) => Promise<void>;
+  /** يثبت أن التنبيه حمل بيانات الصف الأول لا الأحدث. */
+  expectFirstRow: () => void;
+}
+
+const lateEventScenarios: LateEventScenario[] = [
+  {
+    kind: "contract.closed_out",
+    expectation: "two close-outs, and the first event loads the first",
+    payload: { contractId: CONTRACT_ID, closeoutId: CLOSEOUT_ID },
+    seed: seedTwoCloseOuts,
+    expectFirstRow: () => {
+      const rows = rowsOf("notifications");
+      expect(rows).toHaveLength(1);
+      // معرّف الإغلاق في التنبيه هو معرّف الإغلاق الأول — لا الأحدث.
+      expect(rows[0].payload).toMatchObject({ closeout_id: CLOSEOUT_ID });
+    },
+  },
+  {
+    kind: "contract.restored",
+    expectation: "two restores, and the first event loads the first restore's state and reason",
+    payload: { contractId: CONTRACT_ID, operationalEventId: RESTORE_EVENT_ID },
+    seed: seedTwoRestores,
+    expectFirstRow: () => {
+      const rows = rowsOf("notifications");
+      expect(rows).toHaveLength(1);
+      // الحالة والسبب من صف الاستعادة الأول، لا من الاستعادة الأحدث.
+      expect(rows[0].payload).toMatchObject({
+        target_state: "active",
+        reason: "tenant returning",
+      });
+    },
+  },
+  {
+    kind: "invoice.written_off",
+    expectation: "two write-off events, and the first event loads the first one's reason",
+    payload: { invoiceId: WRITE_OFF_INVOICE_ID, operationalEventId: WRITE_OFF_EVENT_ID },
+    seed: seedTwoWriteOffs,
+    expectFirstRow: () => {
+      const rows = rowsOf("notifications");
+      expect(rows).toHaveLength(1);
+      // سبب الشطب من الحدث الأول؛ سبب الحدث الأحدث لا يظهر في الرسالة.
+      expect(String(rows[0].body)).toContain("broken meter");
+      expect(String(rows[0].body)).not.toContain("second meter broken");
+    },
+  },
+];
+
+describe("an event loads its own row, not the latest one (GR-005)", () => {
+  test.each(lateEventScenarios)("$kind: $expectation", async (scenario) => {
+    // الحمولة تحمل معرّف الصف الذي كتبه الحدث نفسه، كما يقرّها الكتالوج الصارم.
+    expect(JOB_CATALOG[scenario.kind].payload.safeParse(scenario.payload).success).toBe(true);
+    await scenario.seed(COMPANY_ID);
+
+    await eventHandlers[scenario.kind](contextFor(scenario));
+
+    scenario.expectFirstRow();
+  });
 });

@@ -9,8 +9,6 @@ const mocks = vi.hoisted(() => ({
   generatedSingle: vi.fn(),
   deliverySelect: vi.fn(),
   notificationInsertSingle: vi.fn(),
-  notificationUpdateValues: vi.fn(),
-  notificationResetSingle: vi.fn(),
   generatedUpdateEq: vi.fn(),
   scheduleUpdateEq: vi.fn(),
   scheduleUpdateValues: vi.fn(),
@@ -19,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   notificationInsertValues: vi.fn(),
   rpc: vi.fn(),
   dispatch: vi.fn(),
+  retry: vi.fn(),
   renderPdf: vi.fn(),
   attachmentPayload: vi.fn(),
 }));
@@ -63,15 +62,6 @@ const dbClient = {
           mocks.notificationInsertValues(values);
           return { select: () => ({ single: mocks.notificationInsertSingle }) };
         },
-        // إعادة صف التسليم الفاشل إلى الطابور: `.update().eq().eq().select().maybeSingle()`.
-        update: (values: unknown) => {
-          mocks.notificationUpdateValues(values);
-          return {
-            eq: () => ({
-              eq: () => ({ select: () => ({ maybeSingle: mocks.notificationResetSingle }) }),
-            }),
-          };
-        },
         // فحص صف التسليم السابق: `.select().eq().in().order()` ثم انتظار السلسلة.
         select: () => ({
           eq: () => ({
@@ -101,6 +91,7 @@ vi.mock("@/company/requestCompany.server", () => ({
 
 vi.mock("@/fns/dispatchNotification", () => ({
   dispatchNotificationRecord: (...args: unknown[]) => mocks.dispatch(...args),
+  retryFailedNotificationRecord: (...args: unknown[]) => mocks.retry(...args),
 }));
 
 vi.mock("@/lib/reportPdfAttachment", () => ({
@@ -147,10 +138,7 @@ beforeEach(() => {
   mocks.scheduleUpdateEq.mockResolvedValue({ error: null });
   mocks.generatedSelect.mockResolvedValue({ data: null, error: null });
   mocks.deliverySelect.mockResolvedValue({ data: [], error: null });
-  mocks.notificationResetSingle.mockResolvedValue({
-    data: { id: "notification-1", state: "queued" },
-    error: null,
-  });
+  mocks.retry.mockResolvedValue({ id: "notification-1", state: "sent" });
   mocks.generatedSingle.mockResolvedValue({
     data: {
       id: "generated-1",
@@ -304,12 +292,20 @@ describe("the report.run handler", () => {
     // السجل: صف تسليم واحد لكل مهمة وقناة هو ما يبقى.
     //
     // With `failed` inside the delivery index (migration 312) the retry IS the
-    // delivery: the failed row is set back to `queued` the way the
+    // delivery: the failed row is claimed back to `queued` the way the
     // Notification Log's Retry button does and dispatched the way the
     // notification drain retries a failed row — no fresh row, and the log
-    // keeps one row per job and channel.
+    // keeps one row per job and channel. The claim (GR-010) compares the
+    // retry count this caller read, so only one retry path ever sends the row.
     mocks.deliverySelect.mockResolvedValue({
-      data: [{ id: "notification-1", state: "failed", failure_reason: "provider refused" }],
+      data: [
+        {
+          id: "notification-1",
+          state: "failed",
+          failure_reason: "provider refused",
+          retry_count: 2,
+        },
+      ],
       error: null,
     });
     mocks.generatedSelect.mockResolvedValue({ data: { id: "generated-1" }, error: null });
@@ -318,12 +314,9 @@ describe("the report.run handler", () => {
     const result = await createReportRunHandler()(jobContext("2026-09-28"));
 
     expect(mocks.notificationInsertValues).not.toHaveBeenCalled();
-    expect(mocks.notificationUpdateValues).toHaveBeenCalledWith({
-      state: "queued",
-      failure_reason: null,
-      error_code: null,
-    });
-    expect(mocks.dispatch).toHaveBeenCalledWith("notification-1", { companyId: COMPANY_ID });
+    expect(mocks.retry).toHaveBeenCalledWith("notification-1", 2, COMPANY_ID);
+    // لا إرسال خارج الحجز: الإرسال وظيفة الفائز بالحجز وحده.
+    expect(mocks.dispatch).not.toHaveBeenCalled();
     // The bookkeeping the resend always wrote still runs: the stored report is
     // marked sent because this retry is the delivery that finally landed.
     expect(mocks.generatedUpdateValues).toHaveBeenCalledWith({
@@ -333,6 +326,37 @@ describe("the report.run handler", () => {
     expect(result).toMatchObject({
       resent: true,
       notification: { id: "notification-1", state: "sent" },
+    });
+  });
+
+  test("a failed row another retry path claimed first is left alone", async () => {
+    // GR-010: مهمة التفريغ اليومية قد تكون حجزت الصف الفاشل وصرّفته بينما هذا
+    // الطلب يعيد الإرسال؛ الحجز المفقود يعني أن المحاولة الأخرى تملك الصف،
+    // وإرساله هنا كان سيصل الإدارة بالتقرير مرتين.
+    mocks.deliverySelect.mockResolvedValue({
+      data: [
+        {
+          id: "notification-1",
+          state: "failed",
+          failure_reason: "provider refused",
+          retry_count: 2,
+        },
+      ],
+      error: null,
+    });
+    mocks.generatedSelect.mockResolvedValue({ data: { id: "generated-1" }, error: null });
+    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+    mocks.retry.mockResolvedValue(null);
+
+    const result = await createReportRunHandler()(jobContext("2026-09-28"));
+
+    expect(mocks.retry).toHaveBeenCalledWith("notification-1", 2, COMPANY_ID);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    // الصف يعود كما هو فاشلاً — لا صف ثانٍ ولا إرسال من هذا المسار.
+    expect(mocks.notificationInsertValues).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      resent: true,
+      notification: { id: "notification-1", state: "failed" },
     });
   });
 });

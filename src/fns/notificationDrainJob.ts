@@ -6,7 +6,10 @@ import {
   requireRequestCompany,
   runWithRequestCompany,
 } from "@/company/requestCompany.server";
-import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
+import {
+  dispatchNotificationRecord,
+  retryFailedNotificationRecord,
+} from "@/fns/dispatchNotification";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 import { notificationDispatchDedupeKey } from "@/jobs/catalog";
 import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
@@ -46,6 +49,12 @@ import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
  *   notification request path enqueues `notification.dispatch` and returns, so
  *   the row stays `queued` until the worker picks it up. Dispatching it here
  *   as well would deliver the same message to the same recipient twice.
+ * - **A retried `failed` row is claimed before it is dispatched (GR-010).**
+ *   The report delivery re-queue retries failed rows too, and without a claim
+ *   both paths could dispatch the one row — the tenant would get the message
+ *   twice. `retryFailedNotificationRecord` hands the row to exactly one of
+ *   them; a claim lost here counts as `skippedInFlight`, because another
+ *   retry path now holds the row.
  */
 
 /** Past-due age beyond which a row is cancelled instead of delivered. */
@@ -274,8 +283,18 @@ export async function runNotificationDrainJob(_asOf: string | null = null, compa
           if (!exhausted.error) heldForReview += 1;
           continue;
         }
-        const result = await dispatchNotificationRecord(row.id, { companyId: resolvedCompanyId });
-        if (result.state === "sent") retried.push(row.id);
+        const claimed = await retryFailedNotificationRecord(
+          row.id,
+          row.retry_count,
+          resolvedCompanyId,
+        );
+        if (!claimed) {
+          // Another retry path (the report re-queue, a second drain run) holds
+          // this row now — dispatching it here as well would send it twice.
+          skippedInFlight += 1;
+          continue;
+        }
+        if (claimed.state === "sent") retried.push(row.id);
         continue;
       }
 

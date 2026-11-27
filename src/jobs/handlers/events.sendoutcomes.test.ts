@@ -31,6 +31,8 @@ import {
   DISPUTED_INVOICE_ID,
   PAYMENT_ID,
   REFUND_ID,
+  RESTORE_EVENT_ID,
+  WRITE_OFF_EVENT_ID,
   WRITE_OFF_INVOICE_ID,
 } from "./events.testkit";
 import { eventHandlers, type MoneyEventKind } from "./events";
@@ -82,7 +84,7 @@ const sendFailureScenarios: SendFailureScenario[] = [
   {
     kind: "invoice.written_off",
     expectation: "a sendFailureReason skip is thrown so the job retries",
-    payload: { invoiceId: WRITE_OFF_INVOICE_ID },
+    payload: { invoiceId: WRITE_OFF_INVOICE_ID, operationalEventId: WRITE_OFF_EVENT_ID },
     seed: seedWrittenOffInvoice,
     breakSend: "notificationInsert",
   },
@@ -96,14 +98,14 @@ const sendFailureScenarios: SendFailureScenario[] = [
   {
     kind: "contract.closed_out",
     expectation: "a sendFailureReason skip is thrown so the job retries",
-    payload: { contractId: CONTRACT_ID },
+    payload: { contractId: CONTRACT_ID, closeoutId: CLOSEOUT_ID },
     seed: seedCloseOut,
     breakSend: "notificationInsert",
   },
   {
     kind: "contract.restored",
     expectation: "a sendFailureReason skip is thrown so the job retries",
-    payload: { contractId: CONTRACT_ID },
+    payload: { contractId: CONTRACT_ID, operationalEventId: RESTORE_EVENT_ID },
     seed: seedRestoredContract,
     breakSend: "notificationInsert",
   },
@@ -167,7 +169,7 @@ const deliberateSkipScenarios: DeliberateSkipScenario[] = [
   {
     kind: "invoice.written_off",
     expectation: "an already-notified invoice is a deliberate skip",
-    payload: { invoiceId: WRITE_OFF_INVOICE_ID },
+    payload: { invoiceId: WRITE_OFF_INVOICE_ID, operationalEventId: WRITE_OFF_EVENT_ID },
     seed: async (companyId) => {
       await seedWrittenOffInvoice(companyId);
       await seedAlreadyNotified("invoice_written_off", { invoice_id: WRITE_OFF_INVOICE_ID });
@@ -185,7 +187,7 @@ const deliberateSkipScenarios: DeliberateSkipScenario[] = [
   {
     kind: "contract.closed_out",
     expectation: "an already-notified close-out is a deliberate skip",
-    payload: { contractId: CONTRACT_ID },
+    payload: { contractId: CONTRACT_ID, closeoutId: CLOSEOUT_ID },
     seed: async (companyId) => {
       await seedCloseOut(companyId);
       await seedAlreadyNotified("contract_closeout", { closeout_id: CLOSEOUT_ID });
@@ -194,7 +196,7 @@ const deliberateSkipScenarios: DeliberateSkipScenario[] = [
   {
     kind: "contract.restored",
     expectation: "an already-notified restore is a deliberate skip",
-    payload: { contractId: CONTRACT_ID },
+    payload: { contractId: CONTRACT_ID, operationalEventId: RESTORE_EVENT_ID },
     seed: async (companyId) => {
       await seedRestoredContract(companyId);
       await seedAlreadyNotified("contract_restored", {

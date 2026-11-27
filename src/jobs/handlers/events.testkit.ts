@@ -35,6 +35,27 @@ export const CONTRACT_ID = "07777777-7777-4777-8777-777777777777";
 export const OTHER_COMPANY_ID = "99999999-9999-4999-8999-999999999999";
 
 /**
+ * معرّفات صفوف الأحداث التشغيلية التي تحملها الحمولات (GR-005).
+ *
+ * The handlers load the event's own row by the id in the payload, so the seeds
+ * give those rows their ids and the scenarios name them — a generated id would
+ * leave the payload and the seeded row unable to point at each other.
+ */
+export const WRITE_OFF_EVENT_ID = "a5555555-5555-4555-8555-555555555555";
+export const RESTORE_EVENT_ID = "b6666666-6666-4666-8666-666666666666";
+
+/**
+ * معرّفات الصفوف «الثانية» في تسلسل إغلاق → استعادة → إغلاق (GR-005).
+ *
+ * The second row of each pair is the "latest" one; the test runs the FIRST
+ * event against it and demands the first row's data — the exact notice the
+ * latest-lookup used to lose.
+ */
+export const SECOND_CLOSEOUT_ID = "c7777777-7777-4777-8777-777777777777";
+export const SECOND_RESTORE_EVENT_ID = "d8888888-8888-4888-8888-888888888888";
+export const SECOND_WRITE_OFF_EVENT_ID = "e9999999-9999-4999-9899-999999999999";
+
+/**
  * أعطال حدود الإرسال المحقونة: رفض إدراج الإشعارات، وتعطّل صندوق المهام.
  *
  * The senders run their real code against the fake database; these switches
@@ -174,6 +195,7 @@ export async function seedWrittenOffInvoice(companyId: string): Promise<void> {
     balance: 75,
   });
   await seedRow("contract_operational_events", {
+    id: WRITE_OFF_EVENT_ID,
     company_id: companyId,
     contract_id: CONTRACT_ID,
     tenant_id: TENANT_ID,
@@ -221,6 +243,7 @@ export async function seedRestoredContract(companyId: string): Promise<void> {
     code: "CT-1",
   });
   await seedRow("contract_operational_events", {
+    id: RESTORE_EVENT_ID,
     company_id: companyId,
     contract_id: CONTRACT_ID,
     tenant_id: TENANT_ID,
@@ -228,6 +251,77 @@ export async function seedRestoredContract(companyId: string): Promise<void> {
     payload: { contract_id: CONTRACT_ID, contract_state: "active", reason: "tenant returning" },
     note: "tenant returning",
   });
+}
+
+/**
+ * يرتّب تاريخ إنشاء صفَّين مزروعين: الأقدم فالأقدم.
+ *
+ * The fake stamps `created_at` at insert time with millisecond precision, so
+ * two seeds in one tick collide and "the latest row" becomes arbitrary — the
+ * very ambiguity GR-005 removes. Explicit ordering is what makes "the first
+ * event loads the first row" discriminate against the old latest-lookup.
+ */
+function orderCreatedAt(table: string, firstId: string, secondId: string): void {
+  const first = rowsOf(table).find((row) => row.id === firstId);
+  const second = rowsOf(table).find((row) => row.id === secondId);
+  if (!first || !second) throw new Error(`orderCreatedAt: ${table} pair not seeded`);
+  first.created_at = "2026-11-01T10:00:00.000Z";
+  second.created_at = "2026-11-02T10:00:00.000Z";
+}
+
+/**
+ * يزرع صفَّي إغلاق للعقد نفسه: إغلاق قديم ثم إغلاق أحدث منه (GR-005).
+ *
+ * The scenario is close → restore → close: the late first event must load the
+ * first close-out even though the second one is the latest row.
+ */
+export async function seedTwoCloseOuts(companyId: string): Promise<void> {
+  await seedCloseOut(companyId);
+  await seedRow("contract_closeouts", {
+    id: SECOND_CLOSEOUT_ID,
+    company_id: companyId,
+    contract_id: CONTRACT_ID,
+    tenant_id: TENANT_ID,
+    outcome: "archive",
+    move_out_date: "2026-12-31",
+    refund_total: 0,
+    balance_due_tenant: 0,
+  });
+  orderCreatedAt("contract_closeouts", CLOSEOUT_ID, SECOND_CLOSEOUT_ID);
+}
+
+/** يزرع صفَّي استعادة للعقد نفسه: استعادة قديمة ثم استعادة أحدث منها (GR-005). */
+export async function seedTwoRestores(companyId: string): Promise<void> {
+  await seedRestoredContract(companyId);
+  await seedRow("contract_operational_events", {
+    id: SECOND_RESTORE_EVENT_ID,
+    company_id: companyId,
+    contract_id: CONTRACT_ID,
+    tenant_id: TENANT_ID,
+    event_type: "restored",
+    payload: {
+      contract_id: CONTRACT_ID,
+      contract_state: "frozen",
+      reason: "tenant returned again",
+    },
+    note: "tenant returned again",
+  });
+  orderCreatedAt("contract_operational_events", RESTORE_EVENT_ID, SECOND_RESTORE_EVENT_ID);
+}
+
+/** يزرع صفَّي شطب لنفس الفاتورة: شطب قديم ثم شطب أحدث منه (GR-005). */
+export async function seedTwoWriteOffs(companyId: string): Promise<void> {
+  await seedWrittenOffInvoice(companyId);
+  await seedRow("contract_operational_events", {
+    id: SECOND_WRITE_OFF_EVENT_ID,
+    company_id: companyId,
+    contract_id: CONTRACT_ID,
+    tenant_id: TENANT_ID,
+    event_type: "invoice_written_off",
+    payload: { invoice_id: WRITE_OFF_INVOICE_ID, balance_written_off: 75 },
+    note: "second meter broken",
+  });
+  orderCreatedAt("contract_operational_events", WRITE_OFF_EVENT_ID, SECOND_WRITE_OFF_EVENT_ID);
 }
 
 /**

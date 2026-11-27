@@ -124,6 +124,18 @@ function makeConnection(): LoadedGatewayConnection {
   };
 }
 
+/** حالة بوابة مدفوعة لفاتورة مزوّد معيّنة. */
+function paidStatusFor(providerInvoiceId: string): GatewayPaymentStatus {
+  return {
+    outcome: "paid",
+    method: "knet",
+    providerInvoiceId,
+    providerPaymentId: "MF-PAY-1",
+    error: null,
+    raw: {},
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   requestCompanyState.company = {
@@ -158,8 +170,14 @@ beforeEach(() => {
 
 describe("paymentReturnPage (session-free, company-bound)", () => {
   it("refuses another company's $preq with the exact same not_found state as a missing one", async () => {
-    const otherCompanyResult = await loadPaymentReturnState({ preq: "PREQ-0000002" });
-    const missingResult = await loadPaymentReturnState({ preq: "PREQ-9999999" });
+    const otherCompanyResult = await loadPaymentReturnState({
+      preq: "PREQ-0000002",
+      paymentId: "MF-PAY-2",
+    });
+    const missingResult = await loadPaymentReturnState({
+      preq: "PREQ-9999999",
+      paymentId: "MF-PAY-9",
+    });
 
     expect(otherCompanyResult).toEqual({ status: "not_found" });
     expect(missingResult).toEqual({ status: "not_found" });
@@ -171,7 +189,7 @@ describe("paymentReturnPage (session-free, company-bound)", () => {
   it("returns not_found when no company is resolved from the request host", async () => {
     requestCompanyState.company = null;
 
-    const result = await loadPaymentReturnState({ preq: "PREQ-0000001" });
+    const result = await loadPaymentReturnState({ preq: "PREQ-0000001", paymentId: "MF-PAY-1" });
 
     expect(result).toEqual({ status: "not_found" });
     expect(companyClientMock).not.toHaveBeenCalled();
@@ -195,6 +213,10 @@ describe("paymentReturnPage (session-free, company-bound)", () => {
     expect(result).toEqual({ status: "paid", code: "PREQ-0000001" });
     expect(companyClientMock).toHaveBeenCalledWith(COMPANY_A, { allowSuspended: true });
     expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), CONN_A);
+    expect(getPaymentStatusMock).toHaveBeenCalledWith({
+      providerPaymentId: "MF-PAY-1",
+      providerInvoiceId: null,
+    });
     expect(settleGatewayPaymentMock).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "callback.inquiry",
@@ -221,19 +243,39 @@ describe("paymentReturnPage (session-free, company-bound)", () => {
       raw: {},
     });
 
-    const result = await loadPaymentReturnState({ preq: "PREQ-0000001" });
+    const result = await loadPaymentReturnState({ preq: "PREQ-0000001", paymentId: "MF-PAY-1" });
 
     expect(result).toEqual({ status: expected, code: "PREQ-0000001" });
     expect(settleGatewayPaymentMock).not.toHaveBeenCalled();
   });
 
-  it("returns paid immediately when the payment request is already completed", async () => {
+  it("returns paid without settling again when the request is already completed", async () => {
     paymentRequestsTable.rows[0].status = "completed";
+    getPaymentStatusMock.mockResolvedValue(paidStatusFor("MF-INV-1"));
 
-    const result = await loadPaymentReturnState({ preq: "PREQ-0000001" });
+    const result = await loadPaymentReturnState({ preq: "PREQ-0000001", paymentId: "MF-PAY-1" });
 
     expect(result).toEqual({ status: "paid", code: "PREQ-0000001" });
+    expect(settleGatewayPaymentMock).not.toHaveBeenCalled();
+  });
+
+  // Security review 2026-11-27: PREQ codes are sequential, so an anonymous
+  // caller must not learn a request's status or trigger a gateway call from
+  // the code alone.
+  it("reveals nothing and calls nothing when the redirect carries no gateway payment id", async () => {
+    const result = await loadPaymentReturnState({ preq: "PREQ-0000001" });
+
+    expect(result).toEqual({ status: "not_found" });
+    expect(companyClientMock).not.toHaveBeenCalled();
     expect(getPaymentStatusMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a payment id that belongs to another gateway invoice as not found", async () => {
+    getPaymentStatusMock.mockResolvedValue(paidStatusFor("MF-INV-OTHER"));
+
+    const result = await loadPaymentReturnState({ preq: "PREQ-0000001", paymentId: "MF-PAY-X" });
+
+    expect(result).toEqual({ status: "not_found" });
     expect(settleGatewayPaymentMock).not.toHaveBeenCalled();
   });
 });

@@ -32,7 +32,9 @@ export type PaymentReturnState =
  *
  * Resolves the company from `getRequestCompany()`, scopes the lookup to that
  * company via `companyClient(company.id, { allowSuspended: true })`, and
- * confirms on the payment request's recorded `gateway_connection_id`. A `$preq`
+ * confirms on the payment request's recorded `gateway_connection_id`. The
+ * gateway payment id from the redirect is required and must belong to the
+ * request's own gateway invoice; otherwise the caller gets `not_found`. A `$preq`
  * belonging to another company returns `{ status: "not_found" }` — identical
  * to a missing code — so no cross-company existence signal leaks.
  */
@@ -46,9 +48,13 @@ export async function loadPaymentReturnState(input: {
   }
 
   const trimmedCode = input.preq.trim();
-  if (!PREQ_CODE_REGEX.test(trimmedCode)) {
+  // PREQ codes are sequential, so the code alone proves nothing. The payer
+  // holds the gateway's payment id from the redirect; without it nothing is
+  // read or revealed, and nobody can enumerate codes to learn their status.
+  if (!PREQ_CODE_REGEX.test(trimmedCode) || !input.paymentId) {
     return { status: "not_found" };
   }
+  const paymentId = input.paymentId;
 
   const normalizedCode = trimmedCode.toUpperCase();
   // Settlement path is allowed to complete in-flight charges even if suspended.
@@ -68,25 +74,30 @@ export async function loadPaymentReturnState(input: {
   if (!paymentRequest) {
     return { status: "not_found" };
   }
-  if (paymentRequest.status === "completed") {
-    return { status: "paid", code: paymentRequest.code };
-  }
-  if (!paymentRequest.gateway_connection_id) {
-    return { status: "error", code: paymentRequest.code };
+  if (!paymentRequest.gateway_connection_id || !paymentRequest.provider_invoice_id) {
+    return { status: "not_found" };
   }
 
   const loaded = await loadGatewayConnection(db, paymentRequest.gateway_connection_id);
   const gateway = gatewayRegistry.create(loaded.connection);
+  // The invoice id is left out on purpose: the adapter falls back to it when
+  // the payment id is unknown, which would answer for any guessed code.
   const gatewayStatus = await gateway.getPaymentStatus({
-    providerPaymentId: input.paymentId ?? paymentRequest.provider_payment_id,
-    providerInvoiceId: paymentRequest.provider_invoice_id,
+    providerPaymentId: paymentId,
+    providerInvoiceId: null,
   });
+  if (gatewayStatus.providerInvoiceId !== paymentRequest.provider_invoice_id) {
+    return { status: "not_found" };
+  }
 
+  if (paymentRequest.status === "completed") {
+    return { status: "paid", code: paymentRequest.code };
+  }
   if (gatewayStatus.outcome !== "paid") {
     return { status: gatewayStatus.outcome, code: paymentRequest.code };
   }
 
-  const inquiryKey = input.paymentId ?? gatewayStatus.providerPaymentId ?? paymentRequest.code;
+  const inquiryKey = paymentId;
   await settleGatewayPayment(
     {
       eventType: "callback.inquiry",

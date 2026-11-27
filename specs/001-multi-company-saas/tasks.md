@@ -357,7 +357,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [ ] T152 [US8] Run quickstart.md Phase 3 for MyFatoorah in sandbox and record SC-011 and SC-012
 - [ ] T153 [US8] ⛔ BLOCKED(owner: Tap sandbox account) VERIFY Tap's API version, webhook signature and KWD precision in research.md R14; implement `src/gateways/tap.ts`; run quickstart.md Phase 3 for Tap
 - [ ] T154 [US8] ⛔ BLOCKED(owner: UPayments sandbox account) VERIFY UPayments' API version and webhook verification in research.md R14; implement `src/gateways/upayments.ts`; run quickstart.md Phase 3 for UPayments
-- [ ] T155 [US8] Gate: lint, typecheck, tests, guard skills for the phase
+- [x] T155 [US8] Gate: lint, typecheck, tests, guard skills for the phase — independent review fixed: MyFatoorah settlement reference keyed on the provider invoice id (two concurrent settlements book once); settlement loads the credentials version pinned on the payment request; partial credential save keeps unchanged secrets; test↔live mode switch bumps the version and clears activation; confirm refuses a paid status whose invoice id differs from the request. Recorded, not fixed: dead legacy MyFatoorah helpers, settle job ending on gateway pending (reconcile cron recovers), non-atomic gateway activation, finalize guard on completed requests.
 
 **Checkpoint**: A company collects through its own MyFatoorah account; Tap and UPayments follow when unblocked.
 

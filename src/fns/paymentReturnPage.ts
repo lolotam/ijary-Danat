@@ -62,7 +62,7 @@ export async function loadPaymentReturnState(input: {
   const { data: paymentRequest, error } = await db
     .from("payment_requests")
     .select(
-      "id, code, company_id, provider_invoice_id, provider_payment_id, gateway_connection_id, status",
+      "id, code, company_id, provider_invoice_id, provider_payment_id, gateway_connection_id, credentials_version, status",
     )
     .eq("code", normalizedCode)
     .eq("company_id", company.id)
@@ -78,7 +78,9 @@ export async function loadPaymentReturnState(input: {
     return { status: "not_found" };
   }
 
-  const loaded = await loadGatewayConnection(db, paymentRequest.gateway_connection_id);
+  const loaded = await loadGatewayConnection(db, paymentRequest.gateway_connection_id, {
+    credentialsVersion: paymentRequest.credentials_version,
+  });
   const gateway = gatewayRegistry.create(loaded.connection);
   // The invoice id is left out on purpose: the adapter falls back to it when
   // the payment id is unknown, which would answer for any guessed code.

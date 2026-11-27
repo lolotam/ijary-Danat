@@ -124,7 +124,7 @@ function boundPaymentRequest(overrides: Record<string, unknown> = {}) {
     tenant_id: mockTenantId,
     gateway_connection_id: "conn-1",
     credentials_version: 1,
-    provider_invoice_id: null,
+    provider_invoice_id: "987654",
     provider_payment_id: null,
     ...overrides,
   };
@@ -319,7 +319,7 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
       jsonResponse({
         IsSuccess: true,
         Data: {
-          InvoiceId: 1,
+          InvoiceId: 987654,
           InvoiceStatus: "Paid",
           InvoiceTransactions: [
             { TransactionStatus: "Succss", PaymentGateway: "VISA/MASTER", PaymentId: "MF-PAY-3" },
@@ -335,6 +335,24 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
       expect(String(call[0])).not.toContain("/v3/GetPaymentStatus");
     }
     expect(String(fetchMock.mock.calls[1][0])).toContain("/v2/GetPaymentStatus");
+  });
+
+  it("does not settle when the paid payment id belongs to another invoice", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          Invoice: { Id: "555000", Status: "PAID" },
+          Transaction: { Status: "SUCCESS", PaymentMethod: "KNET", PaymentId: "MF-OTHER" },
+        },
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
+
+    const result = await runHandler({ paymentId: "MF-OTHER" });
+
+    expect(result).toEqual({ status: "pending", tenantId: mockTenantId });
+    expect(settleGatewayPaymentMock).not.toHaveBeenCalled();
   });
 
   it("returns {status:'pending'} without settling when the gateway reports a non-paid invoice", async () => {
@@ -362,7 +380,7 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
       jsonResponse({
         IsSuccess: true,
         Data: {
-          InvoiceId: 42,
+          InvoiceId: 987654,
           InvoiceStatus: "Paid",
           InvoiceTransactions: [{ TransactionStatus: "Succss", PaymentId: "MF-PAY-4" }],
         },

@@ -24,6 +24,7 @@ type ReconcileDb = SupabaseClient<Database>;
 
 interface PendingRequest {
   code: string;
+  credentials_version: number | null;
   gateway_connection_id: string | null;
   id: string;
   provider_invoice_id: string | null;
@@ -54,7 +55,9 @@ async function reconcileOneRequest(
 
   let loaded: Awaited<ReturnType<typeof loadGatewayConnection>>;
   try {
-    loaded = await loadGatewayConnection(db, request.gateway_connection_id);
+    loaded = await loadGatewayConnection(db, request.gateway_connection_id, {
+      credentialsVersion: request.credentials_version,
+    });
   } catch (error) {
     if (error instanceof GatewayConnectionError && error.code === "CONNECTION_NOT_FOUND") {
       return { kind: "skipped", reason: `${request.code}: ${error.message}` };
@@ -109,7 +112,7 @@ async function requestsToPoll(
   since: string,
 ): Promise<PendingRequest[]> {
   const columns =
-    "id, code, provider_invoice_id, provider_payment_id, gateway_connection_id, status";
+    "id, code, provider_invoice_id, provider_payment_id, gateway_connection_id, credentials_version, status";
   const [pending, superseded] = await Promise.all([
     db
       .from("payment_requests")

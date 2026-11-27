@@ -27,6 +27,7 @@ const paymentRequestsTable = vi.hoisted(() => ({
     provider_invoice_id: string | null;
     provider_payment_id: string | null;
     gateway_connection_id: string | null;
+    credentials_version?: number | null;
     status: string;
   }>,
 }));
@@ -152,6 +153,7 @@ beforeEach(() => {
       provider_invoice_id: "MF-INV-1",
       provider_payment_id: "MF-PAY-1",
       gateway_connection_id: CONN_A,
+      credentials_version: 2,
       status: "pending",
     },
     {
@@ -212,7 +214,9 @@ describe("paymentReturnPage (session-free, company-bound)", () => {
 
     expect(result).toEqual({ status: "paid", code: "PREQ-0000001" });
     expect(companyClientMock).toHaveBeenCalledWith(COMPANY_A, { allowSuspended: true });
-    expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), CONN_A);
+    expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), CONN_A, {
+      credentialsVersion: 2,
+    });
     expect(getPaymentStatusMock).toHaveBeenCalledWith({
       providerPaymentId: "MF-PAY-1",
       providerInvoiceId: null,

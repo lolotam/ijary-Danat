@@ -190,7 +190,12 @@ async function runSettlement(
   );
   if (!paymentRequest) throw new Error("No payment request matches this webhook.");
   if (paymentRequest.status === "completed") return true;
-  const referencePrefix = `MF:${settledDetails.paymentId ?? settledDetails.invoiceId ?? paymentRequest.code}`;
+  // The prefix comes from the request's own MyFatoorah invoice, never from the
+  // caller's paymentId: two concurrent settlements of one request carrying
+  // different payment ids (a failed retry and the paid one) used to write two
+  // references, slip past the unique `MF:%` index and book a second payment
+  // with no money behind it (T155 review #1). One request, one prefix.
+  const referencePrefix = `MF:${paymentRequest.provider_invoice_id ?? paymentRequest.code}`;
   const { invoices, missingInvoiceIds } = await orderedRequestInvoices(db, paymentRequest);
   if (missingInvoiceIds.length) {
     console.error(

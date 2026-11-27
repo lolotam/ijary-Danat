@@ -116,6 +116,7 @@ function request(code: string, providerInvoiceId: string, connectionId: string |
     provider_invoice_id: providerInvoiceId,
     provider_payment_id: null,
     gateway_connection_id: connectionId,
+    credentials_version: 3,
     status: "pending",
   };
 }
@@ -156,7 +157,9 @@ describe("runPaymentReconcileJob", () => {
 
     expect(result).toMatchObject({ count: 1, settled: 1, failed: 0, skipped: 0 });
     expect(companyClientMock).toHaveBeenCalledWith(COMPANY_A, { allowSuspended: true });
-    expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), CONN_A);
+    expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), CONN_A, {
+      credentialsVersion: 3,
+    });
     expect(loadActiveGatewayConnectionMock).not.toHaveBeenCalled();
     expect(settleGatewayPayment).toHaveBeenCalledWith(
       expect.objectContaining({

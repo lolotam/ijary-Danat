@@ -125,13 +125,23 @@ async function loadCredentialsMap(
 }
 
 /**
- * يكوّن كائن الاتصال الكامل من صف `gateway_connections` بعد فك تشفير أسرار إصداره الحالي.
+ * يكوّن كائن الاتصال الكامل من صف `gateway_connections` بعد فك تشفير أسرار الإصدار المطلوب أو الحالي.
+ *
+ * A payment created on credentials version N settles on version N (FR-057):
+ * after the admin rotates to another MyFatoorah account, the old invoice only
+ * exists on the old account. A version with no stored rows (a request made
+ * before versions were recorded) falls back to the current one.
  */
 async function hydrateGatewayConnection(
   db: SupabaseClient<Database>,
   row: GatewayConnectionRow,
+  version?: number | null,
 ): Promise<LoadedGatewayConnection> {
-  const credentials = await loadCredentialsMap(db, row.id, row.credentials_version);
+  const pinned = version ?? row.credentials_version;
+  let credentials = await loadCredentialsMap(db, row.id, pinned);
+  if (pinned !== row.credentials_version && Object.keys(credentials).length === 0) {
+    credentials = await loadCredentialsMap(db, row.id, row.credentials_version);
+  }
   return {
     id: row.id,
     companyId: row.company_id,
@@ -149,11 +159,15 @@ async function hydrateGatewayConnection(
 }
 
 /**
- * يحمّل اتصال بوابة دفع محدّداً بالمعرّف مع فك تشفير أسرار إصداره الحالي، ويرمي خطأً عند غيابه.
+ * يحمّل اتصال بوابة دفع محدّداً بالمعرّف مع فك تشفير أسراره، ويرمي خطأً عند غيابه.
+ *
+ * Settlement paths pass the payment request's `credentials_version`; other
+ * callers omit it and get the current version.
  */
 export async function loadGatewayConnection(
   db: SupabaseClient<Database>,
   connectionId: string,
+  opts?: { credentialsVersion?: number | null },
 ): Promise<LoadedGatewayConnection> {
   const { data, error } = await db
     .from("gateway_connections")
@@ -171,7 +185,7 @@ export async function loadGatewayConnection(
     );
   }
 
-  return hydrateGatewayConnection(db, data);
+  return hydrateGatewayConnection(db, data, opts?.credentialsVersion);
 }
 
 /**
@@ -307,12 +321,22 @@ export async function saveGatewayCredentials(
     return inserted;
   }
 
-  const hasIncomingCredentials = Object.keys(input.credentials).length > 0;
-  const existingCredentials = hasIncomingCredentials
-    ? await loadCredentialsMap(db, existing.id, existing.credentials_version)
-    : {};
+  // The settings card sends only the fields the admin typed, so the next
+  // version is the current secrets with the typed ones laid over them. Saving
+  // the API key alone used to drop `webhookSecret` from the new version, and
+  // every webhook then answered 503 (T155 review #3).
+  const existingCredentials = await loadCredentialsMap(
+    db,
+    existing.id,
+    existing.credentials_version,
+  );
+  const mergedCredentials = { ...existingCredentials, ...input.credentials };
+  // A test-to-live switch with the same keys must still clear the passing test
+  // and the activation: the migration 319 trigger only fires on a new
+  // `credentials_version`, so a mode change bumps it too (T155 review #4).
+  const modeChanged = input.mode !== existing.mode;
   const credentialsChanged =
-    hasIncomingCredentials && !areCredentialMapsEqual(existingCredentials, input.credentials);
+    modeChanged || !areCredentialMapsEqual(existingCredentials, mergedCredentials);
 
   const nextVersion = credentialsChanged
     ? existing.credentials_version + 1
@@ -325,7 +349,7 @@ export async function saveGatewayCredentials(
       companyId: existing.company_id,
       connectionId: existing.id,
       version: nextVersion,
-      credentials: input.credentials,
+      credentials: mergedCredentials,
     });
   }
 

@@ -54,7 +54,7 @@ vi.mock("@/lib/suppressedPayments", () => ({
 
 const { settleGatewayPayment } = await import("@/fns/gatewaySettlement");
 
-const PREFIX = "MF:100621810000012471";
+const PREFIX = "MF:7050025";
 const EXCESS_REFERENCE = `${PREFIX}#EXCESS`;
 
 const DETAILS = {
@@ -257,6 +257,29 @@ describe("gateway settlement books exactly what the gateway captured", () => {
     expect(requestPayments(db).map((payment) => payment.amount)).toEqual([400, 300]);
     expect(db.tables.invoices.map((row) => row.balance)).toEqual([0, 50]);
     expect(excessPayment(db)).toHaveLength(0);
+    expectCapturedEqualsBooked(db, 700);
+  });
+
+  it("two concurrent settlements carrying different payment ids book the charge once", async () => {
+    // T155 review #1: the reference prefix used to come from the caller's
+    // paymentId, so a failed retry's id and the paid id wrote two references
+    // and a second payment with no money behind it.
+    const db = seed({
+      invoices: [invoice("1", 7, 350), invoice("2", 8, 350)],
+      request: paymentRequest(700, ["1", "2"]),
+    });
+
+    await Promise.allSettled([
+      settleGatewayPayment(DETAILS, {}),
+      settleGatewayPayment(
+        { ...DETAILS, paymentId: "100621810000099999", providerEventId: "evt-2" },
+        {},
+      ),
+    ]);
+
+    expect(
+      requestPayments(db).every((payment) => String(payment.reference).startsWith(PREFIX)),
+    ).toBe(true);
     expectCapturedEqualsBooked(db, 700);
   });
 

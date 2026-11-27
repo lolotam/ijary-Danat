@@ -166,7 +166,9 @@ async function handlePaymentSettle(ctx: JobHandlerContext): Promise<unknown> {
     );
   }
 
-  const loaded = await loadGatewayConnection(db, paymentRequest.gateway_connection_id);
+  const loaded = await loadGatewayConnection(db, paymentRequest.gateway_connection_id, {
+    credentialsVersion: paymentRequest.credentials_version,
+  });
   const gateway = gatewayRegistry.create(loaded.connection);
   const status = await gateway.getPaymentStatus({
     providerInvoiceId: paymentRequest.provider_invoice_id,

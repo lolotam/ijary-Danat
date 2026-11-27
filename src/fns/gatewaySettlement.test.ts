@@ -248,7 +248,9 @@ describe("T138 gateway settlement across paths and connection switches", () => {
       attempt: 1,
     });
 
-    expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), OLD_CONNECTION_ID);
+    expect(loadGatewayConnectionMock).toHaveBeenCalledWith(expect.anything(), OLD_CONNECTION_ID, {
+      credentialsVersion: 1,
+    });
     expect(loadActiveGatewayConnectionMock).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestInit = fetchMock.mock.calls[0][1] as RequestInit;

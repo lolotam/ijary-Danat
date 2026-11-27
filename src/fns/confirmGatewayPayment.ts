@@ -352,7 +352,9 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
       );
     }
 
-    const loadedConnection = await loadGatewayConnection(db, paymentRequest.gateway_connection_id);
+    const loadedConnection = await loadGatewayConnection(db, paymentRequest.gateway_connection_id, {
+      credentialsVersion: paymentRequest.credentials_version,
+    });
     const gateway = gatewayRegistry.create(loadedConnection.connection);
 
     const status: GatewayPaymentStatus = await gateway.getPaymentStatus({
@@ -377,6 +379,25 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
       return { status: status.outcome, tenantId: paymentRequest.tenant_id };
     }
 
+    // The paymentId comes from the browser, so it may name another paid
+    // payment on the same MyFatoorah account. Settle only when the gateway
+    // reports this request's own invoice, as the return page does (T155
+    // review #5); otherwise leave the request to the webhook and reconcile.
+    if (
+      !paymentRequest.provider_invoice_id ||
+      status.providerInvoiceId !== paymentRequest.provider_invoice_id
+    ) {
+      console.warn(
+        "[confirmGatewayPayment] paid status names another invoice; not settling",
+        JSON.stringify({
+          paymentRequestId: paymentRequest.id,
+          expectedInvoiceId: paymentRequest.provider_invoice_id,
+          reportedInvoiceId: status.providerInvoiceId,
+        }),
+      );
+      return { status: "pending", tenantId: paymentRequest.tenant_id };
+    }
+
     // Card / KNET / etc. — never leave method null after a successful charge.
     const method = status.method ?? "card";
     const inquiryKey =
@@ -388,7 +409,7 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
       await settleGatewayPayment(
         {
           eventType: "callback.inquiry",
-          invoiceId: status.providerInvoiceId ?? paymentRequest.provider_invoice_id,
+          invoiceId: paymentRequest.provider_invoice_id,
           method,
           paymentId: status.providerPaymentId,
           providerEventId: `inquiry:${inquiryKey}`,

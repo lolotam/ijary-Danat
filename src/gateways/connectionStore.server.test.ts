@@ -323,6 +323,76 @@ describe("saveGatewayCredentials and loadGatewayConnection", () => {
     expect(afterEmptyCreds.is_active).toBe(true);
   });
 
+  test("saving only the API key keeps the stored webhook secret in the new version", async () => {
+    const { db } = createFakeDb();
+    const v1 = await saveGatewayCredentials(db, {
+      provider: "myfatoorah",
+      mode: "test",
+      publicConfig: {},
+      credentials: { apiKey: "old_key_1111", webhookSecret: "wh_sec_4321" },
+    });
+
+    const v2 = await saveGatewayCredentials(db, {
+      provider: "myfatoorah",
+      mode: "test",
+      publicConfig: {},
+      credentials: { apiKey: "new_key_2222" },
+    });
+
+    expect(v2.credentials_version).toBe(2);
+    const loaded = await loadGatewayConnection(db, v1.id);
+    expect(loaded.connection.credentials).toEqual({
+      apiKey: "new_key_2222",
+      webhookSecret: "wh_sec_4321",
+    });
+  });
+
+  test("switching test to live with the same keys clears the passing test and activation", async () => {
+    const { db, connections } = createFakeDb();
+    await saveGatewayCredentials(db, {
+      provider: "myfatoorah",
+      mode: "test",
+      publicConfig: {},
+      credentials: { apiKey: "same_key_1234" },
+    });
+    connections[0].last_test_ok = true;
+    connections[0].last_test_at = "2026-11-27T10:05:00.000Z";
+    connections[0].is_active = true;
+
+    const live = await saveGatewayCredentials(db, {
+      provider: "myfatoorah",
+      mode: "live",
+      publicConfig: {},
+      credentials: { apiKey: "same_key_1234" },
+    });
+
+    expect(live.credentials_version).toBe(2);
+    expect(live.is_active).toBe(false);
+    expect(live.last_test_ok).toBe(false);
+  });
+
+  test("a payment pinned to an older version loads that version's keys after rotation", async () => {
+    const { db } = createFakeDb();
+    const v1 = await saveGatewayCredentials(db, {
+      provider: "myfatoorah",
+      mode: "test",
+      publicConfig: {},
+      credentials: { apiKey: "old_key_1111" },
+    });
+    await saveGatewayCredentials(db, {
+      provider: "myfatoorah",
+      mode: "test",
+      publicConfig: {},
+      credentials: { apiKey: "new_key_2222" },
+    });
+
+    const pinned = await loadGatewayConnection(db, v1.id, { credentialsVersion: 1 });
+    expect(pinned.connection.credentials).toEqual({ apiKey: "old_key_1111" });
+
+    const unknownVersion = await loadGatewayConnection(db, v1.id, { credentialsVersion: 9 });
+    expect(unknownVersion.connection.credentials).toEqual({ apiKey: "new_key_2222" });
+  });
+
   test("throws CONNECTION_NOT_FOUND when connection row does not exist", async () => {
     const { db } = createFakeDb();
     await expect(loadGatewayConnection(db, CONNECTION_ID)).rejects.toMatchObject({

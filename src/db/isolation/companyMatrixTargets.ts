@@ -566,5 +566,22 @@ export function buildCompanyMatrixTargets(
     );
   }
 
+  if (colMap.has("password_reset_tokens")) {
+    targets.push({
+      table: "password_reset_tokens",
+      whereSql: "company_id = $1",
+      whereParams: [cid],
+      updateSetSql: "used_at = now()",
+      updateParams: [cid],
+      buildCrossCompanyInsert: (foreignCid, cm) =>
+        buildScopedInsert(cm, "password_reset_tokens", foreignCid, {
+          company_id: foreignCid,
+          user_id: adminId,
+          token_hash: `x-${randomUUID().replace(/-/g, "")}`,
+          expires_at: "2027-01-01T00:00:00Z",
+        }),
+    });
+  }
+
   return targets;
 }

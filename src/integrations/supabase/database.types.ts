@@ -1668,6 +1668,7 @@ export interface Database {
           email: string | null;
           id: string;
           is_active: boolean;
+          must_change_password: boolean;
           phone: string | null;
           preferred_locale: LocaleCode;
           tenant_id: string | null;
@@ -1681,6 +1682,7 @@ export interface Database {
           email?: string | null;
           id: string;
           is_active?: boolean;
+          must_change_password?: boolean;
           phone?: string | null;
           preferred_locale?: LocaleCode;
           tenant_id?: string | null;
@@ -1694,6 +1696,7 @@ export interface Database {
           email?: string | null;
           id?: string;
           is_active?: boolean;
+          must_change_password?: boolean;
           phone?: string | null;
           preferred_locale?: LocaleCode;
           tenant_id?: string | null;
@@ -1825,6 +1828,52 @@ export interface Database {
           user_id?: string;
         };
         Relationships: [];
+      };
+      /** Migration 314 — رموز إعادة تعيين كلمة المرور أحادية الاستخدام (مجزوءة فقط، لا الرمز)؛ يصل إليها `company_service` وحده. */
+      password_reset_tokens: {
+        Row: {
+          company_id: string;
+          created_at: string;
+          expires_at: string;
+          id: string;
+          token_hash: string;
+          used_at: string | null;
+          user_id: string;
+        };
+        Insert: {
+          company_id: string;
+          created_at?: string;
+          expires_at: string;
+          id?: string;
+          token_hash: string;
+          used_at?: string | null;
+          user_id: string;
+        };
+        Update: {
+          company_id?: string;
+          created_at?: string;
+          expires_at?: string;
+          id?: string;
+          token_hash?: string;
+          used_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "password_reset_tokens_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "password_reset_tokens_company_id_user_id_fkey";
+            columns: ["company_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["company_id", "id"];
+          },
+        ];
       };
       permissions: {
         Row: {

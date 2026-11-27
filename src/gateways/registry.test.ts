@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createGatewayRegistry, GatewayRegistryError } from "./registry";
+import {
+  createGatewayRegistry,
+  GATEWAY_FACTORIES,
+  GatewayRegistryError,
+  gatewayRegistry,
+} from "./registry";
 import type { GatewayConnection, PaymentGateway } from "./types";
 
 /**
@@ -98,4 +103,16 @@ describe("createGatewayRegistry", () => {
       expect(registryError.provider).toBe(provider);
     },
   );
+});
+
+describe("the production registry", () => {
+  it("registers an adapter for the MyFatoorah provider", () => {
+    expect(Object.keys(GATEWAY_FACTORIES)).toContain("myfatoorah");
+  });
+
+  it("builds the registered adapter from the connection it was given", () => {
+    const gateway = gatewayRegistry.create(fakeConnection());
+
+    expect(gateway.supportedMethods).toContain("knet");
+  });
 });

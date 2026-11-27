@@ -1,3 +1,4 @@
+import { createMyFatoorahGateway } from "./myfatoorah";
 import type {
   GatewayAdapterFactory,
   GatewayConnection,
@@ -83,10 +84,14 @@ export function createGatewayRegistry(factories: GatewayFactoryMap): GatewayRegi
 }
 
 /**
- * خريطة المحولات الإنتاجية: يُضاف مفتاح كل مزوّد هنا عند بناء محوله،
- * وهي فارغة حتى تُبنى المحولات (T143 وما بعدها).
+ * خريطة المحولات الإنتاجية: يُضاف مفتاح كل مزوّد هنا عند بناء محوله.
+ *
+ * MyFatoorah is the first adapter (T143); Tap and UPayments are added when
+ * their sandbox accounts exist (R14).
  */
-export const GATEWAY_FACTORIES: GatewayFactoryMap = {};
+export const GATEWAY_FACTORIES: GatewayFactoryMap = {
+  myfatoorah: createMyFatoorahGateway,
+};
 
 /** السجل الإنتاجي فوق خريطة المحولات الإنتاجية. */
 export const gatewayRegistry = createGatewayRegistry(GATEWAY_FACTORIES);

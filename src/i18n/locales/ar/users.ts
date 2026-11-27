@@ -53,6 +53,7 @@ export const users: Record<string, string> = {
   "users.create": "إنشاء",
   "users.created": "تم إنشاء المستخدم.",
   "users.credentialsNotSent": "أُنشئ الحساب، لكن لم تُرسَل بيانات الدخول.",
+  "users.credentialsQueued": "بيانات الدخول قيد الإرسال الآن.",
   "users.credentialsPaused": "إرسال بيانات الدخول موقوف من إعدادات سير العمل.",
   "users.credentialsTenantPaused": "إشعارات هذا المستأجر موقوفة، فلم تُرسل بيانات الدخول.",
   "users.credentialsNoRecipients": "لا يوجد بريد أو رقم صالح لإرسال بيانات الدخول إليه.",

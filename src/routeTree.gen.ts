@@ -52,7 +52,6 @@ import { Route as AdminTenantsIndexRouteImport } from './routes/admin.tenants.in
 import { Route as AdminTenantsIdRouteImport } from './routes/admin.tenants.$id'
 import { Route as AdminUnitsIndexRouteImport } from './routes/admin.units.index'
 import { Route as AdminUnitsIdRouteImport } from './routes/admin.units.$id'
-import { Route as ApiPublicCronRouteImport } from './routes/api/public/cron'
 import { Route as ApiPublicEvolutionWebhookRouteImport } from './routes/api/public/evolution-webhook'
 import { Route as ApiPublicMyfatoorahWebhookRouteImport } from './routes/api/public/myfatoorah-webhook'
 import { Route as ApiPublicResendWebhookRouteImport } from './routes/api/public/resend-webhook'
@@ -281,11 +280,6 @@ const AdminUnitsIdRoute = AdminUnitsIdRouteImport.update({
   path: '/units/$id',
   getParentRoute: () => AdminRoute,
 } as any)
-const ApiPublicCronRoute = ApiPublicCronRouteImport.update({
-  id: '/api/public/cron',
-  path: '/api/public/cron',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiPublicEvolutionWebhookRoute =
   ApiPublicEvolutionWebhookRouteImport.update({
     id: '/api/public/evolution-webhook',
@@ -375,7 +369,6 @@ export interface FileRoutesByFullPath {
   '/admin/settings/users': typeof AdminSettingsUsersRoute
   '/admin/tenants/$id': typeof AdminTenantsIdRouteWithChildren
   '/admin/units/$id': typeof AdminUnitsIdRoute
-  '/api/public/cron': typeof ApiPublicCronRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
   '/api/public/myfatoorah-webhook': typeof ApiPublicMyfatoorahWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
@@ -426,7 +419,6 @@ export interface FileRoutesByTo {
   '/admin/settings/roles': typeof AdminSettingsRolesRoute
   '/admin/settings/users': typeof AdminSettingsUsersRoute
   '/admin/units/$id': typeof AdminUnitsIdRoute
-  '/api/public/cron': typeof ApiPublicCronRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
   '/api/public/myfatoorah-webhook': typeof ApiPublicMyfatoorahWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
@@ -482,7 +474,6 @@ export interface FileRoutesById {
   '/admin/settings/users': typeof AdminSettingsUsersRoute
   '/admin/tenants/$id': typeof AdminTenantsIdRouteWithChildren
   '/admin/units/$id': typeof AdminUnitsIdRoute
-  '/api/public/cron': typeof ApiPublicCronRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
   '/api/public/myfatoorah-webhook': typeof ApiPublicMyfatoorahWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
@@ -539,7 +530,6 @@ export interface FileRouteTypes {
     | '/admin/settings/users'
     | '/admin/tenants/$id'
     | '/admin/units/$id'
-    | '/api/public/cron'
     | '/api/public/evolution-webhook'
     | '/api/public/myfatoorah-webhook'
     | '/api/public/resend-webhook'
@@ -590,7 +580,6 @@ export interface FileRouteTypes {
     | '/admin/settings/roles'
     | '/admin/settings/users'
     | '/admin/units/$id'
-    | '/api/public/cron'
     | '/api/public/evolution-webhook'
     | '/api/public/myfatoorah-webhook'
     | '/api/public/resend-webhook'
@@ -645,7 +634,6 @@ export interface FileRouteTypes {
     | '/admin/settings/users'
     | '/admin/tenants/$id'
     | '/admin/units/$id'
-    | '/api/public/cron'
     | '/api/public/evolution-webhook'
     | '/api/public/myfatoorah-webhook'
     | '/api/public/resend-webhook'
@@ -670,7 +658,6 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   PortalAuthRoute: typeof PortalAuthRoute
-  ApiPublicCronRoute: typeof ApiPublicCronRoute
   ApiPublicEvolutionWebhookRoute: typeof ApiPublicEvolutionWebhookRoute
   ApiPublicMyfatoorahWebhookRoute: typeof ApiPublicMyfatoorahWebhookRoute
   ApiPublicResendWebhookRoute: typeof ApiPublicResendWebhookRoute
@@ -982,13 +969,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUnitsIdRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/api/public/cron': {
-      id: '/api/public/cron'
-      path: '/api/public/cron'
-      fullPath: '/api/public/cron'
-      preLoaderRoute: typeof ApiPublicCronRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/evolution-webhook': {
       id: '/api/public/evolution-webhook'
       path: '/api/public/evolution-webhook'
@@ -1178,7 +1158,6 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   PortalAuthRoute: PortalAuthRoute,
-  ApiPublicCronRoute: ApiPublicCronRoute,
   ApiPublicEvolutionWebhookRoute: ApiPublicEvolutionWebhookRoute,
   ApiPublicMyfatoorahWebhookRoute: ApiPublicMyfatoorahWebhookRoute,
   ApiPublicResendWebhookRoute: ApiPublicResendWebhookRoute,

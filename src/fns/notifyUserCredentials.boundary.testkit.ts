@@ -29,6 +29,19 @@ export interface StoredNotification {
   type: string;
 }
 
+/**
+ * مهمة خلفية سجّلها الصندوق الوهمي عند استدعاء `enqueue_job`.
+ *
+ * The boundary tests need to see what the request handed to the worker, so
+ * the outbox call is recorded rather than answered with a bare stub.
+ */
+export interface EnqueuedJob {
+  dedupeKey: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  requestedBy: string | null;
+}
+
 interface CredentialBoundaryStore {
   adminProfiles: Array<{ email: string }>;
   adminRoles: Array<{ user_id: string }>;
@@ -41,6 +54,8 @@ interface CredentialBoundaryStore {
   };
   cronJob: { is_active: boolean; recipient_targets: string[] };
   failAdminCopyInsert: boolean;
+  /** المهام التي طلبها الصندوق، بالترتيب الذي سُجّلت به. */
+  jobs: EnqueuedJob[];
   notifications: StoredNotification[];
   providers: Record<string, unknown>[];
   tenant: {
@@ -65,7 +80,18 @@ export function resetCredentialBoundary() {
 export function credentialBoundaryCompanyClientModule() {
   const client = {
     from: (table: string) => tableChain(table),
-    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    rpc: vi.fn().mockImplementation(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "enqueue_job") {
+        credentialBoundary.jobs.push({
+          dedupeKey: (args?._dedupe_key as string | null) ?? null,
+          kind: String(args?._kind),
+          payload: (args?._payload as Record<string, unknown> | undefined) ?? {},
+          requestedBy: (args?._requested_by as string | null) ?? null,
+        });
+        return { data: `job-${credentialBoundary.jobs.length}`, error: null };
+      }
+      return { data: null, error: null };
+    }),
     storage: {
       from: () => ({
         download: () => Promise.resolve({ data: null, error: { message: "not found" } }),
@@ -99,6 +125,19 @@ export function adminCredentialCopy(): StoredNotification | undefined {
   return credentialBoundary.notifications.find((row) => row.audience === "admin");
 }
 
+/**
+ * مهام الإرسال التي سُجّلت لصف إشعار بعينه.
+ *
+ * The request no longer sends the row — it hands it to the worker — so a test
+ * that wants to know whether a row was scheduled reads the outbox here.
+ */
+export function dispatchJobsFor(notificationId: string | undefined): EnqueuedJob[] {
+  if (!notificationId) return [];
+  return credentialBoundary.jobs.filter(
+    (job) => job.kind === "notification.dispatch" && job.payload.notificationId === notificationId,
+  );
+}
+
 /** يبدأ المخزن بعنوان مستأجر يخالف بريد الحساب حتى يظهر توسيع المستلمين إن حدث. */
 function emptyStore(): CredentialBoundaryStore {
   return {
@@ -113,6 +152,7 @@ function emptyStore(): CredentialBoundaryStore {
     },
     cronJob: { is_active: true, recipient_targets: ["admin", "company"] },
     failAdminCopyInsert: false,
+    jobs: [],
     notifications: [],
     providers: [SMTP],
     tenant: {
@@ -231,7 +271,7 @@ function insertNotification(row: Record<string, unknown>) {
     body: (row.body as string | null) ?? null,
     channel: String(row.channel),
     failure_reason: null,
-    id: `n-${credentialBoundary.notifications.length + 1}`,
+    id: notificationId(credentialBoundary.notifications.length + 1),
     locale: String(row.locale ?? "ar"),
     payload: (row.payload as Record<string, unknown> | undefined) ?? {},
     provider: null,
@@ -251,6 +291,17 @@ function insertNotification(row: Record<string, unknown>) {
 /** قيمة مُرشِّح عمود، لاختيار صف الإشعار بالمعرّف بعد الإدراج. */
 function filterValue(state: ChainState, column: string): unknown {
   return state.filters.find((filter) => filter.column === column)?.value;
+}
+
+/**
+ * معرّف UUID حقيقي لصف الإشعار.
+ *
+ * The catalogue's payload schema accepts a uuid only, so a row id like `n-1`
+ * cannot travel through `enqueue_job` — the outbox would refuse the very
+ * payload the worker needs.
+ */
+function notificationId(index: number): string {
+  return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 }
 
 /** نوع الحمولة الذي يميّز نسخة الإدارة عن صف التزويد. */

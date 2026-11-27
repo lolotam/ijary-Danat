@@ -8,5 +8,6 @@ export const PLATFORM_ALLOWLIST = [
   "src/platform/**",
   "src/company/hostCompany.server.ts",
   "src/worker/relay.ts",
+  "src/worker/runJobPorts.ts",
   "src/worker/scheduler.ts",
 ];

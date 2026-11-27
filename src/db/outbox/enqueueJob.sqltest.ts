@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { runAsCompanyService, runAsUser, seedTwoCompanies } from "@/db/isolation/twoCompanies";
-import { actAsSuperuser, captureRaise, closePool, withRollback } from "@/db/testDb";
+import { actAs, actAsSuperuser, captureRaise, closePool, withRollback } from "@/db/testDb";
 
 afterAll(closePool);
 
@@ -164,15 +166,29 @@ describe("job_requests and user_notices stay inside the company", () => {
   test("a user reads and marks only their own notices", async () => {
     await withRollback(async (client) => {
       const { A } = await seedTwoCompanies(client);
-      const jobId = await runAsCompanyService(client, A.id, () =>
-        enqueue(client, "notification.bulk", { requestId: "r-1" }),
-      );
+      // One notice names one job request (migration 311), and a job names the
+      // staff member who asked for it — so each user gets a notice of their
+      // own job.
+      const [adminJob, accountantJob] = await runAsCompanyService(client, A.id, async () => [
+        (
+          await client.query<{ id: string }>(
+            "select public.enqueue_job('notification.bulk', '{}', null, $1) as id",
+            [A.users.admin.id],
+          )
+        ).rows[0].id,
+        (
+          await client.query<{ id: string }>(
+            "select public.enqueue_job('notification.bulk', '{}', null, $1) as id",
+            [A.users.accountant.id],
+          )
+        ).rows[0].id,
+      ]);
       await actAsSuperuser(client);
       await client.query(
         `insert into public.user_notices (company_id, user_id, job_request_id, kind, title_key, level)
          values ($1, $2, $4, 'notification.bulk', 'notices.bulk.done', 'success'),
-                ($1, $3, $4, 'notification.bulk', 'notices.bulk.done', 'success')`,
-        [A.id, A.users.admin.id, A.users.accountant.id, jobId],
+                ($1, $3, $5, 'notification.bulk', 'notices.bulk.done', 'success')`,
+        [A.id, A.users.admin.id, A.users.accountant.id, adminJob, accountantJob],
       );
 
       const { visible, marked, edited } = await runAsUser(client, A.users.admin, async () => ({
@@ -297,6 +313,123 @@ describe("the server write path stays inside the company (review GR-001 to GR-00
       );
 
       expect(error).toMatch(/violates foreign key constraint/);
+    });
+  });
+});
+
+describe("one job request names one notice (T071 review)", () => {
+  test("a second notice for the same job request is rejected", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      const jobId = await runAsCompanyService(client, A.id, () =>
+        enqueue(client, "notification.bulk", { requestId: "r-1" }),
+      );
+      await actAsSuperuser(client);
+      const insertNotice = () =>
+        client.query(
+          `insert into public.user_notices (company_id, user_id, job_request_id, kind, title_key, level)
+           values ($1, $2, $3, 'notification.bulk', 'notices.bulk.done', 'success')`,
+          [A.id, A.users.admin.id, jobId],
+        );
+
+      await insertNotice();
+      const error = await captureRaise(client, insertNotice);
+
+      expect(error).toMatch(/duplicate key|unique/i);
+    });
+  });
+
+  test("the worker's upsert on job_request_id works", async () => {
+    // The worker writes the notice of a finished job with onConflict
+    // job_request_id, so the unique index has to serve ON CONFLICT without a
+    // predicate — a partial index cannot.
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      const jobId = await runAsCompanyService(client, A.id, () =>
+        enqueue(client, "notification.bulk", { requestId: "r-1" }),
+      );
+      await actAsSuperuser(client);
+      const upsertNotice = () =>
+        client.query(
+          `insert into public.user_notices (company_id, user_id, job_request_id, kind, title_key, level)
+           values ($1, $2, $3, 'notification.bulk', 'notices.bulk.done', 'success')
+           on conflict (job_request_id) do update set title_key = excluded.title_key`,
+          [A.id, A.users.admin.id, jobId],
+        );
+
+      await upsertNotice();
+      await upsertNotice();
+
+      const { rows } = await client.query<{ n: number }>(
+        "select count(*)::int as n from public.user_notices where job_request_id = $1",
+        [jobId],
+      );
+      expect(rows[0].n).toBe(1);
+    });
+  });
+});
+
+describe("enqueue_job_for_company is the money functions' own door (GR-003)", () => {
+  test("it refuses a null company and an unknown one", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+
+      const nullCompany = await captureRaise(client, () =>
+        client.query(
+          "select public.enqueue_job_for_company(null, 'payment.succeeded', '{}'::jsonb, null)",
+        ),
+      );
+      const unknownCompany = await captureRaise(client, () =>
+        client.query(
+          "select public.enqueue_job_for_company($1::uuid, 'payment.succeeded', '{}'::jsonb, null)",
+          [randomUUID()],
+        ),
+      );
+
+      expect(nullCompany).toMatch(/COMPANY_REQUIRED/);
+      expect(unknownCompany).toMatch(/Company not found/);
+      expect(await countJobs(client, A.id)).toBe(0);
+    });
+  });
+
+  test("a company client and a signed-in user may not call it", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+      const call = () =>
+        client.query(
+          "select public.enqueue_job_for_company($1::uuid, 'payment.succeeded', '{}'::jsonb, null)",
+          [A.id],
+        );
+
+      const asCompany = await runAsCompanyService(client, A.id, () => captureRaise(client, call));
+      const asUser = await runAsUser(client, A.users.admin, () => captureRaise(client, call));
+
+      expect(asCompany).toMatch(/permission denied/);
+      expect(asUser).toMatch(/permission denied/);
+      expect(await countJobs(client, A.id)).toBe(0);
+    });
+  });
+
+  test("the platform files the row for the company it names", async () => {
+    await withRollback(async (client) => {
+      const { A } = await seedTwoCompanies(client);
+
+      await actAs(client, "service_role");
+      const { rows } = await client.query<{ id: string }>(
+        `select public.enqueue_job_for_company(
+           $1::uuid, 'payment.succeeded', '{"paymentId": "p-1"}'::jsonb, 'platform-key'
+         ) as id`,
+        [A.id],
+      );
+      await actAsSuperuser(client);
+
+      const { rows: job } = await client.query(
+        "select company_id, kind, dedupe_key from public.job_requests where id = $1",
+        [rows[0].id],
+      );
+      expect(job).toEqual([
+        { company_id: A.id, kind: "payment.succeeded", dedupe_key: "platform-key" },
+      ]);
     });
   });
 });

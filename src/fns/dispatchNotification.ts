@@ -6,6 +6,7 @@ import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { sendEmailChannel } from "@/fns/dispatchEmailChannel";
 import { sendWhatsAppChannel } from "@/fns/dispatchWhatsAppChannel";
+import type { WhatsAppPacer } from "@/fns/evolutionDelivery";
 import {
   stringArray,
   type EnabledConfigs,
@@ -114,10 +115,15 @@ async function loadAttachments(db: DispatchDb, payload: Json): Promise<EmailAtta
  * (audit M9); this function owns what they share — loading the row, the
  * tenant, the providers and the attachments once, running email then
  * WhatsApp, and deciding the terminal state from the issues both returned.
+ *
+ * `pace` is the notify worker's per-connection WhatsApp lock (FR-067). A
+ * caller that dispatches outside the notify worker — the notification drain,
+ * the manual re-send from the log — passes none, and the provider falls back
+ * to its in-process per-connection pacer.
  */
 export async function dispatchNotificationRecord(
   notificationId: string,
-  opts?: { companyId?: string },
+  opts?: { companyId?: string; pace?: WhatsAppPacer },
 ): Promise<Tables<"notifications">> {
   const companyId = opts?.companyId ?? requireRequestCompany().id;
   const db = companyClient(companyId);
@@ -177,7 +183,11 @@ export async function dispatchNotificationRecord(
       senderAddress = email.senderAddress;
     }
     if (wantsWhatsApp) {
-      const whatsapp = await sendWhatsAppChannel({ ...channelInput, senderAddress });
+      const whatsapp = await sendWhatsAppChannel({
+        ...channelInput,
+        senderAddress,
+        pace: opts?.pace,
+      });
       messageIds.push(...whatsapp.messageIds);
       issues.push(...whatsapp.issues);
       selectedProvider = whatsapp.provider ?? selectedProvider;

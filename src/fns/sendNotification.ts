@@ -3,10 +3,11 @@ import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
-import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { buildFinalMessage } from "@/fns/resolveTemplateVariables";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Json } from "@/integrations/supabase/database.types";
+import { enqueueJob } from "@/jobs/enqueue";
+import { notificationDispatchDedupeKey } from "@/jobs/catalog";
 import { isTemplateOfferable } from "@/lib/templateEligibility";
 import { requirePermission } from "@/fns/requirePermission";
 
@@ -37,6 +38,10 @@ export type SendNotificationInput = z.infer<typeof sendNotificationSchema>;
  *
  * Inserts exactly what buildFinalMessage returned — no second render pass —
  * so the preview panel and the persisted row are the same bytes.
+ *
+ * The row is left `queued` for the notify worker: the request writes the
+ * outbox row and returns, so the tenant's message is not held hostage by a
+ * provider that is slow or down (contracts/jobs.md section 1).
  */
 export const sendNotification = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -163,5 +168,14 @@ export const sendNotification = createServerFn({ method: "POST" })
     });
     if (auditResult.error) throw new Error(auditResult.error.message);
     if (scheduledAt && scheduledAt.getTime() > Date.now()) return insertResult.data;
-    return dispatchNotificationRecord(insertResult.data.id);
+    await enqueueJob(
+      db,
+      "notification.dispatch",
+      { notificationId: insertResult.data.id },
+      {
+        dedupeKey: notificationDispatchDedupeKey(insertResult.data.id),
+        requestedBy: context.userId,
+      },
+    );
+    return insertResult.data;
   });

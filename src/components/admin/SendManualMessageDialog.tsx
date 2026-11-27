@@ -251,7 +251,9 @@ export function SendManualMessageDialog({
               locale: manualLocale === "auto" ? undefined : manualLocale,
             },
           });
-          toast.success(t("notifications.sent"));
+          // The document is queued, not sent: the worker renders the PDF and
+          // the notify worker delivers it.
+          toast.success(t("notifications.companyInfoQueued"));
           onOpenChange(false);
           handleClose();
         } finally {

@@ -8,6 +8,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { InboxBell } from "@/components/admin/InboxBell";
+import { NoticesBell } from "@/components/admin/NoticesBell";
 import { WhatsappSessionBanner } from "@/components/admin/WhatsappSessionBanner";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,7 @@ function AdminLayout() {
             </div>
             <div className="flex items-center gap-2">
               <InboxBell />
+              <NoticesBell />
               <ThemeToggle />
               <button
                 type="button"

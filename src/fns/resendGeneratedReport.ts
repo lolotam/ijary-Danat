@@ -3,13 +3,26 @@ import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
-import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { attachmentPayload, renderAndStorePdf } from "@/lib/reportPdfAttachment";
 import { requirePermission } from "@/fns/requirePermission";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { enqueueJob } from "@/jobs/enqueue";
+import type { QueuedDocumentJob } from "@/jobs/handlers/documents";
 
 const schema = z.object({ reportId: z.string().uuid() });
 
+/**
+ * يعيد إرسال تقرير مولَّد إلى مستلمي جدوله الزمني.
+ *
+ * The request no longer resends anything: it validates, checks the permission,
+ * reads the report, and hands one `report.run` job to the worker
+ * (contracts/jobs.md section 1). The stored report is sent again there.
+ *
+ * The job carries the schedule and the report's period end, which is how the
+ * worker tells a resend from a fresh run: a stored report for that schedule
+ * and date is the one the admin asked to send again.
+ *
+ * No dedupe key: an admin may resend the same report on purpose.
+ */
 export const resendGeneratedReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(schema)
@@ -19,88 +32,31 @@ export const resendGeneratedReport = createServerFn({ method: "POST" })
       attempted: "report.resend",
       refusal: "You do not have permission to read reports.",
     });
+
     const company = requireRequestCompany();
     const db = companyClient(company.id);
 
     const reportResult = await db
       .from("generated_reports")
-      .select("*")
+      .select("id, schedule_id, period_end")
       .eq("id", data.reportId)
       .single();
-    if (reportResult.error) throw new Error(reportResult.error.message);
-    const report = reportResult.data;
-    if (!report.schedule_id || !report.html_content) {
+    if (reportResult.error || !reportResult.data) {
+      throw new Error(reportResult.error?.message ?? "The generated report was not found.");
+    }
+    if (!reportResult.data.schedule_id) {
       throw new Error("The generated report has no schedule or HTML artifact.");
     }
-    const scheduleResult = await db
-      .from("report_schedules")
-      .select("*")
-      .eq("id", report.schedule_id)
-      .single();
-    if (scheduleResult.error) throw new Error(scheduleResult.error.message);
-    const schedule = scheduleResult.data;
-    if (!Array.isArray(schedule.recipients)) throw new Error("Report recipients are invalid.");
-    const emails = schedule.recipients.filter(
-      (item): item is string => typeof item === "string" && item.includes("@"),
-    );
-    const locale = report.locale ?? schedule.locale;
+    // A report stored before the period columns existed has no period end; the
+    // job then runs the schedule for today instead of resending that report.
+    const date = reportResult.data.period_end ?? new Date().toISOString().slice(0, 10);
 
-    // Reuses the stored document when this exact report was already printed,
-    // and renders when it was not — a report generated before migration 109 has
-    // no stored PDF, and a resend is exactly when someone is trying to get the
-    // attachment they did not receive the first time. `renderAndStorePdf` keys
-    // on the content, so the decision needs nothing from this call site.
-    const storedPdf = await renderAndStorePdf({
-      arabic: locale === "ar",
-      discriminator: `${report.period_start ?? ""}_${report.period_end ?? ""}`,
-      html: report.html_content,
-      name: schedule.name_en ?? schedule.name_ar,
-      prefix: "scheduled-reports",
+    const { jobId } = await enqueueJob(db, "report.run", {
+      scheduleId: reportResult.data.schedule_id,
+      date,
     });
 
-    const notificationResult = await db
-      .from("notifications")
-      .insert({
-        company_id: company.id,
-        report_schedule_id: schedule.id,
-        type: "scheduled_report",
-        audience: "admin",
-        channel: "email",
-        locale,
-        subject: `${locale === "ar" ? schedule.name_ar : (schedule.name_en ?? schedule.name_ar)} — ${report.period_start ?? ""} / ${report.period_end ?? ""}`,
-        body: report.html_content,
-        // Same join as runReportSchedule: the log column is one text field,
-        // and leaving it null made a resend worse than the original one-address
-        // blind spot.
-        recipient_address: emails.join(", "),
-        payload: {
-          generated_report_id: report.id,
-          recipients: emails,
-          ...attachmentPayload(storedPdf),
-        },
-        scheduled_at: new Date().toISOString(),
-      })
-      .select("*")
-      .single();
-    if (notificationResult.error) throw new Error(notificationResult.error.message);
-    const dispatched = await dispatchNotificationRecord(notificationResult.data.id);
-    const sent = dispatched.state === "sent";
-    const reportUpdate = await db
-      .from("generated_reports")
-      .update({ sent, sent_at: sent ? new Date().toISOString() : null })
-      .eq("id", report.id);
-    if (reportUpdate.error) throw new Error(reportUpdate.error.message);
-    const auditWrite = await context.supabase.rpc("write_audit", {
-      p_action: "generated_report.resend",
-      p_entity_type: "generated_report",
-      p_entity_id: report.id,
-      p_before: null,
-      p_after: { notification_id: dispatched.id, sent },
-      p_result: sent ? "success" : "failure",
-      p_error_code: sent ? null : "PROVIDER_DISPATCH_FAILED",
-    });
-    if (auditWrite.error) throw new Error(auditWrite.error.message);
-    return dispatched;
+    return { queued: true, jobRequestIds: [jobId] } satisfies QueuedDocumentJob;
   });
 
 export type ResendGeneratedReportInput = z.infer<typeof schema>;

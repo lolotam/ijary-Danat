@@ -28,6 +28,7 @@ export const notificationChannel: Record<string, string> = {
   "reports.runAll": "Run due reports now",
   "reports.runOne": "Generate and send now",
   "reports.scheduleDone": "Scheduled reports were run.",
+  "reports.resendQueued": "The report was queued and will be sent again shortly.",
   "reports.code": "Code",
   "reports.frequency": "Frequency",
   "reports.recipients": "Recipients",

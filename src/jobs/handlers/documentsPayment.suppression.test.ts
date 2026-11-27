@@ -1,32 +1,33 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/company/requestCompany.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).requestCompanyModule(),
+  (await import("./documentsPayment.testkit")).requestCompanyModule(),
 );
 vi.mock("@/company/companyClient.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).companyClientModule(),
+  (await import("./documentsPayment.testkit")).companyClientModule(),
 );
 vi.mock("@/lib/paymentReceiptPdf", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).paymentReceiptPdfModule(),
+  (await import("./documentsPayment.testkit")).paymentReceiptPdfModule(),
 );
 vi.mock("@/fns/enqueueNotification", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).enqueueNotificationModule(),
+  (await import("./documentsPayment.testkit")).enqueueNotificationModule(),
 );
 
 import {
+  ALL_TARGETS,
   PAYMENT_ID,
   confirmedPayment,
   enqueue,
-  maybeSingle,
   paymentsIn,
   renderReceipts,
   resetPaymentNotifyMocks,
   resolveRecipients,
   state,
   tenantRow,
-} from "./notifyPaymentSuccess.testkit";
+  TEST_COMPANY_ID,
+} from "./documentsPayment.testkit";
 
-const { notifyPaymentSuccess } = await import("./notifyPaymentSuccess");
+const { sendPaymentReceipts } = await import("./documentsPayment");
 
 beforeEach(resetPaymentNotifyMocks);
 
@@ -52,7 +53,6 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
   }
 
   test("payment on a suppressed contract sends no tenant email or WhatsApp", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantWithEmail();
     state.allocationData = [{ payment_id: PAYMENT_ID, invoice_id: INVOICE_ROOF, amount: 250 }];
@@ -70,7 +70,7 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
     ];
     state.contractData = [{ id: ROOF_CONTRACT, suppress_tenant_billing_docs: true }];
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).not.toContain("receipt:email");
@@ -78,7 +78,6 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
   });
 
   test("payment on a suppressed contract with reminders_enabled false and WhatsApp still sends no tenant row", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -107,7 +106,7 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
     ];
     state.contractData = [{ id: ROOF_CONTRACT, suppress_tenant_billing_docs: true }];
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).not.toContain("receipt:email");
@@ -115,7 +114,6 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
   });
 
   test("same suppressed payment still sends admin and company notifications", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantWithEmail();
     state.allocationData = [{ payment_id: PAYMENT_ID, invoice_id: INVOICE_ROOF, amount: 250 }];
@@ -133,7 +131,7 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
     ];
     state.contractData = [{ id: ROOF_CONTRACT, suppress_tenant_billing_docs: true }];
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const adminAlerts = enqueue.mock.calls
       .map(([arg]) => arg)
@@ -142,10 +140,6 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
   });
 
   test("suppressed tenant-only payment renders no PDF when no admin receives it", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantWithEmail();
     // Admin list empty for tenant-only workflow.
@@ -165,14 +159,13 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
     ];
     state.contractData = [{ id: ROOF_CONTRACT, suppress_tenant_billing_docs: true }];
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     expect(renderReceipts).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
   });
 
   test("payment mixing a suppressed and an ordinary invoice still suppresses tenant notification", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantWithEmail();
     state.allocationData = [
@@ -206,7 +199,7 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
       { id: SHOP_CONTRACT, suppress_tenant_billing_docs: false },
     ];
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).not.toContain("receipt:email");
@@ -215,7 +208,6 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
   });
 
   test("ordinary payment is completely unchanged", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantWithEmail();
     state.allocationData = [{ payment_id: PAYMENT_ID, invoice_id: INVOICE_SHOP, amount: 250 }];
@@ -233,7 +225,7 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
     ];
     state.contractData = [{ id: SHOP_CONTRACT, suppress_tenant_billing_docs: false }];
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`).sort();
     expect(types).toEqual(
@@ -247,7 +239,6 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
   // the notification for the ordinary ones — the suppression is per payment.
   test("a mixed BATCH still notifies the tenant, and renders only the ordinary payment", async () => {
     const OTHER_PAYMENT = "cccccccc-3333-4ccc-8ccc-cccccccccccc";
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     tenantWithEmail();
     paymentsIn.mockReturnValue({
       eq: async () => ({
@@ -305,7 +296,7 @@ describe("suppressed roof contracts hide tenant paper, not admin paper", () => {
       { id: SHOP_CONTRACT, suppress_tenant_billing_docs: false },
     ];
 
-    await notifyPaymentSuccess([PAYMENT_ID, OTHER_PAYMENT]);
+    await sendPaymentReceipts([PAYMENT_ID, OTHER_PAYMENT], ALL_TARGETS, TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).toContain("receipt:email");

@@ -81,6 +81,10 @@ describe("the workflow↔template map codes", () => {
  * that runs that key's dispatcher. contract-created/contract-ended are absent
  * on purpose — both go through the `contract-${event}` builder in
  * notifyContractLifecycle.ts, asserted separately below.
+ *
+ * The receipt codes moved out of the request with the rest of the receipt work
+ * (T068): the sender that selects them now runs in the worker, in
+ * `src/jobs/handlers/documentsPayment.ts`.
  */
 const SENDER_FILE: Record<string, string> = {
   "overdue-reminders": "src/fns/overdueRemindersJob.ts",
@@ -88,8 +92,8 @@ const SENDER_FILE: Record<string, string> = {
   "contact-inquiry-received": "src/fns/notifyContactInquiry.ts",
   "deposit-confirmed": "src/fns/notifyDepositConfirmed.ts",
   "maintenance-request-created": "src/fns/notifyMaintenanceRequest.ts",
-  "manual-payment-invoice": "src/fns/notifyPaymentSuccess.ts",
-  "payment-succeeded": "src/fns/notifyPaymentSuccess.ts",
+  "manual-payment-invoice": "src/jobs/handlers/documentsPayment.ts",
+  "payment-succeeded": "src/jobs/handlers/documentsPayment.ts",
   "refund-recorded": "src/fns/notifyRefundRecorded.ts",
   "contract-closeout-completed": "src/fns/notifyContractCloseout.ts",
   "contract-restored": "src/fns/notifyContractRestored.ts",

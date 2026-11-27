@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 
+import { FailedJobsCard } from "@/components/admin/settings/FailedJobsCard";
 import { SettingsForm } from "@/components/admin/settings/CompanySettingsForm";
 import {
   companyFormValues,
@@ -147,6 +148,9 @@ function CompanySettingsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Failed background jobs: the same `company.update` gate as the form. */}
+      <FailedJobsCard />
     </div>
   );
 }

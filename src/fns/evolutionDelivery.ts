@@ -36,6 +36,18 @@ import { toInternationalDigits } from "@/lib/providers/types";
 export const WHATSAPP_MEDIA_BUCKET = "whatsapp-media";
 
 /**
+ * منظّم إيقاع الإرسال على اتصال واتساب واحد: ينتظر حتى تتحرّر خانة الإرسال.
+ *
+ * The connection key is the Evolution instance name — one instance per company
+ * connection (FR-067, research.md R7) — and the lock itself lives in the
+ * notify worker, so the delivery layer only has to satisfy this shape. A
+ * caller that dispatches outside the notify worker — the notification drain,
+ * the manual re-send from the log, the chat composers — passes no pacer, and
+ * the provider falls back to its in-process per-connection pacer.
+ */
+export type WhatsAppPacer = (connectionKey: string) => Promise<void>;
+
+/**
  * ينظّف اسم الملف من فواصل المسارات؛ اسم المرسل مُدخل غير موثوق.
  */
 export function safeMediaFileName(value: string | null, fallback: string): string {
@@ -223,16 +235,26 @@ async function cacheOutboundMedia(
  * On `partial_send` the parts that DID go out are not recorded here (the send
  * threw before returning ids); the webhook `fromMe` echo backfills them, and
  * the notification row's failure_reason tells the admin how many landed.
+ *
+ * `pace` is the caller's per-connection lock, waited for before every message
+ * part. The instance name is the connection key, so the lock is per company
+ * connection (FR-067) rather than per process.
  */
 export async function deliverEvolutionNotification(
   message: WhatsAppProviderMessage,
   explicitCompanyId?: string,
+  pace?: WhatsAppPacer,
 ): Promise<ProviderResult> {
   const { companyId, client } = serverCompanyClient(explicitCompanyId);
   let result: Awaited<ReturnType<typeof sendWithEvolution>>;
   try {
     const instanceName = await requireOpenSession(client, companyId, message.config);
-    result = await sendWithEvolution(message, instanceName);
+    result = await sendWithEvolution(
+      message,
+      instanceName,
+      undefined,
+      pace ? () => pace(instanceName) : undefined,
+    );
   } catch (error) {
     if (
       error instanceof EvolutionProviderError &&

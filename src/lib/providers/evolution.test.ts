@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  EvolutionProviderError,
-  getEvolutionStatus,
-  resetEvolutionPacing,
-  sendWithEvolution,
-} from "./evolution";
+import { EvolutionProviderError, getEvolutionStatus, sendWithEvolution } from "./evolution";
+import { resetEvolutionLocalPacing } from "./evolutionLocalPacing";
 import { DELIVERY_INDETERMINATE } from "./types";
 
 const CONFIG = { api_base: "http://evolution:8080", api_key_env: "TEST_EVOLUTION_KEY" };
@@ -17,23 +13,13 @@ function jsonResponse(status: number, body: unknown) {
   });
 }
 
-/** Runs a send with fake timers so the anti-ban pacing delays cost no wall time. */
-async function paced<T>(work: () => Promise<T>): Promise<T> {
-  vi.useFakeTimers();
-  try {
-    const promise = work();
-    await vi.advanceTimersByTimeAsync(60_000);
-    return await promise;
-  } finally {
-    vi.useRealTimers();
-  }
-}
-
 describe("sendWithEvolution", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
     vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
-    resetEvolutionPacing();
+    // The pacing clock is per connection and lives in the process, so a test
+    // must not inherit the wait of the test before it.
+    resetEvolutionLocalPacing();
   });
 
   afterEach(() => {
@@ -62,20 +48,18 @@ describe("sendWithEvolution", () => {
       .mockResolvedValueOnce(jsonResponse(201, { key: { id: "m-1" } }))
       .mockResolvedValueOnce(jsonResponse(201, { key: { id: "m-2" } }));
 
-    const result = await paced(() =>
-      sendWithEvolution(
-        {
-          body: "receipt",
-          config: CONFIG,
-          from: null,
-          to: "+96550123456",
-          media: [
-            { base64: "QUFB", fileName: "receipt.pdf", mediatype: "document" },
-            { base64: "QkJC", fileName: "photo.jpg", mediatype: "image" },
-          ],
-        },
-        "danat",
-      ),
+    const result = await sendWithEvolution(
+      {
+        body: "receipt",
+        config: CONFIG,
+        from: null,
+        to: "+96550123456",
+        media: [
+          { base64: "QUFB", fileName: "receipt.pdf", mediatype: "document" },
+          { base64: "QkJC", fileName: "photo.jpg", mediatype: "image" },
+        ],
+      },
+      "danat",
     );
 
     expect(result.partIds).toEqual(["t-1", "m-1", "m-2"]);
@@ -97,6 +81,79 @@ describe("sendWithEvolution", () => {
     });
   });
 
+  it("waits for the caller's pace before every part of the message", async () => {
+    // The pace is the caller's lock, not the provider's own clock: the notify
+    // worker passes `() => pacer.waitForSlot(connectionId)`, and every part of
+    // one message waits for its own turn.
+    const events: string[] = [];
+    vi.mocked(globalThis.fetch).mockImplementation(async (url) => {
+      events.push(String(url));
+      return jsonResponse(201, { key: { id: "part" } });
+    });
+
+    await sendWithEvolution(
+      {
+        body: "receipt",
+        config: CONFIG,
+        from: null,
+        to: "+96550123456",
+        media: [
+          { base64: "QUFB", fileName: "receipt.pdf", mediatype: "document" },
+          { base64: "QkJC", fileName: "photo.jpg", mediatype: "image" },
+        ],
+      },
+      "danat",
+      undefined,
+      async () => {
+        events.push("pace");
+      },
+    );
+
+    expect(events).toEqual([
+      "pace",
+      "http://evolution:8080/message/sendText/danat",
+      "pace",
+      "http://evolution:8080/message/sendMedia/danat",
+      "pace",
+      "http://evolution:8080/message/sendMedia/danat",
+    ]);
+  });
+
+  it("paces two sends on the same instance when the caller passes no pace", async () => {
+    // The paths outside the worker pass no lock, so the provider falls back to
+    // the in-process pacer: a backlog sent back-to-back gets the WhatsApp
+    // number banned.
+    vi.useFakeTimers();
+    try {
+      vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse(201, { key: { id: "evo-1" } }));
+      const send = () =>
+        sendWithEvolution(
+          { body: "مرحباً", config: CONFIG, from: null, to: "+96550123456" },
+          "danat",
+        );
+
+      const first = send();
+      await vi.advanceTimersByTimeAsync(0);
+      await first;
+
+      const second = send();
+      let sent = false;
+      void second.then(() => {
+        sent = true;
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(1_499);
+      expect(sent).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await second;
+      expect(sent).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports partial_send when a later part fails after earlier parts landed", async () => {
     // A blind retry of the whole notification would resend the delivered text,
     // so partial failures must carry their own non-retryable code.
@@ -104,18 +161,16 @@ describe("sendWithEvolution", () => {
       .mockResolvedValueOnce(jsonResponse(201, { key: { id: "t-1" } }))
       .mockResolvedValueOnce(jsonResponse(500, { message: "boom" }));
 
-    const error = await paced(() =>
-      sendWithEvolution(
-        {
-          body: "receipt",
-          config: CONFIG,
-          from: null,
-          to: "+96550123456",
-          media: [{ base64: "QUFB", fileName: "receipt.pdf", mediatype: "document" }],
-        },
-        "danat",
-      ).catch((caught: unknown) => caught),
-    );
+    const error = await sendWithEvolution(
+      {
+        body: "receipt",
+        config: CONFIG,
+        from: null,
+        to: "+96550123456",
+        media: [{ base64: "QUFB", fileName: "receipt.pdf", mediatype: "document" }],
+      },
+      "danat",
+    ).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(EvolutionProviderError);
     expect((error as EvolutionProviderError).code).toBe("partial_send");

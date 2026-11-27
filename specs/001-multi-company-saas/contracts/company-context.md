@@ -38,7 +38,7 @@ Rules:
 |---|---|---|---|
 | Browser `supabase` | `authenticated` / `anon` | Client code | From `profiles` via `current_company_id()` |
 | `companyClient(companyId, opts?)` | `company_service` | Any server function or job handler | From the signed claim |
-| `platformClient` (today's `supabaseAdmin`) | `service_role` | Only `src/platform/**`, `src/company/hostCompany.server.ts`, `src/worker/relay.ts`, `src/worker/scheduler.ts` | None; bypasses RLS |
+| `platformClient` (today's `supabaseAdmin`) | `service_role` | Only `src/platform/**`, `src/company/hostCompany.server.ts`, `src/worker/relay.ts`, `src/worker/runJobPorts.ts`, `src/worker/scheduler.ts` | None; bypasses RLS |
 
 `companyClient` contract:
 

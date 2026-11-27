@@ -27,6 +27,7 @@ export const notificationChannel: Record<string, string> = {
   "reports.runAll": "تشغيل التقارير المستحقة الآن",
   "reports.runOne": "إنشاء وإرسال الآن",
   "reports.scheduleDone": "تم تشغيل التقارير المجدولة.",
+  "reports.resendQueued": "أُدرج التقرير في قائمة الانتظار وأُرسل مجددًا قريبًا.",
   "reports.code": "الرمز",
   "reports.frequency": "التكرار",
   "reports.recipients": "المستلمون",

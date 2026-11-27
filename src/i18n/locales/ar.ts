@@ -6,6 +6,7 @@ import { invoices } from "./ar/invoices";
 import { notificationChannel } from "./ar/notificationChannel";
 import { landingSettings } from "./ar/landingSettings";
 import { audit } from "./ar/audit";
+import { jobs } from "./ar/jobs";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -29,4 +30,5 @@ export const ar: Record<string, string> = {
   ...notificationChannel,
   ...landingSettings,
   ...audit,
+  ...jobs,
 };

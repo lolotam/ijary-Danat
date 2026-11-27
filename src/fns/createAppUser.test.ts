@@ -264,6 +264,55 @@ describe("createAppUser", () => {
       expect(auditCalls().some((args) => args.p_action === "user.credentials_send")).toBe(false);
     });
 
+    /**
+     * The row leaves the request and the notify worker still owns the send, so
+     * the credentials are on their way. Reading that as a failure would send
+     * the admin after a send that is still in flight.
+     */
+    it.each([
+      [["queued"], "queued"],
+      [["failed", "queued"], "queued"],
+    ] as const)(
+      "reports the owner rows %s as %s rather than a failure",
+      async (states, expected) => {
+        mocks.notificationStates.mockResolvedValue({
+          data: states.map((state) => ({ state, failure_reason: null })),
+          error: null,
+        });
+
+        const result = await createTenant();
+
+        expect(result.credentialDelivery).toEqual({ status: expected, reason: null });
+      },
+    );
+
+    it("reports a delivered channel as sent even when a sibling row is still queued", async () => {
+      mocks.notificationStates.mockResolvedValue({
+        data: [
+          { state: "sent", failure_reason: null },
+          { state: "queued", failure_reason: null },
+        ],
+        error: null,
+      });
+
+      const result = await createTenant();
+
+      expect(result.credentialDelivery).toEqual({ status: "sent", reason: null });
+    });
+
+    it("writes no failure audit row for credentials that are still in flight", async () => {
+      mocks.notificationStates.mockResolvedValue({
+        data: [{ state: "queued", failure_reason: null }],
+        error: null,
+      });
+
+      await createTenant();
+
+      // The audit row claims the customer was told nothing; a queued row says
+      // the opposite, so writing one would be a lie about the delivery.
+      expect(auditCalls().some((args) => args.p_action === "user.credentials_send")).toBe(false);
+    });
+
     it("reports a thrown send as failed, with the reason", async () => {
       mocks.notifyUserCredentials.mockRejectedValue(new Error("SMTP refused the message"));
 

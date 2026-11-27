@@ -64,9 +64,14 @@ const schema = z.object({
  * `tenant-paused` is the same silence with a different cause: the tenant's own
  * notifications are switched off, so the row was written as `skipped` with the
  * pause reason. It is a tenant-level switch, not a workflow one.
+ *
+ * `queued` is not a delivery outcome at all: the row is written and the notify
+ * worker still owns the send (contracts/jobs.md section 1). The message is on
+ * its way, so it must not be reported as a failure — nor as a delivery the
+ * customer has already received.
  */
 export type CredentialDelivery = {
-  status: "sent" | "paused" | "tenant-paused" | "no-recipients" | "failed";
+  status: "sent" | "queued" | "paused" | "tenant-paused" | "no-recipients" | "failed";
   reason: string | null;
 };
 
@@ -81,13 +86,7 @@ export type CredentialDelivery = {
  * alone would have reported the exact failure this function exists to surface
  * as a success — so the rows are read back and their state is what decides.
  *
- * At least one `sent` row counts as delivered: where a tenant gets both an
- * email and a WhatsApp message and only one lands, the person was still told,
- * and warning the admin would be a false alarm.
- *
- * Every row skipped for the tenant's own pause is a different story again: the
- * switch is on the tenant, so the admin has to know that unpausing it (or
- * resending later) is what would deliver the password.
+ * Which state means what is decided by `deliveryStatusOfRows` below.
  */
 async function describeDelivery(
   db: SupabaseClient<Database>,
@@ -110,12 +109,39 @@ async function describeDelivery(
     return { status: "failed", reason: error.message };
   }
 
-  const rows = data ?? [];
+  return deliveryStatusOfRows(data ?? []);
+}
+
+/**
+ * يترجم حالات صفوف صاحب الحساب إلى حالة تسليم واحدة.
+ *
+ * Split out of `describeDelivery` so the decision can be read without the
+ * database call around it: `sent` is a delivery, `queued` is a send in flight,
+ * and every other state the row carries is a failure.
+ *
+ * A `queued` row is a third answer, not a failed one: the send left the
+ * request and the notify worker still owns it, so nobody can say yet whether
+ * it lands. Reading it as a failure would send the admin after a send that is
+ * still in flight — the same reading `invoiceSendRowBucket` gives the invoice
+ * senders, where `queued` is its own bucket beside `sent` and `failed`.
+ *
+ * At least one `sent` row counts as delivered: where a tenant gets both an
+ * email and a WhatsApp message and only one lands, the person was still told,
+ * and warning the admin would be a false alarm.
+ *
+ * Every row skipped for the tenant's own pause is a different story again: the
+ * switch is on the tenant, so the admin has to know that unpausing it (or
+ * resending later) is what would deliver the password.
+ */
+function deliveryStatusOfRows(
+  rows: Array<{ failure_reason: string | null; state: string }>,
+): CredentialDelivery {
   const allPaused =
     rows.length > 0 &&
     rows.every((row) => row.state === "skipped" && row.failure_reason === TENANT_PAUSED_REASON);
   if (allPaused) return { status: "tenant-paused", reason: null };
   if (rows.some((row) => row.state === "sent")) return { status: "sent", reason: null };
+  if (rows.some((row) => row.state === "queued")) return { status: "queued", reason: null };
   return {
     status: "failed",
     reason: rows.map((row) => row.failure_reason).find(Boolean) ?? null,
@@ -325,7 +351,10 @@ export const createAppUser = createServerFn({ method: "POST" })
       };
     }
 
-    if (credentialDelivery.status !== "sent") {
+    // A queued row is a send in flight, not a failure: the notify worker still
+    // owns it, and a failure audit row would claim the customer was told
+    // nothing about a message that is on its way.
+    if (credentialDelivery.status !== "sent" && credentialDelivery.status !== "queued") {
       await recordCredentialSendFailure(db, userId, data.username, credentialDelivery);
     }
 

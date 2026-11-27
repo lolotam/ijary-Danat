@@ -2226,6 +2226,23 @@ export interface Database {
         };
         Returns: string;
       };
+      /** Migration 307 — يحجز حتى `_limit` صفاً من `job_requests` للنشر في BullMQ ويعيد (المعرّف، الشركة، النوع).
+       *  Execute granted to `service_role` only; the worker's relay is the only caller. */
+      relay_claim_jobs: {
+        Args: { _limit?: number };
+        Returns: { id: string; company_id: string; kind: string }[];
+      };
+      /** Migration 308 — يسجّل طلب مهمة خلفية لشركة معيّنة (شركة الصف الذي غيّرته دالة المال).
+       *  Execute granted to `service_role` only; the money functions own it. */
+      enqueue_job_for_company: {
+        Args: {
+          _company_id: string;
+          _kind: string;
+          _payload?: Json;
+          _dedupe_key?: string | null;
+        };
+        Returns: string;
+      };
       /** Migration 180 — transactional, idempotent WhatsApp inbox ingestion.
        *  Service-role only; `authenticated` and `anon` have EXECUTE revoked. */
       ingest_whatsapp_messages: {

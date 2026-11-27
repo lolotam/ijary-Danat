@@ -115,7 +115,6 @@ vi.mock("@/company/companyClient.server", () => {
   };
 });
 
-import { resetEvolutionPacing } from "@/lib/providers/evolution";
 import {
   downloadWhatsAppMedia,
   forwardWhatsAppMessage,
@@ -148,7 +147,6 @@ describe("whatsappMedia server fns", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
     vi.stubEnv("TEST_EVOLUTION_KEY", "evo-key");
-    resetEvolutionPacing();
     db.messages = {};
     db.storage = {};
     db.uploads = [];

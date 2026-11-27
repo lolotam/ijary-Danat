@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { companyClient } from "@/company/companyClient.server";
 import {
   getRequestCompany,
@@ -5,15 +7,19 @@ import {
   runWithRequestCompany,
 } from "@/company/requestCompany.server";
 import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
+import type { Database, Json } from "@/integrations/supabase/database.types";
+import { notificationDispatchDedupeKey } from "@/jobs/catalog";
 import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
 
 /**
- * Sweeps notifications that inline dispatch left behind.
+ * Sweeps the notifications that no dispatch job holds.
  *
- * Almost every notification is dispatched inline at enqueue time. Two kinds are
- * not, and nothing else picked them up:
+ * The notification request path enqueues a `notification.dispatch` job and
+ * returns, so the row waits for the notify worker. Two kinds of row reach
+ * this sweep with nobody else holding them:
  * - a manual send scheduled for a future time (`sendNotification`), which is
- *   inserted `queued` and returns;
+ *   inserted `queued` with no dispatch job — this sweep is what sends it once
+ *   its time comes;
  * - a row left `failed` by a transient provider or network error.
  *
  * Deliberately conservative, because every row here represents a real outbound
@@ -36,6 +42,10 @@ import { DELIVERY_INDETERMINATE } from "@/lib/providers/types";
  *   deliberately absent: a concurrent attempt is still in flight, so retry later.
  * - **A timeout on a provider without an idempotency key is not auto-retried.**
  *   See `PROVIDER_NEEDS_REVIEW` below: the provider may have delivered it.
+ * - **A row the notify worker is already sending is left alone.** The
+ *   notification request path enqueues `notification.dispatch` and returns, so
+ *   the row stays `queued` until the worker picks it up. Dispatching it here
+ *   as well would deliver the same message to the same recipient twice.
  */
 
 /** Past-due age beyond which a row is cancelled instead of delivered. */
@@ -102,6 +112,52 @@ const NEEDS_REVIEW_CODES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * يقرأ معرّف الإشعار من حمولة مهمة `notification.dispatch`.
+ *
+ * The payload is a jsonb column, so it can hold any JSON value; a row whose
+ * payload is not an object names no notification.
+ */
+function notificationIdFromJobPayload(payload: Json): string | null {
+  if (!payload || Array.isArray(payload) || typeof payload !== "object") return null;
+  const notificationId = (payload as Record<string, unknown>).notificationId;
+  return typeof notificationId === "string" ? notificationId : null;
+}
+
+/**
+ * يقرأ معرّفات الإشعارات التي لها مهمة إرسال جارية، فيتخطّاها مهمة التصريف.
+ *
+ * The notification request path enqueues `notification.dispatch` and returns,
+ * so the row stays `queued` until the notify worker picks it up. A drain
+ * that dispatches the same row sends the tenant the message twice — once
+ * from the drain and once from the worker.
+ *
+ * The lookup is narrowed by the catalogue's dedupe key, a plain text column
+ * the database can filter on, and confirmed by the payload's
+ * `notificationId` — the field the catalogue defines for this kind
+ * (contracts/jobs.md section 5).
+ */
+async function inFlightDispatchNotificationIds(
+  db: SupabaseClient<Database>,
+  notificationIds: string[],
+): Promise<Set<string>> {
+  if (!notificationIds.length) return new Set();
+  const result = await db
+    .from("job_requests")
+    .select("payload, dedupe_key")
+    .eq("kind", "notification.dispatch")
+    .in("status", ["pending", "published", "running"])
+    .in("dedupe_key", notificationIds.map(notificationDispatchDedupeKey));
+  if (result.error) throw new Error(result.error.message);
+  const candidates = new Set(notificationIds);
+  const inFlight = new Set<string>();
+  for (const row of result.data ?? []) {
+    const notificationId = notificationIdFromJobPayload(row.payload);
+    if (notificationId && candidates.has(notificationId)) inFlight.add(notificationId);
+  }
+  return inFlight;
+}
+
+/**
  * يقدّر أقصى عدد صفوف يمكن تصريفها قبل إلغاء النافذة (72 ساعة).
  *
  * drain = 100 صف/تشغيل. مع cron يومي: floor(72/24)=3 تشغيلات → 300.
@@ -146,7 +202,20 @@ export async function runNotificationDrainJob(_asOf: string | null = null, compa
     let notYetDue = 0;
     let heldForReview = 0;
 
+    // A row the notify worker is already sending is not the drain's to touch:
+    // both would deliver the same message to the same recipient.
+    const inFlight = await inFlightDispatchNotificationIds(
+      db,
+      (pending.data ?? []).map((row) => row.id),
+    );
+    let skippedInFlight = 0;
+
     for (const row of pending.data ?? []) {
+      if (inFlight.has(row.id)) {
+        skippedInFlight += 1;
+        continue;
+      }
+
       const dueAt = new Date(row.scheduled_at ?? row.created_at);
 
       if (dueAt.getTime() > now) {
@@ -226,6 +295,7 @@ export async function runNotificationDrainJob(_asOf: string | null = null, compa
         cancelled: cancelled.length,
         not_yet_due: notYetDue,
         held_for_review: heldForReview,
+        skipped_in_flight: skippedInFlight,
       },
       p_result: "success",
       p_error_code: null,
@@ -238,6 +308,7 @@ export async function runNotificationDrainJob(_asOf: string | null = null, compa
       cancelled,
       notYetDue,
       heldForReview,
+      skippedInFlight,
     };
   };
 

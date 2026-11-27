@@ -149,7 +149,7 @@ or `requireRequestCompany()` (throws `COMPANY_REQUIRED` when no company is set):
 |---|---|---|---|
 | Browser `supabase` | `authenticated` / `anon` | Client code | `profiles.company_id` via `current_company_id()` |
 | `companyClient(companyId, opts?)` | `company_service` | Server functions & job handlers | Signed JWT claim |
-| `platformClient` (legacy `supabaseAdmin`) | `service_role` | Only allow-listed platform files (`src/platform/**`, `src/company/hostCompany.server.ts`, `src/worker/relay.ts`, `src/worker/scheduler.ts`) | None; bypasses RLS |
+| `platformClient` (legacy `supabaseAdmin`) | `service_role` | Only allow-listed platform files (`src/platform/**`, `src/company/hostCompany.server.ts`, `src/worker/relay.ts`, `src/worker/runJobPorts.ts`, `src/worker/scheduler.ts`) | None; bypasses RLS |
 
 - `companyClient(companyId, opts?)` throws `COMPANY_REQUIRED` if `companyId` is
   empty or not a UUID, and signs a 5-minute JWT (`{ role: "company_service",

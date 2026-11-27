@@ -1,27 +1,28 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/company/requestCompany.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).requestCompanyModule(),
+  (await import("./documentsPayment.testkit")).requestCompanyModule(),
 );
 vi.mock("@/company/companyClient.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).companyClientModule(),
+  (await import("./documentsPayment.testkit")).companyClientModule(),
 );
 vi.mock("@/lib/paymentReceiptPdf", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).paymentReceiptPdfModule(),
+  (await import("./documentsPayment.testkit")).paymentReceiptPdfModule(),
 );
 vi.mock("@/fns/enqueueNotification", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).enqueueNotificationModule(),
+  (await import("./documentsPayment.testkit")).enqueueNotificationModule(),
 );
 
 import {
+  ALL_TARGETS,
   enqueue,
-  maybeSingle,
   paymentsIn,
   resetPaymentNotifyMocks,
   tenantRow,
-} from "./notifyPaymentSuccess.testkit";
+  TEST_COMPANY_ID,
+} from "./documentsPayment.testkit";
 
-const { notifyPaymentSuccess } = await import("./notifyPaymentSuccess");
+const { sendPaymentReceipts } = await import("./documentsPayment");
 
 beforeEach(resetPaymentNotifyMocks);
 
@@ -121,11 +122,10 @@ describe("one delivery key per payment set per channel", () => {
   }
 
   test("each notification carries its own delivery key", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     twoConfirmedPayments();
     tenantOnEveryChannel();
 
-    await notifyPaymentSuccess([PAYMENT_A, PAYMENT_B]);
+    await sendPaymentReceipts([PAYMENT_A, PAYMENT_B], ALL_TARGETS, TEST_COMPANY_ID);
 
     const set = await deliveryDigestFor([PAYMENT_A, PAYMENT_B]);
     expect(deliveryKeys()).toEqual({
@@ -139,12 +139,11 @@ describe("one delivery key per payment set per channel", () => {
     // The two settlement paths do not hand the ids over in the same order, so
     // an unsorted key would be a different key — and the duplicate
     // notification would sail straight through the unique index.
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     twoConfirmedPayments();
     tenantOnEveryChannel();
 
-    await notifyPaymentSuccess([PAYMENT_A, PAYMENT_B]);
-    await notifyPaymentSuccess([PAYMENT_B, PAYMENT_A]);
+    await sendPaymentReceipts([PAYMENT_A, PAYMENT_B], ALL_TARGETS, TEST_COMPANY_ID);
+    await sendPaymentReceipts([PAYMENT_B, PAYMENT_A], ALL_TARGETS, TEST_COMPANY_ID);
 
     const keys = enqueue.mock.calls.map(([arg]) => arg.deliveryKey);
     expect(keys).toHaveLength(6);

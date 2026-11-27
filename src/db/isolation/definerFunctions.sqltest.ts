@@ -20,6 +20,10 @@ const DEFINER_ALLOWLIST = new Set<string>([
   "backup_protected_tables",
   "backup_table_names",
   "backup_schema_fingerprint",
+  // The company-scoped door of the outbox: the money functions file their
+  // event for the company of the row they changed, and they own the row's
+  // company — so the function names it instead of reading it from the session.
+  "enqueue_job_for_company",
 ]);
 
 interface DefinerRow {

@@ -25,7 +25,7 @@ vi.mock("@tanstack/react-start", () => {
 });
 
 const from = vi.fn();
-const dispatchNotificationRecord = vi.fn();
+const rpc = vi.fn();
 const buildFinalMessage = vi.fn();
 
 const TEST_COMPANY = {
@@ -33,6 +33,9 @@ const TEST_COMPANY = {
   slug: "danat",
   status: "active" as const,
 };
+
+/** The catalogue schema only accepts a uuid, and the row id is what it carries. */
+const NOTIFICATION_ID = "11111111-1111-4111-8111-111111111111";
 
 vi.mock("@/company/requestCompany.server", () => ({
   getRequestCompany: () => TEST_COMPANY,
@@ -43,11 +46,8 @@ vi.mock("@/company/requestCompany.server", () => ({
 vi.mock("@/company/companyClient.server", () => ({
   companyClient: () => ({
     from: (...args: unknown[]) => from(...args),
+    rpc: (...args: unknown[]) => rpc(...args),
   }),
-}));
-
-vi.mock("@/fns/dispatchNotification", () => ({
-  dispatchNotificationRecord: (...args: unknown[]) => dispatchNotificationRecord(...args),
 }));
 
 vi.mock("@/fns/resolveTemplateVariables", () => ({
@@ -100,6 +100,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   lastInsert = null;
   context.supabase.rpc.mockResolvedValue({ data: true, error: null });
+  rpc.mockResolvedValue({ data: "job-1", error: null });
   buildFinalMessage.mockResolvedValue({
     variables: {
       tenant_name: "أحمد",
@@ -116,7 +117,6 @@ beforeEach(() => {
     locale: "ar",
     unavailableReason: null,
   });
-  dispatchNotificationRecord.mockResolvedValue({ id: "notif-1", state: "sent" });
 
   from.mockImplementation((table: string) => {
     if (table === "tenants") {
@@ -185,7 +185,7 @@ beforeEach(() => {
               single: () =>
                 Promise.resolve({
                   data: {
-                    id: "notif-1",
+                    id: NOTIFICATION_ID,
                     channel: "email",
                     state: "queued",
                     tenant_id: TENANT_ID,
@@ -286,6 +286,42 @@ describe("sendNotification persists builder output", () => {
     expect(buildFinalMessage).toHaveBeenCalledWith(
       expect.objectContaining({ contractId: CONTRACT_B }),
     );
+  });
+});
+
+describe("sendNotification leaves the row to the notify worker", () => {
+  it("queues the row and enqueues one notification.dispatch job for it", async () => {
+    const row = await callSend({
+      tenantId: TENANT_ID,
+      type: "manual_message",
+      channel: "email",
+      locale: "ar",
+      templateCode: "overdue-reminder-ar",
+    });
+
+    expect(row).toMatchObject({ id: NOTIFICATION_ID, state: "queued" });
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: NOTIFICATION_ID },
+      _dedupe_key: `notification.dispatch:${NOTIFICATION_ID}`,
+      // The staff member who pressed send is who the job's notice goes to.
+      _requested_by: "user-1",
+    });
+  });
+
+  it("enqueues nothing for a message scheduled for later", async () => {
+    // The row waits for its own time, so the drain job owns it — a job now
+    // would send it early.
+    await callSend({
+      tenantId: TENANT_ID,
+      type: "manual_message",
+      channel: "email",
+      locale: "ar",
+      templateCode: "overdue-reminder-ar",
+      scheduledAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+
+    expect(rpc).not.toHaveBeenCalled();
   });
 });
 

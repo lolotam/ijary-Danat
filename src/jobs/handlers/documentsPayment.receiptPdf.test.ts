@@ -1,33 +1,33 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/company/requestCompany.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).requestCompanyModule(),
+  (await import("./documentsPayment.testkit")).requestCompanyModule(),
 );
 vi.mock("@/company/companyClient.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).companyClientModule(),
+  (await import("./documentsPayment.testkit")).companyClientModule(),
 );
 vi.mock("@/lib/paymentReceiptPdf", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).paymentReceiptPdfModule(),
+  (await import("./documentsPayment.testkit")).paymentReceiptPdfModule(),
 );
 vi.mock("@/fns/enqueueNotification", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).enqueueNotificationModule(),
+  (await import("./documentsPayment.testkit")).enqueueNotificationModule(),
 );
 
 import {
+  ALL_TARGETS,
   PAYMENT_ID,
   confirmedPayment,
   enqueue,
-  maybeSingle,
   notificationsContains,
   paymentsIn,
   renderReceipts,
   resetPaymentNotifyMocks,
-  rpc,
   storedReceiptFor,
   tenantRow,
-} from "./notifyPaymentSuccess.testkit";
+  TEST_COMPANY_ID,
+} from "./documentsPayment.testkit";
 
-const { notifyPaymentSuccess } = await import("./notifyPaymentSuccess");
+const { sendPaymentReceipts } = await import("./documentsPayment");
 
 beforeEach(resetPaymentNotifyMocks);
 
@@ -53,11 +53,10 @@ describe("the receipt pdf rides along with every mail", () => {
   }
 
   test("both emails carry the stored pdf as a real attachment", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantOnEveryChannel();
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const emails = enqueue.mock.calls.map(([arg]) => arg).filter((arg) => arg.channel === "email");
     expect(emails.map((arg) => arg.type).sort()).toEqual(["payment_admin_alert", "receipt"]);
@@ -71,11 +70,10 @@ describe("the receipt pdf rides along with every mail", () => {
     // The Evolution provider sends documents as media parts, so the WhatsApp
     // receipt leg now claims `attachment_paths` — the tenant receives the
     // receipt PDF itself. The receipt_pdf_* record keys stay for auditability.
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantOnEveryChannel();
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const whatsapp = enqueue.mock.calls
       .map(([arg]) => arg)
@@ -91,10 +89,6 @@ describe("the receipt pdf rides along with every mail", () => {
     // An admin-only workflow with no configured address, or a tenant with
     // neither an email nor a WhatsApp number, would otherwise spawn a Chromium
     // process and write a storage object for a mail nobody receives.
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -109,7 +103,7 @@ describe("the receipt pdf rides along with every mail", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     expect(renderReceipts).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
@@ -119,14 +113,13 @@ describe("the receipt pdf rides along with every mail", () => {
     // A multi-month payment link confirms one payment per invoice month, and
     // each is its own receipt. Collapsing them to one attachment would send a
     // tenant a document for a fraction of what they paid.
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     renderReceipts.mockResolvedValue([
       { bucket: "report-documents", path: "payment-receipts/PAY-1-a.pdf", paymentId: PAYMENT_ID },
       { bucket: "report-documents", path: "payment-receipts/PAY-2-b.pdf", paymentId: PAYMENT_ID },
     ]);
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     const receipt = enqueue.mock.calls.map(([arg]) => arg).find((arg) => arg.type === "receipt");
     expect(receipt.payload.attachment_paths).toEqual([
@@ -139,11 +132,10 @@ describe("the receipt pdf rides along with every mail", () => {
     // The degradation that must never become an outage. An empty
     // `attachment_paths` would be worse than no key: dispatchNotification would
     // claim an attachment it cannot load.
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     renderReceipts.mockResolvedValue([]);
 
-    const result = await notifyPaymentSuccess([PAYMENT_ID]);
+    const result = await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     expect(result).toMatchObject({ ok: true, skipped: false });
     expect(enqueue).toHaveBeenCalled();
@@ -153,16 +145,15 @@ describe("the receipt pdf rides along with every mail", () => {
     }
   });
 
-  test("a receipt sent without its pdf fails the workflow run, naming the payment", async () => {
+  test("a receipt sent without its pdf names the payment that lost it", async () => {
     // 2026-09-24 → 09-27: the snapshot RPC refused the service key, every PDF
     // came back empty, and the run still recorded success — so nobody saw it
     // until tenants complained. The send still goes out; the badge goes red.
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     tenantOnEveryChannel();
     renderReceipts.mockResolvedValue([]);
 
-    const result = await notifyPaymentSuccess([PAYMENT_ID]);
+    const result = await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     expect(result).toMatchObject({ ok: true, skipped: false, missingPdfs: ["PAY-1"] });
     const rows = enqueue.mock.calls.map(([arg]) => arg);
@@ -172,36 +163,22 @@ describe("the receipt pdf rides along with every mail", () => {
       "receipt:whatsapp",
     ]);
     for (const row of rows) expect(row.payload.attachment_missing).toEqual(["PAY-1"]);
-    expect(rpc).toHaveBeenCalledWith(
-      "record_cron_run",
-      expect.objectContaining({
-        _key: "payment-succeeded",
-        _status: "error",
-        _error: expect.stringContaining("PAY-1"),
-      }),
-    );
   });
 
-  test("a receipt whose pdf rendered records success and claims nothing missing", async () => {
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
+  test("a receipt whose pdf rendered claims nothing missing", async () => {
     confirmedPayment();
     tenantOnEveryChannel();
 
-    const result = await notifyPaymentSuccess([PAYMENT_ID]);
+    const result = await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     expect(result).not.toHaveProperty("missingPdfs");
     for (const [arg] of enqueue.mock.calls) {
       expect(arg.payload).not.toHaveProperty("attachment_missing");
     }
-    expect(rpc).toHaveBeenCalledWith(
-      "record_cron_run",
-      expect.objectContaining({ _key: "payment-succeeded", _status: "success" }),
-    );
   });
 
   test("a multi-payment settlement names only the payment whose pdf is missing", async () => {
     const OTHER_PAYMENT = "cccccccc-3333-4ccc-8ccc-cccccccccccc";
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     paymentsIn.mockReturnValue({
       eq: async () => ({
         data: [
@@ -231,7 +208,11 @@ describe("the receipt pdf rides along with every mail", () => {
       input.payments.filter((payment) => payment.id === PAYMENT_ID).map(storedReceiptFor),
     );
 
-    const result = await notifyPaymentSuccess([PAYMENT_ID, OTHER_PAYMENT]);
+    const result = await sendPaymentReceipts(
+      [PAYMENT_ID, OTHER_PAYMENT],
+      ALL_TARGETS,
+      TEST_COMPANY_ID,
+    );
 
     expect(result).toMatchObject({ ok: true, missingPdfs: ["PAY-2"] });
     const receipt = enqueue.mock.calls.map(([arg]) => arg).find((arg) => arg.type === "receipt");
@@ -242,14 +223,13 @@ describe("the receipt pdf rides along with every mail", () => {
   test("an already-notified payment set renders nothing", async () => {
     // Rendering sits after the idempotency return precisely so a duplicate
     // notify costs no Chromium process and writes no storage object.
-    maybeSingle.mockResolvedValue({ data: { is_active: true }, error: null });
     confirmedPayment();
     notificationsContains.mockResolvedValueOnce({
       data: [{ id: "existing-1", payload: { payment_ids: [PAYMENT_ID] } }],
       error: null,
     });
 
-    const result = await notifyPaymentSuccess([PAYMENT_ID]);
+    const result = await sendPaymentReceipts([PAYMENT_ID], ALL_TARGETS, TEST_COMPANY_ID);
 
     expect(result).toMatchObject({ ok: true, skipped: true });
     expect(renderReceipts).not.toHaveBeenCalled();

@@ -3,7 +3,9 @@ import { resolve } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { JOB_CATALOG, type NoticeTarget } from "./catalog";
+import { isBuiltInWorkflow } from "@/lib/workflowCatalog";
+
+import { JOB_CATALOG, PAYMENT_RECEIPT_WORKFLOWS, type JobKind, type NoticeTarget } from "./catalog";
 
 const kinds = Object.keys(JOB_CATALOG);
 
@@ -80,5 +82,34 @@ describe("job catalogue (T060)", () => {
     }
 
     expect(mismatches).toEqual([]);
+  });
+});
+
+describe("the payloads that carry the request's choices", () => {
+  const TENANT_ID = "11111111-1111-4111-8111-111111111111";
+  const PAYMENT_ID = "22222222-2222-4222-8222-222222222222";
+
+  test.each<[JobKind, Record<string, unknown>]>([
+    ["company.info.send", { tenantId: TENANT_ID, channels: ["email"], language: "en" }],
+    ["payment.receipt", { paymentId: PAYMENT_ID, workflow: "manual-payment-invoice" }],
+  ])("%s accepts the payload it documents", (kind, payload) => {
+    expect(JOB_CATALOG[kind].payload.safeParse(payload).success).toBe(true);
+  });
+
+  test.each<[JobKind, Record<string, unknown>]>([
+    ["company.info.send", { tenantId: TENANT_ID, channels: ["sms"], language: "en" }],
+    ["company.info.send", { tenantId: TENANT_ID, channels: [], language: "en" }],
+    ["company.info.send", { tenantId: TENANT_ID, channels: ["email"], language: "fr" }],
+    ["payment.receipt", { paymentId: PAYMENT_ID, workflow: "manual-payment" }],
+  ])("%s rejects the payload %j", (kind, payload) => {
+    // A channel or a workflow the catalogue does not know would leave the
+    // worker guessing; the schema stops it at the enqueue instead.
+    expect(JOB_CATALOG[kind].payload.safeParse(payload).success).toBe(false);
+  });
+
+  test("every receipt workflow the catalogue accepts is a built-in workflow", () => {
+    // The worker reads the switch and the recipients of the key the payload
+    // names, so a key the registry does not know would fall back to everybody.
+    expect(PAYMENT_RECEIPT_WORKFLOWS.filter((key) => !isBuiltInWorkflow(key))).toEqual([]);
   });
 });

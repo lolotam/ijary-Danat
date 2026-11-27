@@ -1,0 +1,64 @@
+# IJARY background stack — Redis and the worker, and nothing else.
+# The web application and the whole Supabase stack (Postgres, GoTrue, PostgREST,
+# Storage, Realtime, Kong) are deployed separately as Dokploy applications on
+# the same host; this file covers the two pieces that have no web front.
+# Nothing here is public: no published ports and no Traefik labels.
+name: ijary
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # The outbox in Postgres is the source of truth, but losing the delayed and
+    # retry state of the queue on a restart is still worth avoiding.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - ijary
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ../..
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    # The worker validates the whole server schema before it starts
+    # (validateEnv in src/worker/main.ts → src/lib/env.server.ts), so these
+    # names must be present in .env.worker or the process refuses to start:
+    #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_PUBLISHABLE_KEY,
+    #   SUPABASE_JWT_SECRET, INTEGRATIONS_MASTER_KEY, PLATFORM_ROOT_HOST,
+    #   PLATFORM_ADMIN_HOST, CRON_SECRET.
+    # Optional, only for the integrations a company actually enabled:
+    #   APP_BASE_URL, TRUST_FORWARDED_HOST, MYFATOORAH_API_KEY,
+    #   MYFATOORAH_WEBHOOK_SECRET, MYFATOORAH_BASE_URL, PLATFORM_EMAIL_PROVIDER,
+    #   PLATFORM_EMAIL_FROM, PLATFORM_RESEND_WEBHOOK_SECRET, RESEND_API_KEY,
+    #   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, META_APP_ID, META_APP_SECRET,
+    #   META_EMBEDDED_SIGNUP_CONFIG_ID, META_WEBHOOK_VERIFY_TOKEN,
+    #   META_GRAPH_API_VERSION, EVOLUTION_API_URL, EVOLUTION_API_KEY.
+    # The email channel reads its sender name straight from the environment
+    # (src/fns/dispatchEmailChannel.ts): RESEND_FROM, SMTP_FROM.
+    # Values never live in this file; REDIS_URL is set below instead.
+    env_file:
+      - .env.worker
+    environment:
+      REDIS_URL: redis://redis:6379
+    networks:
+      - ijary
+
+volumes:
+  redis_data:
+
+networks:
+  # One private bridge for both services. It is not `internal: true` because the
+  # worker has to reach the Supabase API and the provider endpoints; nothing on
+  # it is reachable from outside the host.
+  ijary:
+    driver: bridge

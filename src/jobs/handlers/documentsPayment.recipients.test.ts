@@ -1,40 +1,36 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/company/requestCompany.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).requestCompanyModule(),
+  (await import("./documentsPayment.testkit")).requestCompanyModule(),
 );
 vi.mock("@/company/companyClient.server", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).companyClientModule(),
+  (await import("./documentsPayment.testkit")).companyClientModule(),
 );
 vi.mock("@/lib/paymentReceiptPdf", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).paymentReceiptPdfModule(),
+  (await import("./documentsPayment.testkit")).paymentReceiptPdfModule(),
 );
 vi.mock("@/fns/enqueueNotification", async () =>
-  (await import("./notifyPaymentSuccess.testkit")).enqueueNotificationModule(),
+  (await import("./documentsPayment.testkit")).enqueueNotificationModule(),
 );
 
 import {
   PAYMENT_ID,
   confirmedPayment,
   enqueue,
-  maybeSingle,
   renderReceipts,
   resetPaymentNotifyMocks,
   resolveRecipients,
   templateRow,
   tenantRow,
-} from "./notifyPaymentSuccess.testkit";
+  TEST_COMPANY_ID,
+} from "./documentsPayment.testkit";
 
-const { notifyPaymentSuccess } = await import("./notifyPaymentSuccess");
+const { sendPaymentReceipts } = await import("./documentsPayment");
 
 beforeEach(resetPaymentNotifyMocks);
 
 describe("recipient targets gate at two levels", () => {
   test("tenant off suppresses receipt email and WhatsApp", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["admin", "company"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -49,7 +45,7 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["admin", "company"], TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).toEqual(["payment_admin_alert:email"]);
@@ -60,16 +56,12 @@ describe("recipient targets gate at two levels", () => {
   test("admin off + company on still enqueues the admin block to the company", async () => {
     // The defect this guards against: wrapping the admin block in
     // targets.includes("admin") would silently kill company-only sends.
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["company"] },
-      error: null,
-    });
     confirmedPayment();
     resolveRecipients.mockImplementationOnce(async (targets: string[]) =>
       targets.includes("company") ? ["company@example.test"] : [],
     );
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["company"], TEST_COMPANY_ID);
 
     const adminAlert = enqueue.mock.calls
       .map(([arg]) => arg)
@@ -80,10 +72,6 @@ describe("recipient targets gate at two levels", () => {
   });
 
   test("reminders_enabled false + WhatsApp + no email still enqueues WhatsApp receipt and renders PDF once", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -98,7 +86,7 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).toEqual(["receipt:whatsapp"]);
@@ -106,10 +94,6 @@ describe("recipient targets gate at two levels", () => {
   });
 
   test("reminders_enabled false + email + WhatsApp enqueues both tenant channels", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -124,17 +108,13 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`).sort();
     expect(types).toEqual(["receipt:email", "receipt:whatsapp"]);
   });
 
   test("whatsapp null with mobile present sends WhatsApp receipt to mobile", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -149,7 +129,7 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     const whatsapp = enqueue.mock.calls
       .map(([arg]) => arg)
@@ -159,10 +139,6 @@ describe("recipient targets gate at two levels", () => {
   });
 
   test("receipt template restricted to email suppresses WhatsApp receipt", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -190,17 +166,13 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     }));
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).toEqual(["receipt:email"]);
   });
 
   test("targets without tenant + reminders_enabled false still sends no tenant row", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["admin", "company"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -215,17 +187,13 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["admin", "company"], TEST_COMPANY_ID);
 
     const types = enqueue.mock.calls.map(([arg]) => `${arg.type}:${arg.channel}`);
     expect(types).toEqual(["payment_admin_alert:email"]);
   });
 
   test("WhatsApp receipt carries audience tenant and tenantId for notifications_paused gate", async () => {
-    maybeSingle.mockResolvedValue({
-      data: { is_active: true, recipient_targets: ["tenant"] },
-      error: null,
-    });
     confirmedPayment();
     tenantRow.mockResolvedValue({
       data: {
@@ -240,7 +208,7 @@ describe("recipient targets gate at two levels", () => {
       error: null,
     });
 
-    await notifyPaymentSuccess([PAYMENT_ID]);
+    await sendPaymentReceipts([PAYMENT_ID], ["tenant"], TEST_COMPANY_ID);
 
     const whatsapp = enqueue.mock.calls
       .map(([arg]) => arg)

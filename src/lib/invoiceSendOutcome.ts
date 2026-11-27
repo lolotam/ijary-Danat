@@ -28,12 +28,15 @@ export type InvoiceSendFeedback = {
 /**
  * يصنّف صف الإشعار حسب حالته المكتوبة، لا حسب وجود المعرّف.
  *
- * `enqueueNotification` returns the row after `dispatchNotificationRecord` has
- * already written `sent`, `queued`, or a non-delivery state. Counting a non-null
- * id as success toasted "Invoice sent" for a row that never completed (PR #214).
+ * `enqueueNotification` returns the row it wrote, which reads `queued` while
+ * the notify worker still owns the send and `skipped` for a row that was held
+ * back; under a duplicate delivery key it can also return the row that
+ * already exists, and that one may read `sent`. Counting a non-null id as
+ * success toasted "Invoice sent" for a row that never completed (PR #214), so
+ * the state written on the row is what decides.
  *
- * Notification `queued` means the dispatcher has not handed the message to a
- * provider yet. A Twilio/Meta accept that those APIs themselves call "queued"
+ * Notification `queued` means the message is on its way and no provider has
+ * seen it yet. A Twilio/Meta accept that those APIs themselves call "queued"
  * is recorded on our row as `sent`.
  */
 export function invoiceSendRowBucket(state: NotificationState): "sent" | "queued" | "failed" {

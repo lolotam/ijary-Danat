@@ -158,7 +158,8 @@ export function GeneratedReportsPanel() {
               onResend={(id) =>
                 resendGenerated.mutate(id, {
                   onError: (error) => toast.error(error.message),
-                  onSuccess: () => toast.success(t("reports.scheduleDone")),
+                  // The report is queued, not sent: the worker sends it again.
+                  onSuccess: () => toast.success(t("reports.resendQueued")),
                 })
               }
               onDelete={setPendingDelete}

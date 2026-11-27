@@ -6,6 +6,7 @@ import {
   remoteNumberFor,
 } from "@/lib/evolution/client";
 import type { EvolutionClient, Fetcher } from "@/lib/evolution/client";
+import { evolutionLocalPacer } from "@/lib/providers/evolutionLocalPacing";
 import type { ProviderResult, WhatsAppProviderMessage } from "@/lib/providers/types";
 import {
   configValue,
@@ -63,36 +64,6 @@ export function evolutionClientFromConfig(
 ): EvolutionClient {
   const { apiBase, apiKey } = resolveEvolutionCredentials(config);
   return createEvolutionClient({ baseUrl: apiBase, apiKey, fetcher, timeoutMs });
-}
-
-/** Minimum in-process gap between consecutive Evolution sends. */
-const PACING_MIN_MS = 1_500;
-/** Random extra delay on top of the minimum gap. */
-const PACING_JITTER_MS = 1_500;
-
-let lastSendAt = 0;
-
-/**
- * يفرض إيقاعاً بشرياً بين الإرسالات المتتالية (1.5–3 ثوانٍ).
- *
- * Evolution is an unofficial Baileys bridge on a real phone number; a cron
- * batch or bulk send blasting messages back-to-back is exactly the pattern
- * WhatsApp's spam controls ban numbers for. Module-level, so every send in
- * this process — dispatch loop, drain retries, inbox composer — shares one
- * clock. Test hooks reset it via `resetEvolutionPacing`.
- */
-async function paceSends(): Promise<void> {
-  const elapsed = Date.now() - lastSendAt;
-  const gap = PACING_MIN_MS + Math.random() * PACING_JITTER_MS;
-  if (lastSendAt > 0 && elapsed < gap) {
-    await new Promise((resolve) => setTimeout(resolve, gap - elapsed));
-  }
-  lastSendAt = Date.now();
-}
-
-/** يعيد ضبط ساعة الإيقاع — للاختبارات فقط. */
-export function resetEvolutionPacing(): void {
-  lastSendAt = 0;
 }
 
 /**
@@ -212,11 +183,19 @@ async function classifySendFailure(
  * part and reports how many went out, because a blind retry of the whole
  * notification would duplicate the parts that already reached the tenant
  * (that is why `partial_send` parks in needs_review, never in the retry loop).
+ *
+ * Pacing is the caller's to supply: WhatsApp bans numbers that send
+ * back-to-back, so the notify worker takes a per-connection lock before it
+ * sends (`() => pacer.waitForSlot(connectionId)`). A caller outside the
+ * worker — the drain, the manual re-send, the chat composers — passes none,
+ * and falls back to the in-process per-connection pacer, which holds the same
+ * 1.5–3 s gap for the paths the worker lock does not cover.
  */
 export async function sendWithEvolution(
   message: WhatsAppProviderMessage,
   instanceName: string,
   fetcher?: Fetcher,
+  pace: () => Promise<void> = evolutionLocalPacer(instanceName),
 ): Promise<ProviderResult & { partIds: string[] }> {
   const client = evolutionClientFromConfig(message.config, fetcher);
   const number = toInternationalDigits(message.to);
@@ -230,7 +209,7 @@ export async function sendWithEvolution(
   const totalParts = (body ? 1 : 0) + media.length;
 
   const sendPart = async (send: () => Promise<unknown>): Promise<void> => {
-    await paceSends();
+    await pace();
     try {
       const raw = await send();
       partIds.push(messageIdFrom(raw) ?? `evo_${crypto.randomUUID()}`);

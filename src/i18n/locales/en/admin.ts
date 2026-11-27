@@ -358,6 +358,7 @@ export const admin: Record<string, string> = {
   "notifications.cancel": "Cancel notification",
   "notifications.cancelConfirm": "Cancel this notification?",
   "notifications.sent": "The message was processed.",
+  "notifications.companyInfoQueued": "The company information was queued and will be sent shortly.",
   "notifications.manualHelp":
     "Manual messages are allowed, but WhatsApp requires enabled reminders and an approved template.",
   "notifications.freeText": "Free text",
@@ -408,5 +409,26 @@ export const admin: Record<string, string> = {
   "admin.whatsappBanner.reconnect": "Reconnect",
   "admin.whatsappBanner.viewParked": "View held messages",
   "admin.whatsappBanner.askAdmin": "Ask an administrator to reconnect it.",
+  // ── Notices (background work) ─────────────────────────────────────────────
+  // A notice title: `notices.<job kind>.<level>` — the same levels as `user_notices.level`.
+  "notices.title": "Background-work notices",
+  "notices.empty": "No notices",
+  "notices.badge": "Unread notices",
+  "notices.level.success": "Done",
+  "notices.level.error": "Failed",
+  "notices.notification.bulk.success": "Bulk notifications sent",
+  "notices.notification.bulk.error": "Bulk notifications could not be sent",
+  "notices.report.export.success": "Report exported",
+  "notices.report.export.error": "Report could not be exported",
+  "notices.invoices.generate.success": "The year's invoices were generated",
+  "notices.invoices.generate.error": "The year's invoices could not be generated",
+  "notices.invoices.regenerate.success": "The contract's invoices were regenerated",
+  "notices.invoices.regenerate.error": "The contract's invoices could not be regenerated",
+  "notices.import.run.success": "The file was imported",
+  "notices.import.run.error": "The file could not be imported",
+  "notices.electricity.generate.success": "The electricity charges were issued",
+  "notices.electricity.generate.error": "The electricity charges could not be issued",
+  "notices.company.export.success": "The company backup was exported",
+  "notices.company.export.error": "The company backup could not be exported",
   // ── Backup & Restore ─────────────────────────────────────────────────────
 };

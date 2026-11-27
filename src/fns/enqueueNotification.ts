@@ -2,7 +2,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
-import { dispatchNotificationRecord } from "@/fns/dispatchNotification";
 import { loadTemplateChannel, templateAllowsChannel } from "@/fns/templateChannelPolicy";
 import type {
   Database,
@@ -14,6 +13,8 @@ import type {
   Tables,
   TablesInsert,
 } from "@/integrations/supabase/database.types";
+import { enqueueJob } from "@/jobs/enqueue";
+import { notificationDispatchDedupeKey } from "@/jobs/catalog";
 import { isTenantBoundAudience, TENANT_PAUSED_REASON } from "@/lib/tenantNotificationsPaused";
 import type { WorkflowRecipientTarget } from "@/lib/workflowCatalog";
 
@@ -49,7 +50,12 @@ export interface EnqueueNotificationInput {
 }
 
 /**
- * ينشئ صف إشعار ضمن نطاق الشركة — ما لم تكن قناة القالب النشط تمنع هذه القناة — ويُرسله فوراً.
+ * ينشئ صف إشعار ضمن نطاق الشركة — ما لم تكن قناة القالب النشط تمنع هذه القناة — ويضعه في صندوق المهام.
+ *
+ * The row is inserted `queued` and the send is left to the notify worker: the
+ * request only writes the outbox row, so a provider that is down cannot fail
+ * the business transaction that caused the notification (contracts/jobs.md
+ * section 1).
  *
  * Returns null when an active template excludes `input.channel`, so the row is
  * never created. The Notification Log is a user-facing audit surface: a
@@ -76,12 +82,12 @@ export async function enqueueNotification(
   }
 
   // The row's send time, resolved before the row is built so the pause check
-  // below and the dispatch at the end of this function judge the same moment.
+  // below and the enqueue at the end of this function judge the same moment.
   const scheduledAt = input.scheduledAt ?? new Date().toISOString();
 
   // A row goes out now only when the caller asked for a dispatch and its
-  // scheduled time sits inside the same five-second window the dispatch at
-  // the end of this function uses.
+  // scheduled time sits inside the same five-second window the enqueue at the
+  // end of this function uses.
   const sendsNow =
     input.dispatch !== false && new Date(scheduledAt).getTime() <= Date.now() + 5_000;
 
@@ -93,7 +99,7 @@ export async function enqueueNotification(
   // Only a row that is sent NOW may be born skipped. A row the caller will
   // dispatch itself, or one scheduled for later, is not sent yet: unpausing
   // the tenant before its time comes must still deliver it, and the guard in
-  // `dispatchNotificationRecord` reads the switch at that moment. Marking
+  // the dispatcher reads the switch at that moment. Marking
   // such a row skipped here would drop a message nobody refused — so the
   // tenant is not even read for it.
   const paused =
@@ -150,7 +156,13 @@ export async function enqueueNotification(
     ? new Date(insertResult.data.scheduled_at).getTime()
     : 0;
   if (scheduled > Date.now() + 5_000) return insertResult.data;
-  return dispatchNotificationRecord(insertResult.data.id, { companyId });
+  await enqueueJob(
+    db,
+    "notification.dispatch",
+    { notificationId: insertResult.data.id },
+    { dedupeKey: notificationDispatchDedupeKey(insertResult.data.id) },
+  );
+  return insertResult.data;
 }
 
 /**

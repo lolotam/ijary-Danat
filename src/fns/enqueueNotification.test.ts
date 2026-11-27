@@ -4,12 +4,16 @@ const companyMaybeSingle = vi.fn();
 const adminRolesResult = vi.fn();
 const profilesResult = vi.fn();
 const from = vi.fn();
+const rpc = vi.fn();
 
 const TEST_COMPANY = {
   id: "00000000-0000-4000-8000-000000000001",
   slug: "danat",
   status: "active" as const,
 };
+
+/** The catalogue schema only accepts a uuid, and the row id is what it carries. */
+const NOTIFICATION_ID = "11111111-1111-4111-8111-111111111111";
 
 vi.mock("@/company/requestCompany.server", () => ({
   getRequestCompany: () => TEST_COMPANY,
@@ -20,17 +24,12 @@ vi.mock("@/company/requestCompany.server", () => ({
 vi.mock("@/company/companyClient.server", () => ({
   companyClient: () => ({
     from: (...args: unknown[]) => from(...args),
+    rpc: (...args: unknown[]) => rpc(...args),
   }),
-}));
-
-vi.mock("@/fns/dispatchNotification", () => ({
-  dispatchNotificationRecord: vi.fn(),
 }));
 
 const { resolveNotificationRecipients, enqueueNotification, pickExistingDelivery } =
   await import("./enqueueNotification");
-const { dispatchNotificationRecord } = await import("@/fns/dispatchNotification");
-const dispatchMock = vi.mocked(dispatchNotificationRecord);
 
 function mockCompany(email: string | null, error: { message: string } | null = null) {
   companyMaybeSingle.mockResolvedValue({
@@ -54,6 +53,7 @@ function mockAdmins(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rpc.mockResolvedValue({ data: "job-1", error: null });
   from.mockImplementation((table: string) => {
     if (table === "companies") {
       return {
@@ -156,7 +156,7 @@ describe("the template channel gates row creation", () => {
       };
     });
     insertSingle.mockResolvedValue({
-      data: { id: "n-1", scheduled_at: null },
+      data: { id: NOTIFICATION_ID, scheduled_at: null },
       error: null,
     });
   });
@@ -279,12 +279,12 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     // function reads `scheduled_at` from the insert result, so a stub that
     // answers `null` would hide the scheduled-window rule.
     insertSingle.mockImplementation(async (row: Record<string, unknown>) => ({
-      data: { ...row, id: "n-1" },
+      data: { ...row, id: NOTIFICATION_ID },
       error: null,
     }));
   });
 
-  test("a tenant-audience row for a paused tenant is skipped, not sent", async () => {
+  test("a tenant-audience row for a paused tenant is skipped, not queued", async () => {
     tenantMaybeSingle.mockResolvedValue({ data: { notifications_paused: true }, error: null });
 
     const row = await enqueueNotification({
@@ -298,7 +298,7 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("skipped");
     expect(inserted.failure_reason).toBe("Tenant notifications are paused.");
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
     expect(row).not.toBeNull();
   });
 
@@ -319,7 +319,7 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("queued");
     expect(inserted.failure_reason).toBeNull();
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test("a paused tenant scheduled for later is queued, not skipped", async () => {
@@ -339,15 +339,15 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("queued");
     expect(inserted.failure_reason).toBeNull();
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  test("an admin-audience row for the same tenant is queued and sent", async () => {
+  test("an admin-audience row for the same tenant is queued for the worker", async () => {
     // The admin copy is the office's, not the tenant's — a paused tenant must
     // not silence the office, and the pause is never even read for it.
     tenantMaybeSingle.mockResolvedValue({ data: { notifications_paused: true }, error: null });
 
-    await enqueueNotification({
+    const row = await enqueueNotification({
       type: "overdue_reminder",
       channel: "email",
       audience: "admin",
@@ -358,13 +358,19 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("queued");
     expect(inserted.failure_reason).toBeNull();
-    expect(dispatchMock).toHaveBeenCalledWith("n-1", { companyId: TEST_COMPANY.id });
+    expect(row).toMatchObject({ id: NOTIFICATION_ID, state: "queued" });
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: NOTIFICATION_ID },
+      _dedupe_key: `notification.dispatch:${NOTIFICATION_ID}`,
+      _requested_by: null,
+    });
   });
 
-  test("a tenant-audience row for an unpaused tenant behaves as before", async () => {
+  test("a tenant-audience row for an unpaused tenant is queued for the worker", async () => {
     tenantMaybeSingle.mockResolvedValue({ data: { notifications_paused: false }, error: null });
 
-    await enqueueNotification({
+    const row = await enqueueNotification({
       type: "overdue_reminder",
       channel: "email",
       audience: "tenant",
@@ -374,7 +380,13 @@ describe("the tenant pause switch holds tenant-bound notifications back", () => 
     const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(inserted.state).toBe("queued");
     expect(inserted.failure_reason).toBeNull();
-    expect(dispatchMock).toHaveBeenCalledWith("n-1", { companyId: TEST_COMPANY.id });
+    expect(row).toMatchObject({ id: NOTIFICATION_ID, state: "queued" });
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "notification.dispatch",
+      _payload: { notificationId: NOTIFICATION_ID },
+      _dedupe_key: `notification.dispatch:${NOTIFICATION_ID}`,
+      _requested_by: null,
+    });
   });
 
   test("a tenant row that cannot be read is not treated as unpaused", async () => {
@@ -456,7 +468,7 @@ describe("a duplicate delivery key returns the row that already exists", () => {
     const row = await enqueueWithKey();
 
     expect(row).toMatchObject({ id: "n-sent", state: "sent" });
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test("a sent row older than 25 newer skipped rows is still the delivery", async () => {
@@ -476,7 +488,7 @@ describe("a duplicate delivery key returns the row that already exists", () => {
     const row = await enqueueWithKey();
 
     expect(row).toMatchObject({ id: "n-sent", state: "sent" });
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test("with no queued or sent row, the failed row is returned instead of a new one", async () => {
@@ -490,7 +502,7 @@ describe("a duplicate delivery key returns the row that already exists", () => {
     const row = await enqueueWithKey();
 
     expect(row).toMatchObject({ id: "n-failed", state: "failed" });
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test("one lookup reads every dispatchable state at once", async () => {

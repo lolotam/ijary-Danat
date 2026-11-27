@@ -57,6 +57,7 @@ export const users: Record<string, string> = {
   "users.create": "Create",
   "users.created": "User created.",
   "users.credentialsNotSent": "Account created, but its credentials were not sent.",
+  "users.credentialsQueued": "The credentials are being sent now.",
   "users.credentialsPaused": "Credential sending is paused in the workflow settings.",
   "users.credentialsTenantPaused":
     "This tenant's notifications are paused, so the credentials were not sent.",

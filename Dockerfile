@@ -41,16 +41,17 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
     bun run build
 
-# --- Runtime ---
-FROM oven/bun:1-slim AS runtime
-WORKDIR /app
-ENV NODE_ENV=production
-ENV PORT=3000
-# Chromium + Arabic/Latin fonts live only in the runtime stage. The build stage
+# --- Chromium base ---
+# Chromium + Arabic/Latin fonts live only in this base stage. The build stage
 # never renders PDFs; installing here (and only here) keeps deps/build layers lean.
 # fonts-noto-core: Noto Naskh Arabic — without glyphs Chromium shapes correctly
 #   then draws tofu boxes (looks like a Chromium bug; it is a missing-font bug).
 # fonts-dejavu-core: Latin/digits so mixed AR/EN reports render.
+# The base stage is shared by `runtime` and `worker`: the worker renders the
+# document jobs' PDFs too, and a second copy of this apt-get block would drift.
+FROM oven/bun:1-slim AS chromium-base
+WORKDIR /app
+ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium \
       fonts-noto-core \
@@ -58,6 +59,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Debian chromium package installs the binary at /usr/bin/chromium.
 ENV CHROMIUM_PATH=/usr/bin/chromium
+
+# --- Worker ---
+# The `runtime` stage below MUST stay the LAST stage in this file: Dokploy
+# builds the web app without `--target`, and Docker builds the last stage by
+# default. The worker sits before it, so `--target worker` builds the worker
+# alone while the image Dokploy builds stays the one it builds today.
+FROM chromium-base AS worker
+WORKDIR /app
+# The worker runs the TypeScript sources on Bun — there is no separate worker
+# bundle — so it needs the installed packages, the sources and the path alias.
+COPY --from=deps /app/node_modules ./node_modules
+COPY src ./src
+# tsconfig.json carries the `@/*` path alias Bun resolves at run time.
+COPY tsconfig.json ./tsconfig.json
+COPY package.json ./package.json
+# The vendored Cairo faces the web app renders PDFs with: without them the
+# worker's PDFs fall back to the image's Noto faces and stop matching the
+# documents the web app produces.
+COPY public/fonts ./public/fonts
+# No VITE_* build args: nothing is bundled for a browser here, and every secret
+# the worker needs arrives through the environment at run time.
+CMD ["bun", "run", "src/worker/main.ts"]
+
+# --- Runtime ---
+FROM chromium-base AS runtime
+ENV PORT=3000
 COPY --from=build /app/.output ./.output
 COPY --from=build /app/package.json ./package.json
 EXPOSE 3000

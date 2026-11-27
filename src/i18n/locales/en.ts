@@ -6,6 +6,7 @@ import { invoices } from "./en/invoices";
 import { notificationChannel } from "./en/notificationChannel";
 import { landingSettings } from "./en/landingSettings";
 import { audit } from "./en/audit";
+import { jobs } from "./en/jobs";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -26,4 +27,5 @@ export const en: Record<string, string> = {
   ...notificationChannel,
   ...landingSettings,
   ...audit,
+  ...jobs,
 };

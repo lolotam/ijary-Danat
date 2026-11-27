@@ -1,55 +1,41 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  scheduleSingle: vi.fn(),
-  generatedInsertSingle: vi.fn(),
-  notificationInsertSingle: vi.fn(),
-  generatedUpdateEq: vi.fn(),
-  scheduleUpdateEq: vi.fn(),
-  scheduleUpdateValues: vi.fn(),
-  generatedUpdateValues: vi.fn(),
-  generatedInsertValues: vi.fn(),
-  notificationInsertValues: vi.fn(),
-  rpc: vi.fn(),
-  dispatch: vi.fn(),
-  renderPdf: vi.fn(),
-  attachmentPayload: vi.fn(),
-}));
+vi.mock("@tanstack/react-start", () => {
+  const fn: {
+    (input: { data: unknown; context: unknown }): unknown;
+    _handler?: (args: { data: unknown; context: unknown }) => unknown;
+    middleware: ReturnType<typeof vi.fn>;
+    inputValidator: ReturnType<typeof vi.fn>;
+    validator: ReturnType<typeof vi.fn>;
+    handler: ReturnType<typeof vi.fn>;
+  } = ((args: { data: unknown; context: unknown }) => fn._handler?.(args)) as never;
+  fn.middleware = vi.fn().mockReturnValue(fn);
+  fn.inputValidator = vi.fn().mockReturnValue(fn);
+  fn.validator = vi.fn().mockReturnValue(fn);
+  fn.handler = vi.fn().mockImplementation((h) => {
+    fn._handler = h;
+    return fn;
+  });
+  return {
+    createServerFn: vi.fn().mockReturnValue(fn),
+    createMiddleware: vi.fn().mockReturnValue({
+      server: vi.fn().mockImplementation((middlewareFn) => middlewareFn),
+    }),
+  };
+});
 
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const SCHEDULE_ID = "22222222-2222-4222-8222-222222222222";
+
+const rpc = vi.fn();
+
+// The request reads nothing but the catalogue: a report snapshot and a PDF
+// render belong to the worker, so any table read here fails the test.
 const dbClient = {
   from: (table: string) => {
-    if (table === "report_schedules") {
-      return {
-        select: () => ({ eq: () => ({ single: mocks.scheduleSingle }) }),
-        update: (values: unknown) => {
-          mocks.scheduleUpdateValues(values);
-          return { eq: mocks.scheduleUpdateEq };
-        },
-      };
-    }
-    if (table === "generated_reports") {
-      return {
-        insert: (values: unknown) => {
-          mocks.generatedInsertValues(values);
-          return { select: () => ({ single: mocks.generatedInsertSingle }) };
-        },
-        update: (values: unknown) => {
-          mocks.generatedUpdateValues(values);
-          return { eq: mocks.generatedUpdateEq };
-        },
-      };
-    }
-    if (table === "notifications") {
-      return {
-        insert: (values: unknown) => {
-          mocks.notificationInsertValues(values);
-          return { select: () => ({ single: mocks.notificationInsertSingle }) };
-        },
-      };
-    }
-    throw new Error(`unexpected table ${table}`);
+    throw new Error(`Unexpected table in test: ${table}`);
   },
-  rpc: (...args: unknown[]) => mocks.rpc(...args),
+  rpc: (...args: unknown[]) => rpc(...args),
 };
 
 vi.mock("@/company/companyClient.server", () => ({
@@ -58,126 +44,60 @@ vi.mock("@/company/companyClient.server", () => ({
 
 vi.mock("@/company/requestCompany.server", () => ({
   requireRequestCompany: () => ({
-    id: "11111111-1111-4111-8111-111111111111",
+    id: COMPANY_ID,
     slug: "danat",
     status: "active",
     host: "danat.localhost",
   }),
 }));
 
-vi.mock("@/fns/dispatchNotification", () => ({
-  dispatchNotificationRecord: (...args: unknown[]) => mocks.dispatch(...args),
-}));
+vi.mock("@/integrations/supabase/auth-middleware", () => ({ requireSupabaseAuth: vi.fn() }));
 
-vi.mock("@/lib/reportPdfAttachment", () => ({
-  renderAndStorePdf: (...args: unknown[]) => mocks.renderPdf(...args),
-  attachmentPayload: (...args: unknown[]) => mocks.attachmentPayload(...args),
-}));
+const { runReportSchedule } = await import("./runReportSchedule");
 
-const { runReportScheduleRecord } = await import("./runReportSchedule");
-
-const SNAPSHOT = {
-  html: "<html>overdue</html>",
-  period_start: "2026-09-21",
-  period_end: "2026-09-28",
+const context = {
+  userId: "user-1",
+  supabase: { rpc: async () => ({ data: true, error: null }) },
 };
 
-/** جدول زمني بالحالة المعطاة — البريد الوحيد الصالح هو ما يعتمد عليه التشغيل. */
-function scheduleRow(reportKind: string) {
-  return {
-    id: "schedule-1",
-    report_kind: reportKind,
-    frequency: "weekly",
-    locale: "ar",
-    name_ar: "تقرير المتأخرات الأسبوعي",
-    name_en: "Weekly Overdue Report",
-    recipients: ["owner@example.com"],
-  };
-}
+const run = (asOf: string | null | undefined) =>
+  (runReportSchedule as unknown as (a: { data: unknown; context: unknown }) => Promise<unknown>)({
+    data: { scheduleId: SCHEDULE_ID, asOf },
+    context,
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.attachmentPayload.mockReturnValue({});
-  mocks.renderPdf.mockResolvedValue(null);
-  mocks.dispatch.mockResolvedValue({ id: "notification-1", state: "sent" });
-  mocks.generatedInsertSingle.mockResolvedValue({
-    data: { id: "generated-1" },
-    error: null,
-  });
-  mocks.notificationInsertSingle.mockResolvedValue({
-    data: { id: "notification-1" },
-    error: null,
-  });
-  mocks.generatedUpdateEq.mockResolvedValue({ error: null });
-  mocks.scheduleUpdateEq.mockResolvedValue({ error: null });
-  mocks.rpc.mockImplementation(async (name: string) => {
-    if (name === "build_scheduled_report_html" || name === "build_overdue_contracts_report_html") {
-      return { data: [SNAPSHOT], error: null };
-    }
-    return { data: null, error: null };
-  });
+  rpc.mockResolvedValue({ data: "job-1", error: null });
 });
 
-describe("runReportScheduleRecord report kinds", () => {
-  test("an overdue_contracts schedule builds through the overdue builder", async () => {
-    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("overdue_contracts"), error: null });
+describe("runReportSchedule queues the report instead of building it", () => {
+  test("queues one report.run job whose payload matches the catalogue", async () => {
+    const result = (await run("2026-09-28")) as { queued: boolean; jobRequestIds: string[] };
 
-    await runReportScheduleRecord("schedule-1", null);
-
-    // The RPC name is the system boundary: the wrong builder would email a
-    // summary titled as an overdue report.
-    expect(mocks.rpc).toHaveBeenCalledWith("build_overdue_contracts_report_html", {
-      p_schedule_id: "schedule-1",
-      p_as_of: null,
+    // One row in the outbox. The payload reached it only because it passed the
+    // catalogue's schema: `enqueueJob` parses it before the insert.
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("enqueue_job", {
+      _kind: "report.run",
+      _payload: { scheduleId: SCHEDULE_ID, date: "2026-09-28" },
+      _dedupe_key: `report.run:${SCHEDULE_ID}:2026-09-28`,
+      _requested_by: null,
     });
-    expect(mocks.rpc).not.toHaveBeenCalledWith("build_scheduled_report_html", expect.anything());
+    expect(result).toEqual({ queued: true, jobRequestIds: ["job-1"] });
   });
 
-  test("a summary schedule builds through the summary builder", async () => {
-    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("summary"), error: null });
+  test("runs for today when no date was asked for", async () => {
+    await run(null);
 
-    await runReportScheduleRecord("schedule-1", null);
-
-    expect(mocks.rpc).toHaveBeenCalledWith("build_scheduled_report_html", {
-      p_schedule_id: "schedule-1",
-      p_as_of: null,
-    });
-    expect(mocks.rpc).not.toHaveBeenCalledWith(
-      "build_overdue_contracts_report_html",
-      expect.anything(),
-    );
+    const args = rpc.mock.calls[0]?.[1] as { _payload: { date: string } };
+    expect(args._payload.date).toBe(new Date().toISOString().slice(0, 10));
   });
 
-  test("the builder snapshot flows into the generated_reports insert", async () => {
-    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("overdue_contracts"), error: null });
+  test("deduplicates the same schedule on the same day", async () => {
+    await run("2026-09-28");
 
-    await runReportScheduleRecord("schedule-1", "2026-09-28");
-
-    // The stored report must carry the builder's bytes, not a re-render: the
-    // email body and the PDF are read from this row downstream.
-    expect(mocks.generatedInsertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        schedule_id: "schedule-1",
-        period_start: SNAPSHOT.period_start,
-        period_end: SNAPSHOT.period_end,
-        html_content: SNAPSHOT.html,
-      }),
-    );
-    expect(mocks.notificationInsertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ body: SNAPSHOT.html }),
-    );
-  });
-
-  test("a builder error propagates and stores nothing", async () => {
-    mocks.scheduleSingle.mockResolvedValue({ data: scheduleRow("overdue_contracts"), error: null });
-    mocks.rpc.mockImplementation(async (name: string) =>
-      name === "build_overdue_contracts_report_html"
-        ? { data: null, error: { message: "builder exploded" } }
-        : { data: null, error: null },
-    );
-
-    await expect(runReportScheduleRecord("schedule-1", null)).rejects.toThrow("builder exploded");
-    expect(mocks.generatedInsertValues).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    const args = rpc.mock.calls[0]?.[1] as { _dedupe_key: string | null };
+    expect(args._dedupe_key).toBe(`report.run:${SCHEDULE_ID}:2026-09-28`);
   });
 });

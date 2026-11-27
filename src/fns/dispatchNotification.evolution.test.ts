@@ -29,19 +29,6 @@ import {
   restoreDispatchFixtures,
   TEST_COMPANY,
 } from "./dispatchNotification.testkit";
-import { resetEvolutionPacing } from "@/lib/providers/evolution";
-
-/** Runs a dispatch with fake timers so the anti-ban pacing costs no wall time. */
-async function paced<T>(work: () => Promise<T>): Promise<T> {
-  vi.useFakeTimers();
-  try {
-    const promise = work();
-    await vi.advanceTimersByTimeAsync(10_000);
-    return await promise;
-  } finally {
-    vi.useRealTimers();
-  }
-}
 
 function evolutionOk(id: string) {
   return new Response(JSON.stringify({ key: { id } }), { status: 201 });
@@ -51,7 +38,6 @@ function evolutionOk(id: string) {
 describe("dispatchNotificationRecord through Evolution", () => {
   beforeEach(() => {
     resetDispatchFixtures();
-    resetEvolutionPacing();
     reportSendSessionDisconnected.mockClear();
     db.notification = notification({ channel: "whatsapp", subject: null });
     db.providers = [EVOLUTION];
@@ -92,7 +78,7 @@ describe("dispatchNotificationRecord through Evolution", () => {
       .mockResolvedValueOnce(evolutionOk("evo-t"))
       .mockResolvedValueOnce(evolutionOk("evo-m"));
 
-    const result = await paced(() => dispatchNotificationRecord("n-1"));
+    const result = await dispatchNotificationRecord("n-1");
 
     expect(requestedUrls()).toEqual([
       "http://evolution:8080/message/sendText/danat",
@@ -122,7 +108,7 @@ describe("dispatchNotificationRecord through Evolution", () => {
       .mockResolvedValueOnce(evolutionOk("evo-t"))
       .mockResolvedValueOnce(evolutionOk("evo-m"));
 
-    await paced(() => dispatchNotificationRecord("n-1"));
+    await dispatchNotificationRecord("n-1");
 
     expect(db.uploads).toEqual([`companies/${TEST_COMPANY.id}/chat/96550123456/evo-m/INV-1.pdf`]);
   });

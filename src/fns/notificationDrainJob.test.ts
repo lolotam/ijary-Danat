@@ -24,6 +24,8 @@ const db = {
     eqs: Array<[string, string]>;
   }[],
   audit: null as Record<string, unknown> | null,
+  inFlightJobs: [] as Record<string, unknown>[],
+  jobRequestsSelect: null as string | null,
 };
 
 /**
@@ -48,6 +50,22 @@ function projectSelected(
   return projected;
 }
 
+/** شرط مُطبَّق على صف `job_requests` في الاستعلام الوهمي. */
+type JobFilter =
+  | { op: "eq"; column: string; value: string }
+  | { op: "in"; column: string; values: string[] };
+
+/**
+ * يطابق صف `job_requests` مع شروط الاستعلام كما يفعل PostgREST.
+ */
+function matchesJobFilters(row: Record<string, unknown>, filters: JobFilter[]): boolean {
+  return filters.every((filter) =>
+    filter.op === "eq"
+      ? String(row[filter.column]) === filter.value
+      : filter.values.includes(String(row[filter.column])),
+  );
+}
+
 const TEST_COMPANY = {
   id: "00000000-0000-4000-8000-000000000001",
   slug: "danat",
@@ -61,18 +79,23 @@ vi.mock("@/company/requestCompany.server", () => ({
 }));
 
 vi.mock("@/company/companyClient.server", () => {
-  function builder() {
+  function builder(table: string) {
     const chain: any = {
       _id: null as string | null,
       _values: null as Record<string, unknown> | null,
       _eqs: [] as Array<[string, string]>,
       _select: null as string | null,
+      _filters: [] as JobFilter[],
       select(columns: string) {
         chain._select = columns;
-        db.pendingSelect = columns;
+        if (table === "notifications") db.pendingSelect = columns;
+        else db.jobRequestsSelect = columns;
         return chain;
       },
-      in: () => chain,
+      in: (column: string, values: string[]) => {
+        chain._filters.push({ op: "in", column, values });
+        return chain;
+      },
       order: () => chain,
       limit: () =>
         Promise.resolve({
@@ -86,9 +109,16 @@ vi.mock("@/company/companyClient.server", () => {
       eq(column: string, value: string) {
         if (column === "id") chain._id = value;
         chain._eqs.push([column, value]);
+        chain._filters.push({ op: "eq", column, value });
         return chain;
       },
       then: (onFulfilled: (value: unknown) => unknown) => {
+        if (table === "job_requests") {
+          const rows = db.inFlightJobs
+            .filter((row) => matchesJobFilters(row, chain._filters))
+            .map((row) => projectSelected(row, chain._select));
+          return Promise.resolve({ data: rows, error: null }).then(onFulfilled);
+        }
         if (chain._values && chain._id) {
           db.updates.push({
             id: chain._id,
@@ -103,7 +133,7 @@ vi.mock("@/company/companyClient.server", () => {
   }
   return {
     companyClient: () => ({
-      from: () => builder(),
+      from: (table: string) => builder(table),
       rpc: (_name: string, args: Record<string, unknown>) => {
         db.audit = args;
         return Promise.resolve({ data: null, error: null });
@@ -155,6 +185,8 @@ describe("runNotificationDrainJob", () => {
     db.pendingSelect = null;
     db.updates = [];
     db.audit = null;
+    db.inFlightJobs = [];
+    db.jobRequestsSelect = null;
     dispatchMock.mockReset();
     dispatchMock.mockResolvedValue({ state: "sent" });
   });
@@ -579,5 +611,102 @@ describe("runNotificationDrainJob", () => {
     const result = await runNotificationDrainJob("2020-01-01");
 
     expect(result.dispatched).toEqual(["due-1"]);
+  });
+
+  it.each(["pending", "published", "running"] as const)(
+    "sends only the notification whose %s dispatch job is not in flight",
+    async (status) => {
+      // The request path enqueues `notification.dispatch` and returns, so the
+      // row is still `queued` when the drain runs. Sending it here as well
+      // would deliver the same message to the same recipient twice.
+      db.pending = [row({ id: "in-flight-1" }), row({ id: "free-1" })];
+      db.inFlightJobs = [
+        {
+          kind: "notification.dispatch",
+          status,
+          payload: { notificationId: "in-flight-1" },
+          dedupe_key: "notification.dispatch:in-flight-1",
+        },
+      ];
+
+      const result = await runNotificationDrainJob();
+
+      expect(dispatchMock).toHaveBeenCalledTimes(1);
+      expect(dispatchMock).toHaveBeenCalledWith("free-1");
+      expect(result.dispatched).toEqual(["free-1"]);
+      expect(result.skippedInFlight).toBe(1);
+      expect(db.audit).toMatchObject({
+        p_after: { scanned: 2, dispatched: 1, skipped_in_flight: 1 },
+      });
+    },
+  );
+
+  it.each(["succeeded", "failed", "skipped"] as const)(
+    "dispatches a notification whose %s dispatch job is already finished",
+    async (status) => {
+      // A finished job left the row `queued` only when the handler could not
+      // write the row's state, so the drain may take it over.
+      db.pending = [row({ id: "finished-1" })];
+      db.inFlightJobs = [
+        {
+          kind: "notification.dispatch",
+          status,
+          payload: { notificationId: "finished-1" },
+          dedupe_key: "notification.dispatch:finished-1",
+        },
+      ];
+
+      const result = await runNotificationDrainJob();
+
+      expect(dispatchMock).toHaveBeenCalledWith("finished-1");
+      expect(result.dispatched).toEqual(["finished-1"]);
+      expect(result.skippedInFlight).toBe(0);
+    },
+  );
+
+  it("selects the payload so a reverted query cannot hide an in-flight dispatch", async () => {
+    // Without the payload the drain cannot tell which notification a job
+    // belongs to, and it would send the row the worker is about to send.
+    db.pending = [row({ id: "due-1" })];
+
+    await runNotificationDrainJob();
+
+    expect(db.jobRequestsSelect).toMatch(/\bpayload\b/);
+  });
+
+  it("ignores a dispatch job of another kind", async () => {
+    db.pending = [row({ id: "other-kind-1" })];
+    db.inFlightJobs = [
+      {
+        kind: "notification.bulk",
+        status: "running",
+        payload: { notificationId: "other-kind-1" },
+        dedupe_key: "notification.bulk:other-kind-1",
+      },
+    ];
+
+    const result = await runNotificationDrainJob();
+
+    expect(dispatchMock).toHaveBeenCalledWith("other-kind-1");
+    expect(result.skippedInFlight).toBe(0);
+  });
+
+  it("ignores a job whose payload names another notification", async () => {
+    // The payload is what the catalogue defines as the notification id, so a
+    // row whose payload points elsewhere is not this notification's job.
+    db.pending = [row({ id: "mine-1" })];
+    db.inFlightJobs = [
+      {
+        kind: "notification.dispatch",
+        status: "running",
+        payload: { notificationId: "someone-else" },
+        dedupe_key: "notification.dispatch:mine-1",
+      },
+    ];
+
+    const result = await runNotificationDrainJob();
+
+    expect(dispatchMock).toHaveBeenCalledWith("mine-1");
+    expect(result.skippedInFlight).toBe(0);
   });
 });

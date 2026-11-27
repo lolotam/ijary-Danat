@@ -57,7 +57,15 @@ export function useInvoiceSend() {
         data: { invoiceId: sendInvoice.id, channels: [...channels] },
       });
       await queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      const feedback = invoiceSendToast(outcome);
+      // The invoice is queued, not sent: the worker renders the document and
+      // the notify worker delivers it. The mapper turns "queued" into the same
+      // warning the old inline sender produced for a row still on its way.
+      const feedback = invoiceSendToast({
+        failed: [],
+        queued: outcome.jobRequestIds,
+        refused: [],
+        sent: [],
+      });
       toast[feedback.kind](t(feedback.key));
       setSendInvoice(null);
     } catch (error) {

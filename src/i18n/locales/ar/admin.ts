@@ -348,6 +348,7 @@ export const admin: Record<string, string> = {
   "notifications.cancel": "إلغاء الإشعار",
   "notifications.cancelConfirm": "هل تريد إلغاء هذا الإشعار؟",
   "notifications.sent": "تمت معالجة الرسالة.",
+  "notifications.companyInfoQueued": "أُدرجت معلومات الشركة في قائمة الانتظار وأُرسلت قريبًا.",
   "notifications.manualHelp":
     "الرسائل اليدوية مسموحة، لكن واتساب يتطلب تفعيل التذكيرات وقالبًا معتمدًا.",
   "notifications.freeText": "نص حر",
@@ -397,5 +398,26 @@ export const admin: Record<string, string> = {
   "admin.whatsappBanner.reconnect": "إعادة الربط",
   "admin.whatsappBanner.viewParked": "عرض الرسائل المعلّقة",
   "admin.whatsappBanner.askAdmin": "أبلغ مدير النظام لإعادة الربط.",
+  // ── Notices (background work) ─────────────────────────────────────────────
+  // عنوان الإشعار: `notices.<نوع المهمة>.<المستوى>` — نفس مستوى `user_notices.level`.
+  "notices.title": "إشعارات المهام",
+  "notices.empty": "لا توجد إشعارات",
+  "notices.badge": "إشعارات غير مقروءة",
+  "notices.level.success": "تم",
+  "notices.level.error": "فشل",
+  "notices.notification.bulk.success": "تم إرسال الإشعارات الجماعية",
+  "notices.notification.bulk.error": "تعذّر إرسال الإشعارات الجماعية",
+  "notices.report.export.success": "تم تصدير التقرير",
+  "notices.report.export.error": "تعذّر تصدير التقرير",
+  "notices.invoices.generate.success": "تم إنشاء فواتير السنة",
+  "notices.invoices.generate.error": "تعذّر إنشاء فواتير السنة",
+  "notices.invoices.regenerate.success": "تم إعادة إنشاء فواتير العقد",
+  "notices.invoices.regenerate.error": "تعذّرت إعادة إنشاء فواتير العقد",
+  "notices.import.run.success": "تم استيراد الملف",
+  "notices.import.run.error": "تعذّر استيراد الملف",
+  "notices.electricity.generate.success": "تم إصدار رسوم الكهرباء",
+  "notices.electricity.generate.error": "تعذّر إصدار رسوم الكهرباء",
+  "notices.company.export.success": "تم تصدير نسخة الشركة",
+  "notices.company.export.error": "تعذّر تصدير نسخة الشركة",
   // ── Backup & Restore ─────────────────────────────────────────────────────
 };

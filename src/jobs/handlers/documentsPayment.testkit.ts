@@ -1,11 +1,15 @@
 import { vi } from "vitest";
 
+import type { WorkflowRecipientTarget } from "@/integrations/supabase/database.types";
+
 /**
  * عدّة اختبار مشتركة لإشعارات نجاح الدفع: توابع mocks المشتركة، البيانات
- * المتغيّرة، ومصانع الوحدات — تتقاسمها ملفات الاختبار الخمسة.
+ * المتغيّرة، ومصانع الوحدات — تتقاسمها ملفات الاختبار في معالجات المستندات.
  *
- * Literal extraction of lines 1–174 of the original `notifyPaymentSuccess.test.ts`
- * so each responsibility stays in its own focused test file.
+ * The receipt work moved out of the request into the `payment.receipt`
+ * handler, so the sender under test is now `sendPaymentReceipts`, which takes
+ * the recipient targets the workflow gate resolved instead of reading the gate
+ * itself.
  */
 
 export const maybeSingle = vi.fn();
@@ -37,6 +41,16 @@ const TEST_COMPANY = {
   status: "active" as const,
 };
 
+/** مُعرّف الشركة التي تعمل ضمنها كل اختبارات إشعار نجاح الدفع. */
+export const TEST_COMPANY_ID = TEST_COMPANY.id;
+
+/**
+ * المستلمون الذين يختارهم مفتاح التوقف الافتراضي حين لا يختار المسؤول أحدًا.
+ *
+ * The gate fails open: a missing registry row means every target is on.
+ */
+export const ALL_TARGETS: WorkflowRecipientTarget[] = ["admin", "company", "tenant"];
+
 /**
  * مصنع وحدة سياق الشركة المزيّف لاختبارات إشعار نجاح الدفع.
  */
@@ -55,8 +69,8 @@ export function requestCompanyModule() {
  */
 export function companyClientModule() {
   const client = {
-    // Routed by table name. The earlier table-agnostic mock could only serve the
-    // registry read and the payments fetch, which is why every test here stopped
+    // Routed by table name. The earlier table-agnostic mock could only serve
+    // the registry read and the payments fetch, which is why every test here stopped
     // before the sender did any work — and why nothing checked the mail itself.
     from: (table: string) => {
       if (table === "payments") {
@@ -104,8 +118,14 @@ export function companyClientModule() {
           }),
         };
       }
-      // cron_jobs — the registry read: `.select("is_active").eq("key", …)`.
-      return { select: () => ({ eq: () => ({ maybeSingle }) }) };
+      // cron_jobs — the registry read: `.select("is_active, recipient_targets").eq("key", …)`.
+      // The key is handed to the stub so a test can give each workflow its own
+      // switch and its own recipients.
+      return {
+        select: () => ({
+          eq: (_column: string, key: string) => ({ maybeSingle: () => maybeSingle(key) }),
+        }),
+      };
     },
     rpc: (...args: unknown[]) => rpc(...args),
   };

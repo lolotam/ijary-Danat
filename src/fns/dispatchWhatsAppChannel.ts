@@ -1,6 +1,6 @@
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
-import { deliverEvolutionNotification } from "@/fns/evolutionDelivery";
+import { deliverEvolutionNotification, type WhatsAppPacer } from "@/fns/evolutionDelivery";
 import {
   tenantOptedOut,
   type ChannelInput,
@@ -61,6 +61,18 @@ async function loadTemplateMapping(
 }
 
 type WhatsAppSend = { ok: true; value: WhatsAppProviderMessage } | { ok: false; reason: string };
+
+/**
+ * مدخلات قناة واتساب: كل ما تحتاجه القناة، ومنظّم الإيقاع اختياري.
+ *
+ * `pace` is the notify worker's per-connection lock (FR-067). A caller that
+ * dispatches outside the notify worker — the notification drain, the manual
+ * re-send from the log — passes none, and the provider falls back to its
+ * in-process per-connection pacer.
+ */
+export interface WhatsAppChannelInput extends ChannelInput {
+  pace?: WhatsAppPacer;
+}
 
 interface WhatsAppSendContext {
   config: Tables<"provider_configs">;
@@ -177,7 +189,7 @@ function evolutionMessage(
  * that throws propagates, so `dispatchNotificationRecord` records the row
  * failed with the provider's error code, exactly as before the split.
  */
-export async function sendWhatsAppChannel(input: ChannelInput): Promise<ChannelOutcome> {
+export async function sendWhatsAppChannel(input: WhatsAppChannelInput): Promise<ChannelOutcome> {
   const { notification, tenant, configs, attachments, senderAddress } = input;
   const issues: NotificationIssue[] = [];
   const noSend = (): ChannelOutcome => ({ messageIds: [], issues, provider: null, senderAddress });
@@ -231,7 +243,7 @@ export async function sendWhatsAppChannel(input: ChannelInput): Promise<ChannelO
           // message.
           await sendWithPostora(send.value, notification.id)
         : config.provider === "evolution_api"
-          ? await deliverEvolutionNotification(send.value)
+          ? await deliverEvolutionNotification(send.value, undefined, input.pace)
           : await sendWithWhatsApp(send.value);
   return {
     messageIds: [result.messageId],

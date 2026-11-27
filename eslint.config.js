@@ -24,6 +24,7 @@ export default tseslint.config(
       "tmp_ssh",
       "supabase/functions",
       ".claude/**",
+      ".agents/**",
       ".kilo/**",
       ".worktrees/**",
     ],

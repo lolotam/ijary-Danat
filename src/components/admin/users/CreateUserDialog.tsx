@@ -127,6 +127,10 @@ export function CreateUserDialog({
    * unqualified success, so the admin assumed the customer had been told. The
    * two halves genuinely have separate outcomes, so they are reported apart.
    *
+   * `queued` is neither of those halves: the credentials row is written and
+   * the notify worker still owns the send, so the message is on its way and
+   * the toast says so instead of crying failure.
+   *
    * `tenant-paused` names its own cause: the tenant's notifications are off,
    * so nothing was ever going to reach them — the admin must unpause the
    * tenant or resend afterwards, not hunt for a broken template.
@@ -134,6 +138,11 @@ export function CreateUserDialog({
   function reportCreation(delivery?: CredentialDelivery): void {
     if (!delivery || delivery.status === "sent") {
       toast.success(t("users.created"));
+      return;
+    }
+
+    if (delivery.status === "queued") {
+      toast.success(t("users.created"), { description: t("users.credentialsQueued") });
       return;
     }
 

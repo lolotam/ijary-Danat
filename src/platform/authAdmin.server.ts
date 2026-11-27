@@ -61,3 +61,21 @@ export function updateAuthUserById(
 export function deleteAuthUser(userId: string): ReturnType<AdminApi["deleteUser"]> {
   return supabaseAdmin.auth.admin.deleteUser(userId);
 }
+
+/**
+ * يُنهي جميع جلسات مستخدم GoTrue ورموز التحديث الخاصة به.
+ *
+ * `@supabase/supabase-js` `auth.admin.signOut(jwt)` takes a user JWT rather
+ * than a user id, so neither `confirmPasswordReset` (no session) nor a
+ * global multi-session revocation can use it. Calls the `service_role`-only
+ * `revoke_user_sessions` RPC (migration 321) instead.
+ */
+export function signOutAuthUser(
+  userId: string,
+): Promise<{ data: unknown; error: { message: string } | null }> {
+  const rpc = supabaseAdmin.rpc as unknown as (
+    fn: "revoke_user_sessions",
+    args: { _user_id: string },
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  return rpc("revoke_user_sessions", { _user_id: userId });
+}

@@ -15,6 +15,9 @@ const DEFINER_ALLOWLIST = new Set<string>([
   "auth_sessions_set_not_after",
   "rebox_user_sessions",
   "user_roles_shorten_sessions",
+  // Global sign-out after a password reset or change: deletes the GoTrue
+  // sessions of one user, executable by service_role only (migration 321).
+  "revoke_user_sessions",
   "session_lifetime_for",
   "backup_excluded_tables",
   "backup_protected_tables",

@@ -1,15 +1,19 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { KeyRound } from "lucide-react";
 import { useState } from "react";
 
-import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
+import {
+  ChangePasswordForm,
+  type ChangePasswordPayload,
+} from "@/components/auth/ChangePasswordForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { changeOwnPassword, confirmPasswordReset, requestPasswordReset } from "@/fns/passwordReset";
 import { useI18n } from "@/i18n/provider";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
  * شاشة إعادة تعيين كلمة المرور وتغييرها الإجباري.
@@ -43,7 +47,7 @@ type SignInPath = "/auth" | "/portal/auth";
 
 interface ResetPasswordSearch {
   token?: string;
-  change?: "1";
+  change?: "1" | "self";
   next?: ResetDestination;
 }
 
@@ -51,7 +55,7 @@ export const Route = createFileRoute("/reset-password")({
   ssr: false,
   validateSearch: (search: Record<string, unknown>): ResetPasswordSearch => ({
     token: typeof search.token === "string" && search.token.length > 0 ? search.token : undefined,
-    change: search.change === "1" ? "1" : undefined,
+    change: search.change === "1" || search.change === "self" ? search.change : undefined,
     next: DESTINATIONS.includes(search.next as ResetDestination)
       ? (search.next as ResetDestination)
       : undefined,
@@ -65,7 +69,6 @@ export const Route = createFileRoute("/reset-password")({
 function ResetPasswordPage() {
   const { t, dir } = useI18n();
   const { token, change, next } = Route.useSearch();
-  const navigate = useNavigate();
   const requestReset = useServerFn(requestPasswordReset);
   const confirmReset = useServerFn(confirmPasswordReset);
   const changeOwn = useServerFn(changeOwnPassword);
@@ -74,11 +77,15 @@ function ResetPasswordPage() {
   const [sending, setSending] = useState(false);
   const [requested, setRequested] = useState(false);
   const [changed, setChanged] = useState(false);
+  const [needsCurrentPassword, setNeedsCurrentPassword] = useState(false);
   // Where the person signs in after a reset: a renter's account lives on the
   // portal, a staff account on the console.
   const [portalAccount, setPortalAccount] = useState(false);
 
   const forced = !token && change === "1";
+  const voluntaryChange = !token && change === "self";
+  const ownChange = forced || voluntaryChange;
+  const requireCurrentPassword = voluntaryChange || needsCurrentPassword;
 
   /**
    * يطلب رابط إعادة التعيين ويعرض الجملة العامة التي لا تكشف وجود الحساب.
@@ -98,7 +105,7 @@ function ResetPasswordPage() {
   /**
    * يستهلك رمز الرابط البريدي ويضع كلمة المرور الجديدة.
    */
-  async function submitTokenPassword(password: string): Promise<string | null> {
+  async function submitTokenPassword({ password }: ChangePasswordPayload): Promise<string | null> {
     try {
       const result = await confirmReset({ data: { token: token!, password } });
       if (result.ok) {
@@ -114,16 +121,27 @@ function ResetPasswordPage() {
   }
 
   /**
-   * يغيّر كلمة المرور لحساب مسجّل دخوله، ويمسح علامة التغيير الإجباري.
+   * يغيّر كلمة المرور لحساب مسجّل دخوله، ثم يُنهي الجلسة المحلية ليعيد تسجيل الدخول.
    */
-  async function submitForcedPassword(password: string): Promise<string | null> {
+  async function submitOwnPassword({
+    currentPassword,
+    password,
+  }: ChangePasswordPayload): Promise<string | null> {
     try {
-      const result = await changeOwn({ data: { password } });
-      if (!result.ok) return t("passwordReset.failed");
+      const result = await changeOwn({ data: { currentPassword, password } });
+      if (!result.ok) {
+        if (result.error === "INVALID_CREDENTIALS") {
+          if (!currentPassword) {
+            setNeedsCurrentPassword(true);
+            return t("passwordReset.currentPasswordRequired");
+          }
+          return t("passwordReset.invalidCurrentPassword");
+        }
+        return t("passwordReset.failed");
+      }
+      setPortalAccount(next === "/portal");
+      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
       setChanged(true);
-      // The person was on their way into the product; send them there now
-      // instead of making them find the link again.
-      if (next) navigate({ to: next });
       return null;
     } catch (error) {
       console.error("[password-reset] changing the password failed:", error);
@@ -133,12 +151,12 @@ function ResetPasswordPage() {
 
   const title = forced
     ? t("passwordReset.forced.title")
-    : token
+    : token || voluntaryChange
       ? t("passwordReset.change.title")
       : t("passwordReset.request.title");
   const description = forced
     ? t("passwordReset.forced.description")
-    : token
+    : token || voluntaryChange
       ? t("passwordReset.change.description")
       : t("passwordReset.request.description");
 
@@ -157,21 +175,24 @@ function ResetPasswordPage() {
           {changed ? (
             <div className="space-y-4 text-center">
               <p className="text-sm text-emerald-700">{t("passwordReset.changed")}</p>
-              {forced ? null : (
-                <Button asChild className="w-full">
-                  <Link to={signInPath}>{t("passwordReset.signIn")}</Link>
-                </Button>
-              )}
+              <Button asChild className="w-full">
+                <Link to={signInPath}>{t("passwordReset.signIn")}</Link>
+              </Button>
             </div>
           ) : null}
 
-          {!changed && forced ? <ChangePasswordForm onSubmit={submitForcedPassword} /> : null}
+          {!changed && ownChange ? (
+            <ChangePasswordForm
+              requireCurrentPassword={requireCurrentPassword}
+              onSubmit={submitOwnPassword}
+            />
+          ) : null}
 
-          {!changed && !forced && token ? (
+          {!changed && !ownChange && token ? (
             <ChangePasswordForm onSubmit={submitTokenPassword} />
           ) : null}
 
-          {!changed && !forced && !token ? (
+          {!changed && !ownChange && !token ? (
             <div className="space-y-4">
               {requested ? (
                 <p className="text-sm text-muted-foreground">{t("passwordReset.request.sent")}</p>

@@ -18,6 +18,9 @@ export const passwordReset: Record<string, string> = {
 
   "passwordReset.change.title": "تعيين كلمة مرور جديدة",
   "passwordReset.change.description": "اختر كلمة مرور جديدة لحسابك.",
+  "passwordReset.currentPassword": "كلمة المرور الحالية",
+  "passwordReset.currentPasswordRequired": "أدخل كلمة المرور الحالية للمتابعة.",
+  "passwordReset.invalidCurrentPassword": "كلمة المرور الحالية غير صحيحة.",
   "passwordReset.newPassword": "كلمة المرور الجديدة",
   "passwordReset.confirmPassword": "تأكيد كلمة المرور",
   "passwordReset.submit": "حفظ كلمة المرور",

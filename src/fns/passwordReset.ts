@@ -1,10 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { classifyIdentifier, nationalPhoneDigits } from "@/auth/loginIdentity";
+import {
+  classifyIdentifier,
+  loginIdentifierToEmail,
+  nationalPhoneDigits,
+  syntheticAuthEmail,
+} from "@/auth/loginIdentity";
 import { companyClient } from "@/company/companyClient.server";
 import { companyOrigin } from "@/company/companyUrl.server";
 import { requireRequestCompany, type RequestCompany } from "@/company/requestCompany.server";
@@ -16,7 +21,7 @@ import type { Database, LocaleCode } from "@/integrations/supabase/database.type
 import { authErrorMessage } from "@/lib/authErrorMessage";
 import { passwordResetTemplate } from "@/lib/emailTemplates";
 import { parseServerInput } from "@/lib/parseServerInput";
-import { updateAuthUserById } from "@/platform/authAdmin.server";
+import { signOutAuthUser, updateAuthUserById } from "@/platform/authAdmin.server";
 
 /**
  * إعادة تعيين كلمة المرور من التطبيق: طلب الرابط، وتأكيد الرابط، والتغيير الإجباري بعد أول دخول.
@@ -52,7 +57,10 @@ const confirmSchema = z.object({
   token: z.string().trim().min(1).max(200),
   password: z.string().min(8).max(128),
 });
-const changeSchema = z.object({ password: z.string().min(8).max(128) });
+const changeSchema = z.object({
+  currentPassword: z.string().min(1).max(128).optional(),
+  password: z.string().min(8).max(128),
+});
 
 /** الحساب المؤهَّل لاستعادة كلمة المرور داخل شركة المضيف. */
 interface ResetAccount {
@@ -60,6 +68,13 @@ interface ResetAccount {
   email: string;
   displayName: string;
   locale: LocaleCode;
+}
+
+/** بيانات ملف المستخدم المطلوبة للتحقق من الشركة ووسم التغيير الإجباري. */
+interface CallerProfile {
+  mustChangePassword: boolean;
+  email: string | null;
+  username: string | null;
 }
 
 /**
@@ -280,7 +295,7 @@ async function hasReachedResetCap(
 }
 
 /**
- * يتحقق من انتماء المستخدم المسجَّل دخوله إلى شركة المضيف قبل أي تعديل.
+ * يتحقق من انتماء المستخدم المسجَّل دخوله إلى شركة المضيف ويعيد وسم التغيير الإجباري ومعرّفاته.
  *
  * Reads `profiles.company_id` through the RLS-scoped `companyClient`; a bearer
  * token belonging to another company returns no row and is refused with the
@@ -290,16 +305,74 @@ async function assertProfileInCompany(
   db: SupabaseClient<Database>,
   companyId: string,
   userId: string,
-): Promise<void> {
+): Promise<CallerProfile> {
   const { data, error } = await db
     .from("profiles")
-    .select("company_id")
+    .select("company_id, must_change_password, email, username")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw new Error(`profiles lookup failed: ${error.message}`);
   if (!data || data.company_id !== companyId) {
     throw new Error("Unauthorized");
   }
+  return {
+    mustChangePassword: data.must_change_password,
+    email: data.email,
+    username: data.username,
+  };
+}
+
+/**
+ * ينشئ عميل Supabase مجهولاً للتحقق من كلمة المرور الحالية عبر GoTrue.
+ *
+ * Mirrors `anonClient` in `signInWithIdentifier.ts`: `autoRefreshToken: false`
+ * prevents a background refresh ticker from outliving this one-off check and
+ * rotating the caller's refresh token family.
+ */
+function anonClient() {
+  const url = process.env.SUPABASE_URL || process.env.SELF_SUPABASE_URL;
+  const anonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SELF_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !anonKey) throw new Error("Supabase URL or anon key is not configured.");
+  return createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+}
+
+/**
+ * يتحقق من كلمة المرور الحالية للحساب عبر بوابة كلمة المرور في GoTrue.
+ *
+ * Tries the verified JWT's email first, then the synthetic address
+ * (`syntheticAuthEmail(userId)`) and legacy fallbacks, signing out the
+ * temporary verification session immediately on match.
+ */
+async function verifyCurrentPassword(
+  userId: string,
+  profile: CallerProfile,
+  currentPassword: string,
+  claimsEmail?: string,
+): Promise<boolean> {
+  const candidates = [
+    claimsEmail,
+    syntheticAuthEmail(userId),
+    profile.email,
+    profile.username ? loginIdentifierToEmail(profile.username) : null,
+  ].filter((email, index, all): email is string => Boolean(email) && all.indexOf(email) === index);
+
+  const loginClient = anonClient();
+  for (const email of candidates) {
+    const attempt = await loginClient.auth.signInWithPassword({
+      email,
+      password: currentPassword,
+    });
+    if (!attempt.error && attempt.data.session) {
+      await loginClient.auth.signOut({ scope: "local" });
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -400,6 +473,11 @@ export const confirmPasswordReset = createServerFn({ method: "POST" })
       );
     }
 
+    const signedOut = await signOutAuthUser(consumed.data.user_id);
+    if (signedOut.error) {
+      throw new Error(`session revoke failed: ${signedOut.error.message}`);
+    }
+
     const { tenantId } = await clearMustChangePassword(db, consumed.data.user_id);
     await revokeOpenTokens(db, company.id, consumed.data.user_id, consumed.data.id);
 
@@ -420,13 +498,13 @@ export const confirmPasswordReset = createServerFn({ method: "POST" })
   });
 
 /**
- * يغيّر كلمة مرور المستخدم المسجَّل دخوله ويزيل وسم التغيير الإجباري.
+ * يغيّر كلمة مرور المستخدم المسجَّل دخوله ويزيل وسم التغيير الإجباري ويلغي كل الجلسات.
  *
- * The server path of the first-sign-in change (FR-032, T101): verifies the
- * caller's profile belongs to the host company before any write, then updates
- * the password through the GoTrue admin helper and clears the flag as
- * `company_service`, because migration 316 refuses to let a user clear their
- * own flag.
+ * When `must_change_password` is true (first-sign-in change, FR-032), the
+ * caller just signed in with the temporary password and no current password is
+ * requested. Otherwise the caller must prove possession of the current
+ * password via GoTrue before any write; wrong attempts join the throttled
+ * `recordFailedLoginAttempt` ladder.
  */
 export const changeOwnPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -435,7 +513,21 @@ export const changeOwnPassword = createServerFn({ method: "POST" })
     const company = requireRequestCompany();
     const db = companyClient(company.id);
 
-    await assertProfileInCompany(db, company.id, context.userId);
+    const profile = await assertProfileInCompany(db, company.id, context.userId);
+    if (!profile.mustChangePassword) {
+      const claimsEmail = (context as { claims?: { email?: string } }).claims?.email;
+      const valid =
+        Boolean(data.currentPassword) &&
+        (await verifyCurrentPassword(context.userId, profile, data.currentPassword!, claimsEmail));
+      if (!valid) {
+        await recordFailedLoginAttempt({
+          identifier: profile.username ?? profile.email ?? context.userId,
+          accountId: context.userId,
+          errorCode: "INVALID_CREDENTIALS",
+        });
+        return { ok: false as const, error: "INVALID_CREDENTIALS" };
+      }
+    }
 
     const updated = await updateAuthUserById(context.userId, { password: data.password });
     if (updated.error) {
@@ -444,17 +536,21 @@ export const changeOwnPassword = createServerFn({ method: "POST" })
       );
     }
 
+    const signedOut = await signOutAuthUser(context.userId);
+    if (signedOut.error) {
+      throw new Error(`session revoke failed: ${signedOut.error.message}`);
+    }
+
     await clearMustChangePassword(db, context.userId);
     await revokeOpenTokens(db, company.id, context.userId, null);
 
-    // The forced change is a password change like any other, and the audit log
-    // is where a company looks for it.
+    // A password change, forced or not, is recorded where a company looks for it.
     await db.rpc("write_audit", {
       p_action: "user.password_change",
       p_entity_type: "user",
       p_entity_id: context.userId,
       p_before: null,
-      p_after: { forced: true },
+      p_after: { forced: profile.mustChangePassword },
       p_result: "success",
       p_error_code: null,
     });

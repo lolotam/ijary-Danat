@@ -95,6 +95,10 @@ export const resetState = {
 /** الوظائف الوهمية عند الحدود. */
 export const resetBoundary = {
   updateAuthUserById: vi.fn(),
+  signOutAuthUser: vi.fn(),
+  createClient: vi.fn(),
+  signInWithPassword: vi.fn(),
+  signOutLocal: vi.fn(),
   recordFailedLoginAttempt: vi.fn(),
 };
 
@@ -367,7 +371,17 @@ export function requestCompanyModule() {
  * مصنع `vi.mock("@/platform/authAdmin.server", …)`.
  */
 export function authAdminModule() {
-  return { updateAuthUserById: resetBoundary.updateAuthUserById };
+  return {
+    updateAuthUserById: resetBoundary.updateAuthUserById,
+    signOutAuthUser: resetBoundary.signOutAuthUser,
+  };
+}
+
+/**
+ * مصنع `vi.mock("@supabase/supabase-js", …)`.
+ */
+export function supabaseJsModule() {
+  return { createClient: resetBoundary.createClient };
 }
 
 /**
@@ -404,9 +418,26 @@ export function resetFixtures() {
   resetState.templates = [];
   resetState.jobs = [];
   resetState.audits = [];
+  process.env.SUPABASE_URL = "http://localhost:54321";
+  process.env.SUPABASE_ANON_KEY = "anon-test-key";
   resetBoundary.updateAuthUserById.mockReset().mockResolvedValue({
     data: { user: {} },
     error: null,
+  });
+  resetBoundary.signOutAuthUser.mockReset().mockResolvedValue({
+    data: null,
+    error: null,
+  });
+  resetBoundary.signInWithPassword.mockReset().mockResolvedValue({
+    data: { session: null },
+    error: { message: "Invalid login credentials" },
+  });
+  resetBoundary.signOutLocal.mockReset().mockResolvedValue({ error: null });
+  resetBoundary.createClient.mockReset().mockReturnValue({
+    auth: {
+      signInWithPassword: resetBoundary.signInWithPassword,
+      signOut: resetBoundary.signOutLocal,
+    },
   });
   resetBoundary.recordFailedLoginAttempt.mockReset().mockResolvedValue(undefined);
 }

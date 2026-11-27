@@ -25,21 +25,34 @@ const passwordSchema = z
     message: "mismatch",
   });
 
+export interface ChangePasswordPayload {
+  currentPassword?: string;
+  password: string;
+}
+
 export interface ChangePasswordFormProps {
+  /**
+   * يطلب كلمة المرور الحالية قبل التعيين عند التغيير الطوعي (غير الإجباري).
+   */
+  requireCurrentPassword?: boolean;
   /**
    * ينفّذ التغيير ويعيد رسالة الخطأ جاهزة للعرض، أو null عند النجاح.
    *
    * The message is a translated string rather than a code, so the form stays
    * free of the server's error vocabulary.
    */
-  onSubmit: (password: string) => Promise<string | null>;
+  onSubmit: (values: ChangePasswordPayload) => Promise<string | null>;
 }
 
 /**
  * يعرض نموذج تعيين كلمة مرور جديدة والتحقق من تطابقها وطولها الأدنى.
  */
-export function ChangePasswordForm({ onSubmit }: ChangePasswordFormProps) {
+export function ChangePasswordForm({
+  requireCurrentPassword = false,
+  onSubmit,
+}: ChangePasswordFormProps) {
   const { t } = useI18n();
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -51,6 +64,11 @@ export function ChangePasswordForm({ onSubmit }: ChangePasswordFormProps) {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+
+    if (requireCurrentPassword && currentPassword.length === 0) {
+      setError(t("passwordReset.currentPasswordRequired"));
+      return;
+    }
 
     const parsed = passwordSchema.safeParse({ password, confirmPassword });
     if (!parsed.success) {
@@ -65,7 +83,10 @@ export function ChangePasswordForm({ onSubmit }: ChangePasswordFormProps) {
     setSubmitting(true);
     let failure: string | null;
     try {
-      failure = await onSubmit(parsed.data.password);
+      failure = await onSubmit({
+        ...(requireCurrentPassword ? { currentPassword } : {}),
+        password: parsed.data.password,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -73,12 +94,25 @@ export function ChangePasswordForm({ onSubmit }: ChangePasswordFormProps) {
       setError(failure);
       return;
     }
+    setCurrentPassword("");
     setPassword("");
     setConfirmPassword("");
   }
 
   return (
     <form className="grid max-w-md gap-4" onSubmit={handleSubmit}>
+      {requireCurrentPassword ? (
+        <div className="grid gap-2">
+          <Label htmlFor="current-password">{t("passwordReset.currentPassword")}</Label>
+          <PasswordInput
+            id="current-password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            required
+          />
+        </div>
+      ) : null}
       <div className="grid gap-2">
         <Label htmlFor="new-password">{t("passwordReset.newPassword")}</Label>
         <PasswordInput

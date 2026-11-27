@@ -1,6 +1,9 @@
 ﻿import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@supabase/supabase-js", async () =>
+  (await import("./passwordReset.testkit")).supabaseJsModule(),
+);
 vi.mock("@tanstack/react-start", async () =>
   (await import("./passwordReset.testkit")).serverFnModule(),
 );
@@ -194,6 +197,8 @@ describe("confirming a password reset", () => {
     expect(resetBoundary.updateAuthUserById).toHaveBeenCalledWith(RESET_USER.id, {
       password: NEW_PASSWORD,
     });
+    expect(resetBoundary.signOutAuthUser).toHaveBeenCalledTimes(1);
+    expect(resetBoundary.signOutAuthUser).toHaveBeenCalledWith(RESET_USER.id);
     expect(resetState.profiles[0].must_change_password).toBe(false);
     expect(resetState.tokens[0].used_at).not.toBeNull();
   });
@@ -209,6 +214,7 @@ describe("confirming a password reset", () => {
 
     expect(result).toEqual({ ok: false, error: "INVALID_TOKEN" });
     expect(resetBoundary.updateAuthUserById).not.toHaveBeenCalled();
+    expect(resetBoundary.signOutAuthUser).not.toHaveBeenCalled();
   });
 
   it("refuses a token that was never issued", async () => {
@@ -216,6 +222,7 @@ describe("confirming a password reset", () => {
 
     expect(result).toEqual({ ok: false, error: "INVALID_TOKEN" });
     expect(resetBoundary.updateAuthUserById).not.toHaveBeenCalled();
+    expect(resetBoundary.signOutAuthUser).not.toHaveBeenCalled();
   });
 
   it("tells a renter's account apart from a staff account", async () => {
@@ -268,19 +275,70 @@ describe("confirming a password reset", () => {
   });
 });
 
-describe("the forced change after the first sign-in", () => {
-  it("sets the password and clears the flag of the signed-in account", async () => {
+describe("changing the signed-in account's password", () => {
+  it("allows a forced change without current password and revokes every session", async () => {
     resetState.profiles[0].must_change_password = true;
     changeOwn.context = { userId: RESET_USER.id, supabase: {} };
 
     const result = await changeOwn({ password: NEW_PASSWORD });
 
     expect(result).toEqual({ ok: true });
+    expect(resetBoundary.signInWithPassword).not.toHaveBeenCalled();
     expect(resetBoundary.updateAuthUserById).toHaveBeenCalledWith(RESET_USER.id, {
       password: NEW_PASSWORD,
     });
+    expect(resetBoundary.signOutAuthUser).toHaveBeenCalledTimes(1);
+    expect(resetBoundary.signOutAuthUser).toHaveBeenCalledWith(RESET_USER.id);
     expect(resetState.profiles[0].must_change_password).toBe(false);
   });
+
+  it("allows a non-forced change when the current password verifies and revokes every session", async () => {
+    resetState.profiles[0].must_change_password = false;
+    resetBoundary.signInWithPassword.mockResolvedValueOnce({
+      data: { session: { access_token: "verify-jwt" } },
+      error: null,
+    });
+    changeOwn.context = { userId: RESET_USER.id, supabase: {} };
+
+    const result = await changeOwn({
+      currentPassword: "OldPassw0rd!",
+      password: NEW_PASSWORD,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(resetBoundary.signInWithPassword).toHaveBeenCalledWith({
+      email: `${RESET_USER.id}@auth.ijary.invalid`,
+      password: "OldPassw0rd!",
+    });
+    expect(resetBoundary.signOutLocal).toHaveBeenCalledWith({ scope: "local" });
+    expect(resetBoundary.updateAuthUserById).toHaveBeenCalledWith(RESET_USER.id, {
+      password: NEW_PASSWORD,
+    });
+    expect(resetBoundary.signOutAuthUser).toHaveBeenCalledTimes(1);
+    expect(resetBoundary.signOutAuthUser).toHaveBeenCalledWith(RESET_USER.id);
+  });
+
+  it.each([
+    ["no current password", { password: NEW_PASSWORD }],
+    ["a wrong current password", { currentPassword: "WrongPassw0rd!", password: NEW_PASSWORD }],
+  ])(
+    "refuses a non-forced change with %s without updating or signing out",
+    async (_label, input) => {
+      resetState.profiles[0].must_change_password = false;
+      changeOwn.context = { userId: RESET_USER.id, supabase: {} };
+
+      const result = await changeOwn(input);
+
+      expect(result).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
+      expect(resetBoundary.updateAuthUserById).not.toHaveBeenCalled();
+      expect(resetBoundary.signOutAuthUser).not.toHaveBeenCalled();
+      expect(resetBoundary.recordFailedLoginAttempt).toHaveBeenCalledWith({
+        identifier: "waleed",
+        accountId: RESET_USER.id,
+        errorCode: "INVALID_CREDENTIALS",
+      });
+    },
+  );
 
   it("refuses a foreign-company user without touching the password", async () => {
     const foreignUserId = "66666666-6666-4666-8666-666666666666";
@@ -293,6 +351,7 @@ describe("the forced change after the first sign-in", () => {
 
     await expect(changeOwn({ password: NEW_PASSWORD })).rejects.toThrow("Unauthorized");
     expect(resetBoundary.updateAuthUserById).not.toHaveBeenCalled();
+    expect(resetBoundary.signOutAuthUser).not.toHaveBeenCalled();
   });
 
   it("refuses a password shorter than the platform's minimum", async () => {
@@ -300,5 +359,6 @@ describe("the forced change after the first sign-in", () => {
 
     await expect(changeOwn({ password: "short" })).rejects.toThrow(/password/i);
     expect(resetBoundary.updateAuthUserById).not.toHaveBeenCalled();
+    expect(resetBoundary.signOutAuthUser).not.toHaveBeenCalled();
   });
 });

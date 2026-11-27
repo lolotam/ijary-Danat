@@ -8,6 +8,7 @@ export const platform: Record<string, string> = {
   "platform.title": "Platform administration",
   "platform.subtitle": "Super admin area",
   "platform.nav.overview": "Overview",
+  "platform.nav.companies": "Companies",
   "platform.nav.audit": "Audit log",
   "platform.signOut": "Sign out",
   "platform.language": "العربية",

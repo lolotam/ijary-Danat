@@ -236,12 +236,12 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T095 [US4] `platformCreateCompany`, `platformListCompanies`, `platformUpdateCompany` in `src/platform/companies.ts`
 - [x] T096 [US4] `platformListUsers`, `platformCreateUser`, `platformSetUserActive`, `platformResetPassword` in `src/platform/users.ts`
 - [x] T097 [US4] Super admin layout with guard and forced second-factor enrolment in `src/routes/platform.tsx`, `src/routes/platform.login.tsx`, `src/routes/platform.mfa.tsx`
-- [ ] T098 [P] [US4] Companies screens: `src/routes/platform.companies.tsx`, `src/routes/platform.companies.$id.tsx`, `src/components/platform/CompaniesTable.tsx`, `src/components/platform/CompanyCreateDialog.tsx`
-- [ ] T099 [P] [US4] Company users panel in `src/components/platform/CompanyUsersPanel.tsx`
+- [x] T098 [P] [US4] Companies screens: `src/routes/platform.companies.index.tsx`, `src/routes/platform.companies.$id.tsx`, `src/components/platform/CompaniesTable.tsx`, `src/components/platform/CompanyCreateDialog.tsx`
+- [x] T099 [P] [US4] Company users panel in `src/components/platform/CompanyUsersPanel.tsx`
 - [x] T100 [P] [US4] Audit log screen in `src/routes/platform.audit.tsx`
 - [x] T101 [US4] Enforce the first-sign-in password change in `src/routes/admin.tsx` and `src/routes/portal.tsx`
 - [x] T102 [P] [US4] Bootstrap script for the first super admin in `scripts/create-platform-admin.ts`
-- [ ] T103 [P] [US4] Arabic and English strings for the super admin panel in `src/i18n/`
+- [x] T103 [P] [US4] Arabic and English strings for the super admin panel in `src/i18n/`
 - [ ] T104 [US4] Gate: quickstart.md Phase 2 steps 1, 2 and 11; record SC-002 and SC-015
 
 **Checkpoint**: The owner can create a working company end to end.
@@ -290,7 +290,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [ ] T117 [US6] `platformRecordSubscription` in `src/platform/subscriptions.ts` and `src/components/platform/SubscriptionPanel.tsx`
 - [ ] T118 [US6] `subscription.remind` handler in `src/jobs/handlers/subscriptionRemind.ts`, its schedule in `src/worker/scheduler.ts`, and the warnings list on `src/routes/platform.companies.tsx`
 - [x] T119 [US6] Renewal banner: `src/fns/companySubscriptionBanner.ts` and `src/components/admin/SubscriptionBanner.tsx`
-- [ ] T120 [US6] `platformSetCompanyStatus` with a required reason in `src/platform/companies.ts` and its control in `src/routes/platform.companies.$id.tsx`
+- [x] T120 [US6] `platformSetCompanyStatus` with a required reason in `src/platform/companyStatus.ts` and its control in `src/routes/platform.companies.$id.tsx`
 - [ ] T121 [US6] Suspended page in `src/routes/suspended.tsx`; serve it from `server/middleware/company.ts`; refuse in `src/fns/signInWithIdentifier.ts` and `src/fns/createPayment.ts`
 - [ ] T122 [US6] In `src/worker/runJob.ts` skip jobs of suspended companies except `payment.settle`, which uses `companyClient(…, { allowSuspended: true })`
 - [ ] T123 [US6] Gate: quickstart.md Phase 2 steps 9 and 10; record SC-008 and SC-010

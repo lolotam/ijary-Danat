@@ -61,6 +61,8 @@ import { Route as AdminUnitsIndexRouteImport } from './routes/admin.units.index'
 import { Route as AdminUnitsIdRouteImport } from './routes/admin.units.$id'
 import { Route as ApiPublicEvolutionWebhookRouteImport } from './routes/api/public/evolution-webhook'
 import { Route as ApiPublicResendWebhookRouteImport } from './routes/api/public/resend-webhook'
+import { Route as PlatformCompaniesIndexRouteImport } from './routes/platform.companies.index'
+import { Route as PlatformCompaniesIdRouteImport } from './routes/platform.companies.$id'
 import { Route as PortalPaymentsCallbackRouteImport } from './routes/portal_.payments.callback'
 import { Route as AdminContractsIdCloseoutRouteImport } from './routes/admin.contracts_.$id.closeout'
 import { Route as AdminTenantsIdIndexRouteImport } from './routes/admin.tenants.$id.index'
@@ -333,6 +335,16 @@ const ApiPublicResendWebhookRoute = ApiPublicResendWebhookRouteImport.update({
   path: '/api/public/resend-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlatformCompaniesIndexRoute = PlatformCompaniesIndexRouteImport.update({
+  id: '/companies/',
+  path: '/companies/',
+  getParentRoute: () => PlatformRoute,
+} as any)
+const PlatformCompaniesIdRoute = PlatformCompaniesIdRouteImport.update({
+  id: '/companies/$id',
+  path: '/companies/$id',
+  getParentRoute: () => PlatformRoute,
+} as any)
 const PortalPaymentsCallbackRoute = PortalPaymentsCallbackRouteImport.update({
   id: '/portal_/payments/callback',
   path: '/portal/payments/callback',
@@ -420,12 +432,14 @@ export interface FileRoutesByFullPath {
   '/admin/units/$id': typeof AdminUnitsIdRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
+  '/platform/companies/$id': typeof PlatformCompaniesIdRoute
   '/portal/payments/callback': typeof PortalPaymentsCallbackRoute
   '/admin/maintenance/': typeof AdminMaintenanceIndexRoute
   '/admin/properties/': typeof AdminPropertiesIndexRoute
   '/admin/settings/': typeof AdminSettingsIndexRoute
   '/admin/tenants/': typeof AdminTenantsIndexRoute
   '/admin/units/': typeof AdminUnitsIndexRoute
+  '/platform/companies/': typeof PlatformCompaniesIndexRoute
   '/admin/contracts/$id/closeout': typeof AdminContractsIdCloseoutRoute
   '/admin/tenants/$id/documents': typeof AdminTenantsIdDocumentsRoute
   '/api/oauth/google/callback': typeof ApiOauthGoogleCallbackRoute
@@ -476,12 +490,14 @@ export interface FileRoutesByTo {
   '/admin/units/$id': typeof AdminUnitsIdRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
+  '/platform/companies/$id': typeof PlatformCompaniesIdRoute
   '/portal/payments/callback': typeof PortalPaymentsCallbackRoute
   '/admin/maintenance': typeof AdminMaintenanceIndexRoute
   '/admin/properties': typeof AdminPropertiesIndexRoute
   '/admin/settings': typeof AdminSettingsIndexRoute
   '/admin/tenants': typeof AdminTenantsIndexRoute
   '/admin/units': typeof AdminUnitsIndexRoute
+  '/platform/companies': typeof PlatformCompaniesIndexRoute
   '/admin/contracts/$id/closeout': typeof AdminContractsIdCloseoutRoute
   '/admin/tenants/$id/documents': typeof AdminTenantsIdDocumentsRoute
   '/api/oauth/google/callback': typeof ApiOauthGoogleCallbackRoute
@@ -538,12 +554,14 @@ export interface FileRoutesById {
   '/admin/units/$id': typeof AdminUnitsIdRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
+  '/platform/companies/$id': typeof PlatformCompaniesIdRoute
   '/portal_/payments/callback': typeof PortalPaymentsCallbackRoute
   '/admin/maintenance/': typeof AdminMaintenanceIndexRoute
   '/admin/properties/': typeof AdminPropertiesIndexRoute
   '/admin/settings/': typeof AdminSettingsIndexRoute
   '/admin/tenants/': typeof AdminTenantsIndexRoute
   '/admin/units/': typeof AdminUnitsIndexRoute
+  '/platform/companies/': typeof PlatformCompaniesIndexRoute
   '/admin/contracts_/$id/closeout': typeof AdminContractsIdCloseoutRoute
   '/admin/tenants/$id/documents': typeof AdminTenantsIdDocumentsRoute
   '/api/oauth/google/callback': typeof ApiOauthGoogleCallbackRoute
@@ -601,12 +619,14 @@ export interface FileRouteTypes {
     | '/admin/units/$id'
     | '/api/public/evolution-webhook'
     | '/api/public/resend-webhook'
+    | '/platform/companies/$id'
     | '/portal/payments/callback'
     | '/admin/maintenance/'
     | '/admin/properties/'
     | '/admin/settings/'
     | '/admin/tenants/'
     | '/admin/units/'
+    | '/platform/companies/'
     | '/admin/contracts/$id/closeout'
     | '/admin/tenants/$id/documents'
     | '/api/oauth/google/callback'
@@ -657,12 +677,14 @@ export interface FileRouteTypes {
     | '/admin/units/$id'
     | '/api/public/evolution-webhook'
     | '/api/public/resend-webhook'
+    | '/platform/companies/$id'
     | '/portal/payments/callback'
     | '/admin/maintenance'
     | '/admin/properties'
     | '/admin/settings'
     | '/admin/tenants'
     | '/admin/units'
+    | '/platform/companies'
     | '/admin/contracts/$id/closeout'
     | '/admin/tenants/$id/documents'
     | '/api/oauth/google/callback'
@@ -718,12 +740,14 @@ export interface FileRouteTypes {
     | '/admin/units/$id'
     | '/api/public/evolution-webhook'
     | '/api/public/resend-webhook'
+    | '/platform/companies/$id'
     | '/portal_/payments/callback'
     | '/admin/maintenance/'
     | '/admin/properties/'
     | '/admin/settings/'
     | '/admin/tenants/'
     | '/admin/units/'
+    | '/platform/companies/'
     | '/admin/contracts_/$id/closeout'
     | '/admin/tenants/$id/documents'
     | '/api/oauth/google/callback'
@@ -1117,6 +1141,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicResendWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform/companies/': {
+      id: '/platform/companies/'
+      path: '/companies'
+      fullPath: '/platform/companies/'
+      preLoaderRoute: typeof PlatformCompaniesIndexRouteImport
+      parentRoute: typeof PlatformRoute
+    }
+    '/platform/companies/$id': {
+      id: '/platform/companies/$id'
+      path: '/companies/$id'
+      fullPath: '/platform/companies/$id'
+      preLoaderRoute: typeof PlatformCompaniesIdRouteImport
+      parentRoute: typeof PlatformRoute
+    }
     '/portal_/payments/callback': {
       id: '/portal_/payments/callback'
       path: '/portal/payments/callback'
@@ -1268,6 +1306,8 @@ interface PlatformRouteChildren {
   PlatformLoginRoute: typeof PlatformLoginRoute
   PlatformMfaRoute: typeof PlatformMfaRoute
   PlatformIndexRoute: typeof PlatformIndexRoute
+  PlatformCompaniesIdRoute: typeof PlatformCompaniesIdRoute
+  PlatformCompaniesIndexRoute: typeof PlatformCompaniesIndexRoute
 }
 
 const PlatformRouteChildren: PlatformRouteChildren = {
@@ -1275,6 +1315,8 @@ const PlatformRouteChildren: PlatformRouteChildren = {
   PlatformLoginRoute: PlatformLoginRoute,
   PlatformMfaRoute: PlatformMfaRoute,
   PlatformIndexRoute: PlatformIndexRoute,
+  PlatformCompaniesIdRoute: PlatformCompaniesIdRoute,
+  PlatformCompaniesIndexRoute: PlatformCompaniesIndexRoute,
 }
 
 const PlatformRouteWithChildren = PlatformRoute._addFileChildren(

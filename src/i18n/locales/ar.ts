@@ -12,6 +12,7 @@ import { passwordReset } from "./ar/passwordReset";
 import { modules } from "./ar/modules";
 import { platform } from "./ar/platform";
 import { platformCompanies } from "./ar/platformCompanies";
+import { platformCompaniesUi } from "./ar/platformCompaniesUi";
 import { subscriptions } from "./ar/subscriptions";
 
 /**
@@ -42,5 +43,6 @@ export const ar: Record<string, string> = {
   ...modules,
   ...platform,
   ...platformCompanies,
+  ...platformCompaniesUi,
   ...subscriptions,
 };

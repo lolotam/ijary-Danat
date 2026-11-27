@@ -230,7 +230,7 @@ async function unwindFailedCreation(
   );
 }
 
-const createCompanySchema = z.object({
+export const createCompanySchema = z.object({
   nameAr: z.string().trim().min(1).max(120),
   nameEn: z.string().trim().min(1).max(120),
   slug: z.string().trim().min(1).max(64),
@@ -322,7 +322,7 @@ export async function platformCreateCompany(input: {
   }
 }
 
-const listCompaniesSchema = z.object({
+export const listCompaniesSchema = z.object({
   status: z.enum(["active", "suspended"]).optional(),
   search: z.string().trim().max(120).optional(),
   limit: z.number().int().min(1).max(MAX_PAGE_SIZE).optional(),
@@ -407,7 +407,7 @@ async function countAccountsPerCompany(companyIds: string[]): Promise<Map<string
   return counts;
 }
 
-const updateCompanySchema = z.object({
+export const updateCompanySchema = z.object({
   companyId: z.string().uuid(),
   nameAr: z.string().trim().min(1).max(120).optional(),
   nameEn: z.string().trim().min(1).max(120).optional(),
@@ -509,4 +509,47 @@ export async function platformUpdateCompany(input: {
   });
 
   return toCompanyRow(updated.data);
+}
+
+const getCompanySchema = z.object({ companyId: z.string().uuid() });
+
+/** صف الشركة مع أعمدة الإيقاف، كما تعرضه صفحة تفاصيل الشركة. */
+export type PlatformCompanyDetail = PlatformCompanyRow & {
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  suspendedBy: string | null;
+};
+
+/**
+ * يقرأ شركة واحدة بمعرّفها مع سبب إيقافها.
+ *
+ * The list view does not carry the suspension columns, but the detail screen
+ * must show why a company was stopped — that reason is the only record of the
+ * decision, and it lives on the row.
+ */
+export async function platformGetCompany(input: {
+  companyId: string;
+}): Promise<PlatformCompanyDetail> {
+  await requirePlatformAdmin();
+  const lookup = parseServerInput(getCompanySchema, input);
+
+  const { data: company, error } = await supabaseAdmin
+    .from("companies")
+    .select(`${COMPANY_COLUMNS}, suspended_at, suspended_reason, suspended_by`)
+    .eq("id", lookup.companyId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`company lookup failed: ${error.message}`);
+  }
+  if (!company) {
+    throw new Error(COMPANY_NOT_FOUND);
+  }
+
+  return {
+    ...toCompanyRow(company),
+    suspendedAt: company.suspended_at,
+    suspendedReason: company.suspended_reason,
+    suspendedBy: company.suspended_by,
+  };
 }

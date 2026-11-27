@@ -8,6 +8,7 @@ export const platform: Record<string, string> = {
   "platform.title": "إدارة المنصة",
   "platform.subtitle": "مساحة المشرف العام",
   "platform.nav.overview": "نظرة عامة",
+  "platform.nav.companies": "الشركات",
   "platform.nav.audit": "سجل التدقيق",
   "platform.signOut": "تسجيل الخروج",
   "platform.language": "English",

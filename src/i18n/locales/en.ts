@@ -12,6 +12,7 @@ import { passwordReset } from "./en/passwordReset";
 import { modules } from "./en/modules";
 import { platform } from "./en/platform";
 import { platformCompanies } from "./en/platformCompanies";
+import { platformCompaniesUi } from "./en/platformCompaniesUi";
 import { subscriptions } from "./en/subscriptions";
 
 /**
@@ -39,5 +40,6 @@ export const en: Record<string, string> = {
   ...modules,
   ...platform,
   ...platformCompanies,
+  ...platformCompaniesUi,
   ...subscriptions,
 };

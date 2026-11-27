@@ -31,6 +31,8 @@ export const gatewaySettingsUi: Record<string, string> = {
   "gatewaySettingsUi.saving": "جارٍ الحفظ…",
   "gatewaySettingsUi.saved": "حُفظت بيانات الاعتماد.",
   "gatewaySettingsUi.saveError": "تعذّر حفظ بيانات الاعتماد.",
+  "gatewaySettingsUi.liveNotAllowed":
+    "الوضع الفعلي غير متاح لهذا المزوّد بعد. احفظ في وضع الاختبار حتى تفعّله إدارة المنصة.",
 
   "gatewaySettingsUi.testConnection": "اختبار الاتصال",
   "gatewaySettingsUi.testing": "جارٍ الاختبار…",

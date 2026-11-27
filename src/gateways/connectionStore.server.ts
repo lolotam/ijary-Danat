@@ -19,6 +19,7 @@ const BYTEA_HEX_PATTERN = /^\\x([0-9a-fA-F]{2})*$/;
 export const GATEWAY_CONNECTION_ERROR_CODES = [
   "CONNECTION_NOT_FOUND",
   "INVALID_BYTEA_HEX",
+  "LIVE_NOT_ALLOWED",
 ] as const;
 
 export type GatewayConnectionErrorCode = (typeof GATEWAY_CONNECTION_ERROR_CODES)[number];
@@ -35,6 +36,22 @@ export class GatewayConnectionError extends Error {
     this.name = "GatewayConnectionError";
     this.code = code;
   }
+}
+
+/**
+ * يحوّل رفض قاعدة البيانات لحفظ اتصال بوابة إلى خطأ واضح الرمز.
+ *
+ * Migration 324 refuses live mode with `GATEWAY_LIVE_NOT_ALLOWED` until the
+ * super admin allows the provider (SC-012); any other failure stays generic.
+ */
+function gatewayWriteError(action: string, message: string): Error {
+  if (message.includes("GATEWAY_LIVE_NOT_ALLOWED")) {
+    return new GatewayConnectionError(
+      "LIVE_NOT_ALLOWED",
+      "LIVE_NOT_ALLOWED: live mode is not yet allowed for this payment provider.",
+    );
+  }
+  return new Error(`Failed to ${action} gateway connection: ${message}`);
 }
 
 /** اتصال البوابة المحمّل مع بياناته التعريفية وأسراره المفكوكة التشفير. */
@@ -278,7 +295,7 @@ export async function saveGatewayCredentials(
       .single();
 
     if (insertError) {
-      throw new Error(`Failed to create gateway connection: ${insertError.message}`);
+      throw gatewayWriteError("create", insertError.message);
     }
 
     await insertEncryptedCredentials(db, {
@@ -324,7 +341,7 @@ export async function saveGatewayCredentials(
     .single();
 
   if (updateError) {
-    throw new Error(`Failed to update gateway connection: ${updateError.message}`);
+    throw gatewayWriteError("update", updateError.message);
   }
 
   return updated;

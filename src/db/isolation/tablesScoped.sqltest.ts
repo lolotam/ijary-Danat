@@ -17,6 +17,7 @@ const TABLES_WITHOUT_COMPANY_ID_ALLOWLIST = new Set<string>([
   "reserved_slugs",
   "platform_admins",
   "platform_audit_log",
+  "platform_gateway_launch",
   "impersonation_sessions",
 ]);
 
@@ -26,6 +27,7 @@ const PLATFORM_GLOBAL_TABLES = new Set<string>([
   "reserved_slugs",
   "platform_admins",
   "platform_audit_log",
+  "platform_gateway_launch",
   "impersonation_sessions",
 ]);
 

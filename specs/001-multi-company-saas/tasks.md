@@ -307,17 +307,17 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 7
 
-- [ ] T124 [P] [US7] SQL tests for the unit, staff and storage limits by direct insert and by import, raising the limit, and a limit lowered below usage, in `src/db/limits/limits.sqltest.ts`
+- [x] T124 [P] [US7] SQL tests for the unit, staff and storage limits by direct insert and by import, raising the limit, and a limit lowered below usage, in `src/db/limits/limits.sqltest.ts`
 
 ### Implementation for User Story 7
 
 - [ ] T125 [US7] VERIFY that a trigger on `storage.objects` is allowed in the self-hosted Storage version; record in `specs/001-multi-company-saas/research.md` R11 (fallback: server-issued signed upload URLs)
-- [ ] T126 [US7] Write migration `db/migrations/292_company_limits.sql`: `company_limits`, `company_usage_monthly`, `company_storage_usage`, the unit and staff triggers, `storage_within_limit()` (data-model.md: `company_limits.max_units`, `company_limits.max_staff_users`, `company_limits.max_whatsapp_per_month`, `company_limits.max_storage_bytes`)
-- [ ] T127 [US7] Map `LIMIT_*` errors to messages in `src/company/limits.ts` and `src/i18n/`
-- [ ] T128 [US7] `platformSetLimits` in `src/platform/limits.ts` and `src/components/platform/LimitsPanel.tsx`
+- [x] T126 [US7] Write migration `db/migrations/292_company_limits.sql`: `company_limits`, `company_usage_monthly`, `company_storage_usage`, the unit and staff triggers, `storage_within_limit()` (data-model.md: `company_limits.max_units`, `company_limits.max_staff_users`, `company_limits.max_whatsapp_per_month`, `company_limits.max_storage_bytes`)
+- [x] T127 [US7] Map `LIMIT_*` errors to messages in `src/company/limits.ts` and `src/i18n/`
+- [x] T128 [US7] `platformSetLimits` in `src/platform/limits.ts` and `src/components/platform/LimitsPanel.tsx`
 - [ ] T129 [US7] Count and cap WhatsApp sends per month in `src/jobs/handlers/notification.ts`, marking over-limit messages skipped (data-model.md: `notifications.skip_reason`)
 - [ ] T130 [US7] Report rows refused by a limit in `src/jobs/handlers/bulk.ts` (`import.run`)
-- [ ] T131 [US7] `companyUsage` in `src/fns/companyUsage.ts` and `src/components/admin/settings/UsageCard.tsx` with the 80% notice
+- [x] T131 [US7] `companyUsage` in `src/fns/companyUsage.ts` and `src/components/admin/settings/UsageCard.tsx` with the 80% notice
 - [ ] T132 [US7] `usage.rebuild` handler in `src/jobs/handlers/sync.ts`
 - [ ] T133 [US7] Gate: quickstart.md Phase 2 step 8; record SC-009
 
@@ -353,7 +353,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T148 [US8] `gatewayList`, `gatewaySaveCredentials`, `gatewayTestConnection`, `gatewayActivate`, `gatewayDeactivate` in `src/fns/gatewaySettings.ts`
 - [x] T149 [US8] Payment gateway card in `src/components/admin/settings/PaymentGatewayCard.tsx`, shown from `src/routes/admin.settings.integrations.tsx`
 - [x] T150 [US8] Hide online payment in the portal when no gateway is active, in `src/routes/portal.invoices.tsx` and `src/routes/portal.payments.tsx`
-- [ ] T151 [US8] `platformSetGatewayLiveAllowed` in `src/platform/gateways.ts` and its switch in `src/components/platform/GatewayLaunchPanel.tsx`
+- [x] T151 [US8] `platformSetGatewayLiveAllowed` in `src/platform/gateways.ts` and its switch in `src/components/platform/GatewayLaunchPanel.tsx`
 - [ ] T152 [US8] Run quickstart.md Phase 3 for MyFatoorah in sandbox and record SC-011 and SC-012
 - [ ] T153 [US8] ⛔ BLOCKED(owner: Tap sandbox account) VERIFY Tap's API version, webhook signature and KWD precision in research.md R14; implement `src/gateways/tap.ts`; run quickstart.md Phase 3 for Tap
 - [ ] T154 [US8] ⛔ BLOCKED(owner: UPayments sandbox account) VERIFY UPayments' API version and webhook verification in research.md R14; implement `src/gateways/upayments.ts`; run quickstart.md Phase 3 for UPayments
@@ -447,13 +447,13 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 12
 
-- [ ] T184 [P] [US12] SQL tests for the totals and health flags with one healthy and one degraded company, in `src/db/platform/overview.sqltest.ts`
+- [x] T184 [P] [US12] SQL tests for the totals and health flags with one healthy and one degraded company, in `src/db/platform/overview.sqltest.ts`
 
 ### Implementation for User Story 12
 
-- [ ] T185 [US12] Write migration `db/migrations/298_platform_overview.sql`: read-only aggregate functions callable only by a platform admin
-- [ ] T186 [US12] `platformOverview` in `src/platform/overview.ts`
-- [ ] T187 [US12] Overview screen in `src/routes/platform.index.tsx` with `src/components/platform/OverviewTotals.tsx` and `src/components/platform/CompanyHealthTable.tsx`
+- [x] T185 [US12] Write migration `db/migrations/298_platform_overview.sql`: read-only aggregate functions callable only by a platform admin
+- [x] T186 [US12] `platformOverview` in `src/platform/overview.ts`
+- [x] T187 [US12] Overview screen in `src/routes/platform.index.tsx` with `src/components/platform/OverviewTotals.tsx` and `src/components/platform/CompanyHealthTable.tsx`
 - [ ] T188 [US12] Gate: quickstart.md Phase 5 step 6
 
 **Checkpoint**: Plan Phase 5 gate reached.

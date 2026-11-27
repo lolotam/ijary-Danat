@@ -482,6 +482,30 @@ export async function seedCompanyOpsGroup(
       [cid],
     );
   }
+  if (colMap.has("company_limits")) {
+    await client.query(
+      `insert into public.company_limits (company_id, max_units, max_staff_users, max_whatsapp_per_month, max_storage_bytes)
+       values ($1, 100, 50, 1000, 104857600)
+       on conflict (company_id) do nothing`,
+      [cid],
+    );
+  }
+  if (colMap.has("company_usage_monthly")) {
+    await client.query(
+      `insert into public.company_usage_monthly (company_id, month, whatsapp_sent)
+       values ($1, date_trunc('month', current_date)::date, 0)
+       on conflict (company_id, month) do nothing`,
+      [cid],
+    );
+  }
+  if (colMap.has("company_storage_usage")) {
+    await client.query(
+      `insert into public.company_storage_usage (company_id, bytes)
+       values ($1, 0)
+       on conflict (company_id) do nothing`,
+      [cid],
+    );
+  }
   if (colMap.has("job_requests")) {
     await client.query(
       `with j as (

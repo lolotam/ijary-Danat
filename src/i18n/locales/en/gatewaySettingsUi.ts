@@ -32,6 +32,8 @@ export const gatewaySettingsUi: Record<string, string> = {
   "gatewaySettingsUi.saving": "Saving…",
   "gatewaySettingsUi.saved": "Credentials saved.",
   "gatewaySettingsUi.saveError": "The credentials could not be saved.",
+  "gatewaySettingsUi.liveNotAllowed":
+    "Live mode is not available for this provider yet. Save in test mode until the platform enables it.",
 
   "gatewaySettingsUi.testConnection": "Test connection",
   "gatewaySettingsUi.testing": "Testing…",

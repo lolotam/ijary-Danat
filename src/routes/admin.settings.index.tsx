@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { FailedJobsCard } from "@/components/admin/settings/FailedJobsCard";
 import { SettingsForm } from "@/components/admin/settings/CompanySettingsForm";
+import { UsageCard } from "@/components/admin/settings/UsageCard";
 import {
   companyFormValues,
   companyUpdate,
@@ -148,6 +149,8 @@ function CompanySettingsPage() {
           />
         </CardContent>
       </Card>
+
+      <UsageCard />
 
       {/* Failed background jobs: the same `company.update` gate as the form. */}
       <FailedJobsCard />

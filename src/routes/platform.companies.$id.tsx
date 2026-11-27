@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CompanyStatusControl } from "@/components/platform/CompanyStatusControl";
 import { CompanyUsersPanel } from "@/components/platform/CompanyUsersPanel";
+import { LimitsPanel } from "@/components/platform/LimitsPanel";
 import { ModuleSwitches } from "@/components/platform/ModuleSwitches";
 import { SubscriptionPanel } from "@/components/platform/SubscriptionPanel";
 import { Badge } from "@/components/ui/badge";
@@ -297,6 +298,7 @@ export function PlatformCompanyDetailPage() {
       </div>
 
       <SubscriptionPanel companyId={companyId} />
+      <LimitsPanel companyId={companyId} />
       <ModuleSwitches companyId={companyId} />
       <CompanyUsersPanel companyId={companyId} />
     </section>

@@ -17,6 +17,10 @@ import { subscriptions } from "./ar/subscriptions";
 import { platformBilling } from "./ar/platformBilling";
 import { gatewaySettingsUi } from "./ar/gatewaySettingsUi";
 import { suspended } from "./ar/suspended";
+import { limits } from "./ar/limits";
+import { gatewayLaunch } from "./ar/gatewayLaunch";
+import { limitsUi } from "./ar/limitsUi";
+import { platformOverview } from "./ar/platformOverview";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -51,4 +55,8 @@ export const ar: Record<string, string> = {
   ...platformBilling,
   ...gatewaySettingsUi,
   ...suspended,
+  ...limits,
+  ...gatewayLaunch,
+  ...limitsUi,
+  ...platformOverview,
 };

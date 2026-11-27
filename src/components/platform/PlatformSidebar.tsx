@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Building2, LayoutDashboard, ScrollText } from "lucide-react";
+import { Building2, CreditCard, LayoutDashboard, ScrollText } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { BrandMark } from "@/components/BrandLogo";
@@ -17,7 +17,7 @@ import { useI18n } from "@/i18n/provider";
 
 /** عنصر واحد في شريط تنقّل المشرف العام. */
 interface PlatformNavItem {
-  to: "/platform" | "/platform/companies" | "/platform/audit";
+  to: "/platform" | "/platform/companies" | "/platform/gateways" | "/platform/audit";
   labelKey: string;
   icon: ComponentType<{ className?: string }>;
 }
@@ -26,6 +26,7 @@ interface PlatformNavItem {
 const NAV_ITEMS: readonly PlatformNavItem[] = [
   { to: "/platform", labelKey: "platform.nav.overview", icon: LayoutDashboard },
   { to: "/platform/companies", labelKey: "platform.nav.companies", icon: Building2 },
+  { to: "/platform/gateways", labelKey: "platform.nav.gateways", icon: CreditCard },
   { to: "/platform/audit", labelKey: "platform.nav.audit", icon: ScrollText },
 ];
 

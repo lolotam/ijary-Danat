@@ -33,6 +33,7 @@ import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as PlatformIndexRouteImport } from './routes/platform.index'
 import { Route as PlatformAuditRouteImport } from './routes/platform.audit'
+import { Route as PlatformGatewaysRouteImport } from './routes/platform.gateways'
 import { Route as PlatformLoginRouteImport } from './routes/platform.login'
 import { Route as PlatformMfaRouteImport } from './routes/platform.mfa'
 import { Route as PortalIndexRouteImport } from './routes/portal.index'
@@ -190,6 +191,11 @@ const PlatformIndexRoute = PlatformIndexRouteImport.update({
 const PlatformAuditRoute = PlatformAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => PlatformRoute,
+} as any)
+const PlatformGatewaysRoute = PlatformGatewaysRouteImport.update({
+  id: '/gateways',
+  path: '/gateways',
   getParentRoute: () => PlatformRoute,
 } as any)
 const PlatformLoginRoute = PlatformLoginRouteImport.update({
@@ -413,6 +419,7 @@ export interface FileRoutesByFullPath {
   '/admin/reports': typeof AdminReportsRoute
   '/admin/settings': typeof AdminSettingsRouteWithChildren
   '/platform/audit': typeof PlatformAuditRoute
+  '/platform/gateways': typeof PlatformGatewaysRoute
   '/platform/login': typeof PlatformLoginRoute
   '/platform/mfa': typeof PlatformMfaRoute
   '/portal/invoices': typeof PortalInvoicesRoute
@@ -473,6 +480,7 @@ export interface FileRoutesByTo {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/platform/audit': typeof PlatformAuditRoute
+  '/platform/gateways': typeof PlatformGatewaysRoute
   '/platform/login': typeof PlatformLoginRoute
   '/platform/mfa': typeof PlatformMfaRoute
   '/portal/invoices': typeof PortalInvoicesRoute
@@ -537,6 +545,7 @@ export interface FileRoutesById {
   '/admin/reports': typeof AdminReportsRoute
   '/admin/settings': typeof AdminSettingsRouteWithChildren
   '/platform/audit': typeof PlatformAuditRoute
+  '/platform/gateways': typeof PlatformGatewaysRoute
   '/platform/login': typeof PlatformLoginRoute
   '/platform/mfa': typeof PlatformMfaRoute
   '/portal/invoices': typeof PortalInvoicesRoute
@@ -603,6 +612,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/settings'
     | '/platform/audit'
+    | '/platform/gateways'
     | '/platform/login'
     | '/platform/mfa'
     | '/portal/invoices'
@@ -663,6 +673,7 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/reports'
     | '/platform/audit'
+    | '/platform/gateways'
     | '/platform/login'
     | '/platform/mfa'
     | '/portal/invoices'
@@ -726,6 +737,7 @@ export interface FileRouteTypes {
     | '/admin/reports'
     | '/admin/settings'
     | '/platform/audit'
+    | '/platform/gateways'
     | '/platform/login'
     | '/platform/mfa'
     | '/portal/invoices'
@@ -956,6 +968,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/platform/audit'
       preLoaderRoute: typeof PlatformAuditRouteImport
+      parentRoute: typeof PlatformRoute
+    }
+    '/platform/gateways': {
+      id: '/platform/gateways'
+      path: '/gateways'
+      fullPath: '/platform/gateways'
+      preLoaderRoute: typeof PlatformGatewaysRouteImport
       parentRoute: typeof PlatformRoute
     }
     '/platform/login': {
@@ -1323,6 +1342,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface PlatformRouteChildren {
   PlatformAuditRoute: typeof PlatformAuditRoute
+  PlatformGatewaysRoute: typeof PlatformGatewaysRoute
   PlatformLoginRoute: typeof PlatformLoginRoute
   PlatformMfaRoute: typeof PlatformMfaRoute
   PlatformIndexRoute: typeof PlatformIndexRoute
@@ -1332,6 +1352,7 @@ interface PlatformRouteChildren {
 
 const PlatformRouteChildren: PlatformRouteChildren = {
   PlatformAuditRoute: PlatformAuditRoute,
+  PlatformGatewaysRoute: PlatformGatewaysRoute,
   PlatformLoginRoute: PlatformLoginRoute,
   PlatformMfaRoute: PlatformMfaRoute,
   PlatformIndexRoute: PlatformIndexRoute,

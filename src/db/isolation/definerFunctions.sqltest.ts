@@ -12,6 +12,11 @@ const DEFINER_ALLOWLIST = new Set<string>([
   "current_company_id",
   "is_platform_admin",
   "tg_guard_company_slug",
+  "tg_gateway_connections_guard_live",
+  // Super admin overview: reads across companies and refuses every caller that
+  // `is_platform_admin()` does not recognise (migration 325).
+  "platform_overview_totals",
+  "platform_company_health",
   "auth_sessions_set_not_after",
   "rebox_user_sessions",
   "user_roles_shorten_sessions",

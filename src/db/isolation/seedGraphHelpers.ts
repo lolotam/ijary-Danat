@@ -11,6 +11,7 @@ export const NON_COMPANY_TABLES = new Set([
   "reserved_slugs",
   "platform_admins",
   "platform_audit_log",
+  "platform_gateway_launch",
   "impersonation_sessions",
 ]);
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { buildGatewayMatrixTargets } from "@/db/isolation/gatewayMatrixTargets";
+import { buildLimitsMatrixTargets } from "@/db/isolation/limitsMatrixTargets";
 import { buildModuleMatrixTargets } from "@/db/isolation/moduleMatrixTargets";
 import { buildSubscriptionMatrixTargets } from "@/db/isolation/subscriptionMatrixTargets";
 import {
@@ -505,6 +506,7 @@ export function buildCompanyMatrixTargets(
   ];
 
   targets.push(...buildGatewayMatrixTargets(cid, colMap));
+  targets.push(...buildLimitsMatrixTargets(cid, colMap));
   targets.push(...buildModuleMatrixTargets(cid, colMap));
   targets.push(...buildSubscriptionMatrixTargets(cid, colMap));
 

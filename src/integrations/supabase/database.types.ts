@@ -936,6 +936,40 @@ export type CompanySubscriptionRow = {
   created_at: string;
 };
 
+/** حدود شركة واحدة (ترحيل 323)؛ القيمة null تعني بلا حد. */
+export type CompanyLimitsRow = {
+  company_id: string;
+  max_units: number | null;
+  max_staff_users: number | null;
+  max_whatsapp_per_month: number | null;
+  max_storage_bytes: number | null;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+/** عدّاد استهلاك شهري لشركة (ترحيل 323)؛ `month` أول يوم في الشهر بتوقيت الشركة. */
+export type CompanyUsageMonthlyRow = {
+  company_id: string;
+  month: string;
+  whatsapp_sent: number;
+};
+
+/** حجم ملفات شركة بالبايت (ترحيل 323)، يحدّثه مشغّل التخزين ويُعاد بناؤه ليلاً. */
+export type CompanyStorageUsageRow = {
+  company_id: string;
+  bytes: number;
+  updated_at: string;
+};
+
+/** إذن التشغيل الفعلي لمزوّد بوابة على مستوى المنصة (ترحيل 324). */
+export type PlatformGatewayLaunchRow = {
+  provider: GatewayConnectionProvider;
+  live_allowed: boolean;
+  checklist_note: string | null;
+  updated_by: string | null;
+  updated_at: string;
+};
+
 /** اتصال بوابة دفع لشركة (ترحيل 319): الإعداد العام ونتيجة آخر اختبار، بلا أسرار. */
 export type GatewayConnectionRow = {
   id: string;
@@ -1781,6 +1815,10 @@ export interface Database {
         CompanySubscriptionRow,
         "plan_name" | "price" | "period_start" | "renewal_date"
       >;
+      company_limits: TableDefinition<CompanyLimitsRow, "company_id">;
+      company_usage_monthly: TableDefinition<CompanyUsageMonthlyRow, "company_id" | "month">;
+      company_storage_usage: TableDefinition<CompanyStorageUsageRow, "company_id">;
+      platform_gateway_launch: TableDefinition<PlatformGatewayLaunchRow, "provider">;
       profiles: {
         Row: {
           company_id: string | null;
@@ -2381,6 +2419,49 @@ export interface Database {
       is_platform_admin: {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
+      };
+      /** Migration 323 — يحجز رسالة واتساب من حصة الشهر للشركة الحالية؛ false عند بلوغ الحد. */
+      consume_whatsapp_quota: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      /** Migration 323 — هل يتسع حد التخزين للشركة الحالية لملف بهذا الحجم. */
+      storage_within_limit: {
+        Args: { _added_bytes?: number };
+        Returns: boolean;
+      };
+      /** Migration 323 — يعيد حساب حجم ملفات الشركة الحالية من `storage.objects`. */
+      rebuild_company_storage_usage: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
+      /** Migration 325 — إجماليات لوحة المنصة؛ لمشرف المنصة فقط. */
+      platform_overview_totals: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          companies_total: number;
+          companies_active: number;
+          companies_suspended: number;
+          units_total: number;
+          staff_users_total: number;
+          renters_total: number;
+          collected_this_month: number;
+        }[];
+      };
+      /** Migration 325 — حالة كل شركة (واتساب، البوابة، المهام، الإشعارات)؛ لمشرف المنصة فقط. */
+      platform_company_health: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          company_id: string;
+          slug: string;
+          name_ar: string;
+          name_en: string;
+          status: "active" | "suspended";
+          whatsapp_ok: boolean | null;
+          gateway_ok: boolean | null;
+          jobs_failed_24h: number;
+          notifications_failed_24h: number;
+        }[];
       };
       /** Migration 284 — يرفع عدّاد نوع مستند معيّن للشركة الحالية ذرياً ويعيد القيمة التالية. */
       next_company_counter: {

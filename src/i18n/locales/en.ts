@@ -17,6 +17,10 @@ import { subscriptions } from "./en/subscriptions";
 import { platformBilling } from "./en/platformBilling";
 import { gatewaySettingsUi } from "./en/gatewaySettingsUi";
 import { suspended } from "./en/suspended";
+import { limits } from "./en/limits";
+import { gatewayLaunch } from "./en/gatewayLaunch";
+import { limitsUi } from "./en/limitsUi";
+import { platformOverview } from "./en/platformOverview";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -48,4 +52,8 @@ export const en: Record<string, string> = {
   ...platformBilling,
   ...gatewaySettingsUi,
   ...suspended,
+  ...limits,
+  ...gatewayLaunch,
+  ...limitsUi,
+  ...platformOverview,
 };

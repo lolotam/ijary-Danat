@@ -111,6 +111,16 @@ function failureMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * يتعرّف على رفض حفظ الوضع الفعلي قبل أن يسمح به مشرف المنصة للمزوّد.
+ *
+ * The code travels inside the message because server-function errors cross the
+ * network as plain `Error` objects without their `code` field.
+ */
+function isLiveNotAllowed(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("LIVE_NOT_ALLOWED");
+}
+
+/**
  * يعرض رابط الويب هوك بعد وجود اتصال، مع زرّ نسخ لا يبتلع خطأ النسخ.
  */
 function WebhookUrlRow({
@@ -401,7 +411,9 @@ export function PaymentGatewayCard() {
       refreshConnections();
     },
     onError: (cause, input) => {
-      const message = failureMessage(cause, t("gatewaySettingsUi.saveError"));
+      const message = isLiveNotAllowed(cause)
+        ? t("gatewaySettingsUi.liveNotAllowed")
+        : failureMessage(cause, t("gatewaySettingsUi.saveError"));
       recordError(input.provider, message);
       toast.error(t("gatewaySettingsUi.saveError"), { description: describeError(cause) });
     },

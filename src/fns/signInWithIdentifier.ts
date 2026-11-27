@@ -1,24 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { companyClient } from "@/company/companyClient.server";
-import { requireRequestCompany } from "@/company/requestCompany.server";
+import { getRequestCompany, requireRequestCompany } from "@/company/requestCompany.server";
 import type { Database } from "@/integrations/supabase/database.types";
 import {
   classifyIdentifier,
   loginIdentifierToEmail,
   nationalPhoneDigits,
+  syntheticAuthEmail,
 } from "@/auth/loginIdentity";
 import { recordFailedLoginAttempt, recordLoginAttempt } from "@/fns/loginAudit";
 
 /**
- * Signing in with a username, an email address, or a mobile number.
+ * Signing in with a username, an email address, or a mobile number — and the
+ * one company-context read the browser needs to finish a sign-in.
  *
  * GoTrue only authenticates an email, so something has to map the identifier
  * onto one. That mapping must happen on the server: `profiles` is behind RLS
  * and unreadable to an anonymous visitor, and exposing it would be worse than
- * unhelpful.
+ * unhelpful. The lookup runs inside the host's company only, so the same
+ * identifier in two companies resolves to the host company's own account.
  *
  * **Why this takes the password.** The obvious shape — an RPC that turns an
  * identifier into an email — is an account-enumeration and PII leak: anyone
@@ -137,41 +140,65 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
     const db = companyClient(company.id);
 
     /*
-     * A failed lookup falls through to the legacy mapping rather than returning
-     * early, for two reasons. It keeps every login that works today working —
-     * accounts with no real address authenticate as `<username>@users.local`.
-     * And it means an unknown identifier still costs a real password check, so
-     * "no such account" and "wrong password" take the same path and are not
-     * distinguishable from the outside.
+     * The password is tried against up to three addresses for the one account
+     * the company-scoped lookup resolved. The synthetic address goes first,
+     * because it is the only one guaranteed to belong to *this* account;
+     * `profiles.email` and the legacy `<username>@users.local` mapping remain
+     * as fallbacks for accounts created before synthetic auth emails
+     * (research.md R3): the synthetic form is what every admin write now
+     * converges on, but old accounts keep whatever address they were created
+     * with until they are next edited.
+     *
+     * Order is load-bearing when one real address sits on two companies'
+     * profiles: GoTrue holds a single account for that address, and it is not
+     * necessarily the host company's. A fallback-first order would grant that
+     * sibling's session and refuse a correct password here. Synthetic-first
+     * always names the resolved account, so the shared address is only ever
+     * reached after this account's own address has failed.
+     *
+     * An unknown identifier still costs a real password check (the last
+     * candidate), so "no such account" and "wrong password" take the same path
+     * and are not distinguishable from the outside.
      */
     const resolved = await findAccountEmail(db, data.identifier);
-    const email = resolved?.email ?? loginIdentifierToEmail(data.identifier);
+    const candidates = [
+      ...(resolved ? [syntheticAuthEmail(resolved.id), resolved.email] : []),
+      loginIdentifierToEmail(data.identifier),
+    ].filter((email, index, all) => all.indexOf(email) === index);
 
     const loginClient = anonClient();
-    const { data: session, error } = await loginClient.auth.signInWithPassword({
-      email,
-      password: data.password,
-    });
-
-    // GoTrue refuses a banned account before it checks the password, so this is the
-    // only signal available once `banned_until` is set — without it a deactivated
-    // user would be told their credentials were wrong.
-    //
-    // This does leak that the account exists and is disabled, to anyone, with any
-    // password. That leak is GoTrue's, not ours: `POST /token` returns the same
-    // `user_banned` to a direct caller whatever this function does. Mirroring it
-    // here costs nothing an attacker cannot already obtain, and the alternative is
-    // telling a real deactivated tenant their password is wrong.
-    if (error && (error as { code?: string }).code === "user_banned") {
-      await recordFailedLoginAttempt({
-        identifier: data.identifier,
-        accountId: resolved?.id ?? null,
-        errorCode: "ACCOUNT_DEACTIVATED",
+    let session: Session | null = null;
+    for (const email of candidates) {
+      const attempt = await loginClient.auth.signInWithPassword({
+        email,
+        password: data.password,
       });
-      return { ok: false as const, error: "ACCOUNT_DEACTIVATED" };
+
+      // GoTrue refuses a banned account before it checks the password, so this is the
+      // only signal available once `banned_until` is set — without it a deactivated
+      // user would be told their credentials were wrong.
+      //
+      // This does leak that the account exists and is disabled, to anyone, with any
+      // password. That leak is GoTrue's, not ours: `POST /token` returns the same
+      // `user_banned` to a direct caller whatever this function does. Mirroring it
+      // here costs nothing an attacker cannot already obtain, and the alternative is
+      // telling a real deactivated tenant their password is wrong.
+      if (attempt.error && (attempt.error as { code?: string }).code === "user_banned") {
+        await recordFailedLoginAttempt({
+          identifier: data.identifier,
+          accountId: resolved?.id ?? null,
+          errorCode: "ACCOUNT_DEACTIVATED",
+        });
+        return { ok: false as const, error: "ACCOUNT_DEACTIVATED" };
+      }
+
+      if (!attempt.error && attempt.data.session) {
+        session = attempt.data.session;
+        break;
+      }
     }
 
-    if (error || !session.session) {
+    if (!session) {
       // Deliberately one message for every failure. Saying which half was wrong
       // turns the login form into an account-existence oracle.
       //
@@ -190,7 +217,7 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
     // them even when the identifier lookup did not (the legacy `@users.local`
     // fallback). Review finding on PR #206: taking the id only from `resolved`
     // recorded those logins as "system" with no account attached.
-    const member = await companyMember(db, session.session.user.id);
+    const member = await companyMember(db, session.user.id);
 
     // Same answer as a wrong password, so the form does not reveal that the
     // account exists in another company; the session GoTrue just issued is
@@ -236,7 +263,21 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
 
     return {
       ok: true as const,
-      accessToken: session.session.access_token,
-      refreshToken: session.session.refresh_token,
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
     };
   });
+
+/**
+ * يعيد معرّف شركة المضيف الحالي للمتصفح، أو null إذا لم يكن المضيف لشركة.
+ *
+ * The one company-context read the browser needs to finish a sign-in: after
+ * any successful authentication the session's `profile.company_id` is compared
+ * against this id (`AuthProvider`), and a mismatch counts as not signed in.
+ * Unauthenticated on purpose — the host's identity is already public in its
+ * own address and branding, and a sign-in form must be able to ask before
+ * anyone has an account.
+ */
+export const getPublicRequestCompanyId = createServerFn({ method: "GET" }).handler(
+  async (): Promise<string | null> => getRequestCompany()?.id ?? null,
+);

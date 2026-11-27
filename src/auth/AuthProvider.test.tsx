@@ -18,6 +18,12 @@ import { beforeEach, afterEach, describe, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   resolver: vi.fn(),
   directSignIn: vi.fn(),
+  // The host company read and the profile company read behind the post-sign-in
+  // membership check (AuthProvider's "counts as not signed in" rule).
+  requestCompanyIdFn: vi.fn(),
+  profileRow: { company_id: "company-a" } as { company_id: string } | null,
+  setSession: vi.fn().mockResolvedValue({ error: null }),
+  signOut: vi.fn().mockResolvedValue(undefined),
   // One object, like the real hook: usePostHog returns the same client on
   // every render. It keeps the identified ID the way PostHog's own storage
   // does, because the provider reads that persisted state back.
@@ -41,6 +47,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/fns/signInWithIdentifier", () => ({
   signInWithIdentifier: (args: unknown) => mocks.resolver(args),
+  getPublicRequestCompanyId: () => mocks.requestCompanyIdFn(),
 }));
 
 vi.mock("posthog-js/react", () => ({
@@ -55,10 +62,17 @@ vi.mock("@/integrations/supabase/client", () => ({
         mocks.authListener = listener;
         return { data: { subscription: { unsubscribe: vi.fn() } } };
       },
-      setSession: vi.fn().mockResolvedValue({ error: null }),
+      setSession: mocks.setSession,
       signInWithPassword: (args: unknown) => mocks.directSignIn(args),
-      signOut: vi.fn().mockResolvedValue(undefined),
+      signOut: mocks.signOut,
     },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: mocks.profileRow, error: null }),
+        }),
+      }),
+    }),
   },
 }));
 
@@ -184,6 +198,111 @@ describe("the direct sign-in fallback", () => {
     await clickGo();
 
     expect(mocks.directSignIn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * يثبت قاعدة «حساب من شركة أخرى يُعدَّ غير مسجَّل الدخول» بعد أي مصادقة ناجحة.
+ *
+ * Both sign-in paths are covered because both can end in a session: the
+ * resolver's tokens, and the direct fallback's — the fallback in particular can
+ * authenticate another company's account, since GoTrue spans companies.
+ */
+describe("company membership after sign-in", () => {
+  beforeEach(() => {
+    mocks.resolver.mockReset();
+    mocks.directSignIn.mockReset();
+    mocks.requestCompanyIdFn.mockReset().mockResolvedValue("company-a");
+    mocks.setSession.mockReset().mockResolvedValue({ error: null });
+    mocks.signOut.mockReset().mockResolvedValue(undefined);
+    mocks.profileRow = { company_id: "company-a" };
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** يشغّل مسار الدخول الاحتياطي بجلسة حساب محددة. */
+  function stageFallbackSession(userId: string) {
+    mocks.resolver.mockRejectedValue(new Error("offline"));
+    mocks.directSignIn.mockResolvedValue({
+      data: { session: { user: { id: userId } } },
+      error: null,
+    });
+  }
+
+  test("a fallback sign-in of another company's account is not signed in", async () => {
+    stageFallbackSession("user-b");
+    mocks.profileRow = { company_id: "company-b" };
+
+    mountProvider();
+    const error = await clickGo();
+
+    // Same wording as a wrong password: no hint that the account exists on
+    // another company's address.
+    expect(error).toBe("Invalid login credentials");
+    expect(mocks.signOut).toHaveBeenCalled();
+  });
+
+  test("a fallback sign-in of this company's account stays signed in", async () => {
+    stageFallbackSession("user-a");
+
+    mountProvider();
+    const error = await clickGo();
+
+    expect(error).toBeNull();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  test("a resolver sign-in whose session belongs to another company is not signed in", async () => {
+    mocks.resolver.mockResolvedValue({ ok: true, accessToken: "a", refreshToken: "r" });
+    mocks.setSession.mockResolvedValue({
+      data: { session: { user: { id: "user-b" } } },
+      error: null,
+    });
+    mocks.profileRow = { company_id: "company-b" };
+
+    mountProvider();
+    const error = await clickGo();
+
+    expect(error).toBe("Invalid login credentials");
+    expect(mocks.signOut).toHaveBeenCalled();
+  });
+
+  test("a session with no profile visible in this company is not signed in", async () => {
+    stageFallbackSession("user-b");
+    mocks.profileRow = null;
+
+    mountProvider();
+    const error = await clickGo();
+
+    expect(error).toBe("Invalid login credentials");
+    expect(mocks.signOut).toHaveBeenCalled();
+  });
+
+  test("a host with no company refuses the session", async () => {
+    // The server refuses every call from such a host (`requireSupabaseAuth`),
+    // so letting the shell render a session there would be a dead end anyway.
+    stageFallbackSession("user-a");
+    mocks.requestCompanyIdFn.mockResolvedValue(null);
+
+    mountProvider();
+    const error = await clickGo();
+
+    expect(error).toBe("Invalid login credentials");
+    expect(mocks.signOut).toHaveBeenCalled();
+  });
+
+  test("a check that cannot run keeps the session, so an outage cannot lock anyone out", async () => {
+    stageFallbackSession("user-a");
+    mocks.requestCompanyIdFn.mockRejectedValue(new Error("offline"));
+
+    mountProvider();
+    const error = await clickGo();
+
+    expect(error).toBeNull();
+    expect(mocks.signOut).not.toHaveBeenCalled();
   });
 });
 

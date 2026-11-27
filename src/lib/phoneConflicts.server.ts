@@ -5,8 +5,10 @@ import { userConflictMessage } from "@/lib/userConflicts";
 /**
  * Validates a mobile number before it is stored on a profile.
  *
- * Server-only: it calls `find_phone_conflicts`, whose EXECUTE is granted to
- * service_role alone because it maps phone numbers onto account names.
+ * Server-only: it calls `find_phone_conflicts` through the company's own
+ * client, and the function's SQL only ever reports rows of
+ * `public.current_company_id()` (migration 280) — the check can neither see nor
+ * name another company's numbers.
  *
  * Two failures are refused here rather than discovered at the login screen:
  *

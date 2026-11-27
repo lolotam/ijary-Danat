@@ -211,6 +211,31 @@ describe("createAppUser", () => {
     expect(mocks.deleteUser).toHaveBeenCalledWith("user-1");
   });
 
+  /**
+   * Real addresses are unique per company only (migration 255) and live in
+   * `profiles`, so the profile write — not GoTrue — is what refuses a
+   * duplicate now that the login carries a synthetic auth email.
+   */
+  it("explains an email taken inside the company by a concurrent save instead of the raw constraint", async () => {
+    mocks.profileUpsert.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "profiles_company_email_lower_idx"',
+      },
+    });
+    mocks.emailOwners.mockResolvedValueOnce({ data: [{ display_name: "Faisal" }], error: null });
+
+    const error = (await createTenant().catch((e: unknown) => e)) as Error;
+
+    expect(parseUserConflict(error.message)).toEqual({
+      kind: "email",
+      value: "tenant@example.com",
+      owner: "Faisal",
+    });
+    expect(mocks.deleteUser).toHaveBeenCalledWith("user-1");
+  });
+
   it("reports an email GoTrue already holds as an email conflict naming its owner", async () => {
     mocks.createUser.mockResolvedValueOnce({
       data: { user: null },

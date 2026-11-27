@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  clientCompanyIds: [] as Array<string | null | undefined>,
+}));
 
 vi.mock("@/company/companyClient.server", () => ({
-  serverCompanyClient: () => ({
-    companyId: "11111111-1111-4111-8111-111111111111",
-    client: { rpc: mocks.rpc },
-  }),
+  serverCompanyClient: (companyId?: string | null) => {
+    mocks.clientCompanyIds.push(companyId);
+    return {
+      companyId: companyId ?? "11111111-1111-4111-8111-111111111111",
+      client: { rpc: mocks.rpc },
+    };
+  },
 }));
 
 import { normalisePhoneForSave } from "./phoneConflicts.server";
@@ -14,6 +20,7 @@ import { normalisePhoneForSave } from "./phoneConflicts.server";
 describe("normalisePhoneForSave", () => {
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ data: [], error: null });
+    mocks.clientCompanyIds = [];
   });
 
   it("treats a blank number as no number and does not query", async () => {
@@ -84,5 +91,14 @@ describe("normalisePhoneForSave", () => {
     // the check exists to prevent.
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "nope" } });
     await expect(normalisePhoneForSave("51234567", null, null)).rejects.toThrow(/nope/);
+  });
+
+  it("runs the conflict lookup against the named company's own client", async () => {
+    // The same number may legitimately exist in another company; the lookup
+    // must only ever see the caller's company, so it has to run as that
+    // company's client rather than whatever the request context happens to be.
+    await normalisePhoneForSave("51234567", null, null, "22222222-2222-2222-2222-222222222222");
+
+    expect(mocks.clientCompanyIds).toEqual(["22222222-2222-2222-2222-222222222222"]);
   });
 });

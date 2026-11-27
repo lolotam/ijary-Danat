@@ -1,8 +1,9 @@
 /**
- * Working out what a person typed into the login box.
+ * Working out what a person typed into the login box, and the one address form
+ * GoTrue accounts are allowed to carry.
  *
- * Three things are accepted — username, email address, or mobile number — and
- * none of them is the thing GoTrue authenticates with. GoTrue only knows the
+ * Three identifiers are accepted — username, email address, or mobile number —
+ * and none of them is the thing GoTrue authenticates with. GoTrue only knows the
  * account's email, so an identifier has to be resolved to one first.
  *
  * Pure and client-free on purpose: the matching rules below are the part most
@@ -61,4 +62,20 @@ export function loginIdentifierToEmail(identifier: string): string {
   return normalizedIdentifier.includes("@")
     ? normalizedIdentifier
     : `${normalizedIdentifier}@users.local`;
+}
+
+/**
+ * يبني البريد التوليدي الذي تُخزَّن به حسابات GoTrue: `<uuid>@auth.ijary.invalid`.
+ *
+ * R3: `auth.users.email` is always synthetic and derived from the user id.
+ * GoTrue enforces *global* email uniqueness while real addresses are unique per
+ * company only, so the same person's address in two companies would refuse the
+ * second account. The id-based form sidesteps that without a second auth
+ * system, and never needs rewriting when a username or company short name
+ * changes. `.invalid` is RFC 2606's reserved non-deliverable TLD, so even a
+ * misrouted mail can never reach anyone, and the real address stays in
+ * `profiles`, never in GoTrue.
+ */
+export function syntheticAuthEmail(userId: string): string {
+  return `${userId}@auth.ijary.invalid`;
 }

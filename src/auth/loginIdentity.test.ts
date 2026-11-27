@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { classifyIdentifier, loginIdentifierToEmail, nationalPhoneDigits } from "./loginIdentity";
+import {
+  classifyIdentifier,
+  loginIdentifierToEmail,
+  nationalPhoneDigits,
+  syntheticAuthEmail,
+} from "./loginIdentity";
 
 describe("loginIdentifierToEmail", () => {
   test.each([
@@ -10,6 +15,26 @@ describe("loginIdentifierToEmail", () => {
     ["  Someone@Example.COM ", "someone@example.com"],
   ])("%s -> %s", (input, expected) => {
     expect(loginIdentifierToEmail(input)).toBe(expected);
+  });
+});
+
+describe("syntheticAuthEmail", () => {
+  /*
+   * R3 pins the exact form: derived from the user id, at the reserved
+   * non-deliverable `.invalid` TLD. Every sign-in path recomputes this address
+   * from the resolved profile id, so the spelling is a cross-module contract.
+   */
+  test.each([
+    [
+      "a0000000-0000-4000-8000-000000000001",
+      "a0000000-0000-4000-8000-000000000001@auth.ijary.invalid",
+    ],
+    [
+      "b0000000-0000-4000-8000-000000000002",
+      "b0000000-0000-4000-8000-000000000002@auth.ijary.invalid",
+    ],
+  ])("%s -> %s", (userId, expected) => {
+    expect(syntheticAuthEmail(userId)).toBe(expected);
   });
 });
 

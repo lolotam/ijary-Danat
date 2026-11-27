@@ -17,7 +17,7 @@ vi.mock("@/fns/loginAudit", async () =>
 );
 
 import type { RequestCompany } from "@/company/requestCompany.server";
-import { signInWithIdentifier } from "./signInWithIdentifier";
+import { getPublicRequestCompanyId, signInWithIdentifier } from "./signInWithIdentifier";
 import {
   lastAuditInput,
   resetSignInFixtures,
@@ -165,6 +165,41 @@ describe("signInWithIdentifier", () => {
     expect(result).toEqual({ ok: true, accessToken: "a", refreshToken: "r" });
   });
 
+  it("grants the password against the account's synthetic auth address first", async () => {
+    // R3's address is what keys the login; `profiles.email` is only the
+    // person's contact address and may sit on two companies' profiles at once.
+    stageProfiles([
+      { id: "22222222-2222-4222-8222-222222222222", email: "active@example.test", is_active: true },
+    ]);
+
+    await callHandler({ identifier: "active", password: "pw" });
+
+    expect(signInBoundary.signInWithPassword.mock.calls[0][0]).toEqual({
+      email: "22222222-2222-4222-8222-222222222222@auth.ijary.invalid",
+      password: "pw",
+    });
+  });
+
+  it("still signs in a legacy account through its stored address once the synthetic one fails", async () => {
+    // Accounts created before synthetic auth emails hold a real (or
+    // `@users.local`) address in GoTrue. They keep signing in through it until
+    // their next admin edit converges them onto the synthetic form.
+    stageProfiles([
+      { id: "22222222-2222-4222-8222-222222222222", email: "active@example.test", is_active: true },
+    ]);
+    stageAuthAccounts({
+      "active@example.test": { userId: "22222222-2222-4222-8222-222222222222", password: "pw" },
+    });
+
+    const result = await callHandler({ identifier: "active", password: "pw" });
+
+    expect(result).toEqual({
+      ok: true,
+      accessToken: "access-22222222-2222-4222-8222-222222222222",
+      refreshToken: "refresh-22222222-2222-4222-8222-222222222222",
+    });
+  });
+
   // Regression (T052r, second US1 review 2026-11-26): the identifier lookup is
   // company-scoped, but its fallback hands any email to GoTrue, whose accounts
   // span every company. A correct password for another company's account
@@ -309,12 +344,12 @@ describe("signInWithIdentifier", () => {
     );
 
     // T083 + T084: both profiles carry one real email address, and GoTrue holds
-    // a single account for it, so the two companies share one password today.
+    // a single account for it, so the two companies shared one password before.
     // Synthetic per-account auth emails (T083) and a password grant against the
     // host company's own account (T084) are what give each account its own
     // password; the fixture stages those synthetic addresses to pin the end
     // state from research.md R3.
-    test.fails("the same email address in two companies keeps separate passwords", async () => {
+    test("the same email address in two companies keeps separate passwords", async () => {
       signInState.requestCompany = companyA;
       signInState.profilesByCompany = {
         [companyA.id]: [{ id: userA, email: "home@shared.test", is_active: true }],
@@ -490,5 +525,15 @@ describe("signInWithIdentifier", () => {
         result: "success",
       });
     });
+  });
+});
+
+describe("getPublicRequestCompanyId", () => {
+  it("returns the host company's id so the browser can finish its sign-in check", async () => {
+    // AuthProvider compares this against the signed-in profile's company_id;
+    // a session from another company then counts as not signed in.
+    const getCompanyId = getPublicRequestCompanyId as unknown as typeof serverFunction;
+
+    await expect(getCompanyId(undefined)).resolves.toBe(signInState.requestCompany.id);
   });
 });

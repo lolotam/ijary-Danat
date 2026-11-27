@@ -53,6 +53,7 @@ vi.mock("@/company/requestCompany.server", () => ({
 }));
 
 import { updateAppUser } from "./updateAppUser";
+import { parseUserConflict } from "@/lib/userConflicts";
 
 const USER = "11111111-1111-1111-1111-111111111111";
 const ADMIN = "22222222-2222-2222-2222-222222222222";
@@ -556,5 +557,104 @@ describe("updateAppUser username rename", () => {
       tenantContactSynced: true,
     });
     expect(mocks.updateUserById).toHaveBeenCalled();
+  });
+});
+
+/**
+ * يقيم جدول «profiles» بسلسلة القراءة والفحص الكاملة ويسجّل كل كتابة عليه،
+ * لحسم معالجة البريد من الطرفين.
+ *
+ * What lands in the profile (the real address) and what reaches the auth
+ * helper (the change signal whose synthetic replacement is the helper's job)
+ * are asserted separately.
+ */
+function stubProfiles(options: {
+  emailOwners?: Array<{ display_name: string }>;
+  updateError?: { code: string; message: string };
+}) {
+  const profileUpdates: Record<string, unknown>[] = [];
+  mocks.from.mockImplementation((table: string) => {
+    if (table === "profiles") {
+      return {
+        select: () => {
+          const chain: Record<string, unknown> = {
+            single: async () => ({ data: { tenant_id: null }, error: null }),
+            eq: () => chain,
+            neq: () => ({ limit: async () => ({ data: [], error: null }) }),
+            limit: async () => ({ data: options.emailOwners ?? [], error: null }),
+          };
+          return { eq: () => chain };
+        },
+        update: (payload: Record<string, unknown>) => {
+          profileUpdates.push(payload);
+          return {
+            eq: async () => ({ error: options.updateError ? { ...options.updateError } : null }),
+          };
+        },
+      };
+    }
+    return {};
+  });
+  return { profileUpdates };
+}
+
+describe("updateAppUser email handling", () => {
+  beforeEach(() => {
+    mocks.from.mockReset();
+    mocks.rpc.mockReset().mockResolvedValue({ data: null, error: null });
+    mocks.updateUserById.mockReset().mockResolvedValue({ data: {}, error: null });
+  });
+
+  it("writes the sent address to the profile and re-keys the login through the auth helper", async () => {
+    const { profileUpdates } = stubProfiles({});
+
+    await expect(callUpdate({ email: "New@Example.com" })).resolves.toEqual({
+      updated: true,
+      userId: USER,
+      tenantContactSynced: true,
+    });
+    expect(profileUpdates).toEqual([{ email: "new@example.com" }]);
+    // The helper replaces this value with the account's synthetic address
+    // before GoTrue sees it; sending it is what triggers the re-key.
+    expect(mocks.updateUserById).toHaveBeenCalledWith(
+      USER,
+      expect.objectContaining({ email: "new@example.com" }),
+    );
+  });
+
+  it("a username-only save leaves the stored address alone but still re-keys the login", async () => {
+    // The old mapping wrote `<username>@users.local` over the profile's real
+    // address on every rename — the synthetic auth email makes that both
+    // unnecessary and wrong: the profile holds contact addresses only.
+    const { profileUpdates } = stubProfiles({});
+
+    await expect(callUpdate({ username: "renamed.user" })).resolves.toEqual({
+      updated: true,
+      userId: USER,
+      tenantContactSynced: true,
+    });
+    expect(profileUpdates).toEqual([{ username: "renamed.user" }]);
+    expect(mocks.updateUserById).toHaveBeenCalled();
+  });
+
+  it("explains an email clash from the profile write instead of the raw constraint", async () => {
+    stubProfiles({
+      emailOwners: [{ display_name: "Faisal" }],
+      updateError: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "profiles_company_email_lower_idx"',
+      },
+    });
+
+    const error = (await callUpdate({ email: "new@example.com" }).catch(
+      (e: unknown) => e,
+    )) as Error;
+
+    expect(parseUserConflict(error.message)).toEqual({
+      kind: "email",
+      value: "new@example.com",
+      owner: "Faisal",
+    });
   });
 });

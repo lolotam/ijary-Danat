@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { usePostHog } from "posthog-js/react";
 
 import { supabase } from "@/integrations/supabase/client";
-import { signInWithIdentifier } from "@/fns/signInWithIdentifier";
+import { getPublicRequestCompanyId, signInWithIdentifier } from "@/fns/signInWithIdentifier";
 import { loginIdentifierToEmail } from "./loginIdentity";
 
 interface AuthContextValue {
@@ -15,6 +15,71 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/** نتيجة مقارنة شركة الجلسة بشركة المضيف. */
+type CompanyMembership = "match" | "mismatch" | "unverifiable";
+
+/**
+ * يتحقق أن الجلسة المنشأة تابعة فعلاً لشركة المضيف الحالية.
+ *
+ * After authentication, `profile.company_id !== requestCompany.id` is handled
+ * as "not signed in" (contracts/company-context.md §2), and the answer never
+ * says the account exists elsewhere. The server enforces this on every server
+ * function call; this is the browser half, so the shell never renders another
+ * company's session — the direct sign-in fallback can authenticate one, since
+ * GoTrue accounts span every company.
+ *
+ * A check that cannot run is not a mismatch: the fallback exists so a resolver
+ * outage cannot lock everyone out, and refusing on an outage would do exactly
+ * that. So an unverifiable check keeps the session (warned), while a definite
+ * mismatch — or a host with no company at all, which `requireSupabaseAuth`
+ * also refuses — drops it.
+ */
+async function hostCompanyMembership(userId: string): Promise<CompanyMembership> {
+  let requestCompanyId: string | null;
+  try {
+    requestCompanyId = await getPublicRequestCompanyId();
+  } catch (error) {
+    console.warn("[auth] host company unavailable; keeping the session", error);
+    return "unverifiable";
+  }
+  if (!requestCompanyId) return "mismatch";
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("company_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) {
+      console.warn("[auth] profile company unreadable; keeping the session", error.message);
+      return "unverifiable";
+    }
+    return data?.company_id === requestCompanyId ? "match" : "mismatch";
+  } catch (error) {
+    console.warn("[auth] profile company unreadable; keeping the session", error);
+    return "unverifiable";
+  }
+}
+
+/**
+ * يقبل الجلسة بعد المصادقة: جلسة من شركة أخرى تُلغى وتُعاد كفشل دخول عادي.
+ *
+ * Same wording as a wrong password, so the form cannot be used as an oracle
+ * for which accounts exist on which company's address.
+ */
+async function acceptSignedInSession(userId: string | null): Promise<{ error: string | null }> {
+  if (!userId) {
+    // GoTrue answers with a session whenever it reports no error; with none
+    // there is nothing to verify, and the fallback's answer stands as before.
+    return { error: null };
+  }
+  if ((await hostCompanyMembership(userId)) === "mismatch") {
+    await supabase.auth.signOut();
+    return { error: "Invalid login credentials" };
+  }
+  return { error: null };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -88,11 +153,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const result = await signInWithIdentifier({ data: { identifier, password } });
           if (result.ok) {
-            const { error } = await supabase.auth.setSession({
+            const { data, error } = await supabase.auth.setSession({
               access_token: result.accessToken,
               refresh_token: result.refreshToken,
             });
-            return { error: error?.message ?? null };
+            if (error) return { error: error.message };
+            return acceptSignedInSession(data?.session?.user?.id ?? null);
           }
 
           // The only non-ok result that must NOT fall through. Everything else keeps the
@@ -109,11 +175,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn("[auth] identifier resolution unavailable; using direct sign-in", error);
         }
 
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: loginIdentifierToEmail(identifier),
           password,
         });
-        return { error: error?.message ?? null };
+        if (error) return { error: error.message };
+        return acceptSignedInSession(data?.session?.user?.id ?? null);
       },
       async signOut() {
         await supabase.auth.signOut();

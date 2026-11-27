@@ -15,6 +15,7 @@ import { requireRole } from "@/fns/requirePermission";
 import {
   assertUsernameAvailable,
   emailTakenError,
+  isEmailConflict,
   isEmailTaken,
   isUsernameConflict,
   usernameTakenError,
@@ -24,8 +25,9 @@ import {
  * يحدّث بيانات حساب قائم (للمدير فقط).
  *
  * Update an existing user's account details (admin only).
- * Password/email changes go through the Supabase admin API so they apply to
- * the auth user, not just the profile row.
+ * Password changes go through the platform's GoTrue admin helper, which also
+ * keeps the login keyed on the account's synthetic auth email (research.md
+ * R3); the real address is written to the profile row only, unique per company.
  */
 
 const schema = z.object({
@@ -93,12 +95,13 @@ export const updateAppUser = createServerFn({ method: "POST" })
       phone = await normalisePhoneForSave(data.phone, data.userId, excludeTenantId);
     }
 
-    const authEmail =
-      data.email && data.email.length
-        ? data.email.toLowerCase()
-        : data.username
-          ? `${data.username.toLowerCase()}@users.local`
-          : undefined;
+    /*
+     * The real address belongs in `profiles` only. The login itself is keyed on
+     * the account's synthetic auth email (research.md R3), which the auth
+     * helper below derives from the user id — a sent email only signals that
+     * the account's address changed, and is what the helper replaces.
+     */
+    const realEmail = data.email && data.email.length ? data.email.toLowerCase() : null;
 
     // Before any auth write: a re-link refused by migration 224 after the email
     // or password had already changed would fail the save yet keep the new
@@ -119,7 +122,10 @@ export const updateAppUser = createServerFn({ method: "POST" })
     if (data.username) await assertUsernameAvailable(data.username, data.userId);
 
     const authUpdates: { email?: string; password?: string; user_metadata?: object } = {};
-    if (authEmail) authUpdates.email = authEmail;
+    // The real address goes in here only as the change signal; the helper
+    // converts it into the account's synthetic address before GoTrue sees it,
+    // so no admin edit can leave a real deliverable address as a login.
+    if (realEmail) authUpdates.email = realEmail;
     if (data.password) authUpdates.password = data.password;
     if (data.username || data.displayName) {
       authUpdates.user_metadata = {
@@ -130,7 +136,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
     if (Object.keys(authUpdates).length) {
       const authRes = await updateAuthUserById(data.userId, authUpdates);
       if (authRes.error) {
-        if (authEmail && isEmailTaken(authRes.error)) throw await emailTakenError(authEmail);
+        if (realEmail && isEmailTaken(authRes.error)) throw await emailTakenError(realEmail);
         throw new Error(authErrorMessage(authRes.error, "Failed to update the auth user"));
       }
     }
@@ -138,7 +144,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
     const profileUpdates: TablesUpdate<"profiles"> = {};
     if (data.username) profileUpdates.username = data.username;
     if (data.displayName) profileUpdates.display_name = data.displayName;
-    if (authEmail) profileUpdates.email = authEmail;
+    if (realEmail) profileUpdates.email = realEmail;
     if (phone !== undefined) profileUpdates.phone = phone;
     // `undefined` means the form did not send the field; `null` means the admin
     // cleared the portal link, and only the second should write.
@@ -148,6 +154,11 @@ export const updateAppUser = createServerFn({ method: "POST" })
       if (profileRes.error) {
         if (isUsernameConflict(profileRes.error)) {
           throw usernameTakenError(data.username!);
+        }
+        // A duplicate real address inside the company is refused by
+        // `profiles_company_email_lower_idx`; explained rather than raw.
+        if (realEmail && isEmailConflict(profileRes.error)) {
+          throw await emailTakenError(realEmail);
         }
         // Re-linking to a tenant that already has an account hits migration 224.
         throw new Error(
@@ -235,7 +246,7 @@ export const updateAppUser = createServerFn({ method: "POST" })
       p_after: {
         username: data.username ?? null,
         display_name: data.displayName ?? null,
-        email: authEmail ?? null,
+        email: realEmail ?? null,
         phone: phone ?? null,
         password_changed: Boolean(data.password),
         role: data.role ?? null,

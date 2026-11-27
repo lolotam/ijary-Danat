@@ -50,6 +50,11 @@ export const signInBoundary = {
 /**
  * حامل دالة الخادم الوهمية: يستقبل `createServerFn` استدعاءً واحداً عند تحميل
  * الوحدة ويخزّن المعالج الحقيقي فيها، كما في اختبارات `src/fns` الأخرى.
+ *
+ * One harness per `createServerFn` call, because a module may export more than
+ * one server function (this one exports the sign-in POST and the request
+ * company GET): a shared holder would leave both exports pointing at whichever
+ * handler registered last.
  */
 export const serverFunction = Object.assign(
   (data: unknown) => serverFunction.handler({ data, context: serverFunction.context }),
@@ -61,18 +66,29 @@ export const serverFunction = Object.assign(
 
 /** مصنع `vi.mock("@tanstack/react-start", …)`. */
 export function serverFnModule() {
-  const builder = {
-    handler: (handler: typeof serverFunction.handler) => {
-      serverFunction.handler = handler;
-      return serverFunction;
-    },
-  };
   return {
-    createServerFn: () => ({
-      middleware: () => ({ inputValidator: () => builder, validator: () => builder }),
-      inputValidator: () => builder,
-      validator: () => builder,
-    }),
+    createServerFn: () => {
+      const fn = Object.assign((data: unknown) => fn.handler({ data, context: fn.context }), {
+        context: null as unknown,
+        handler: null as unknown as (input: {
+          data: unknown;
+          context: unknown;
+        }) => Promise<unknown>,
+      });
+      const builder = {
+        handler: (handler: typeof fn.handler) => {
+          fn.handler = handler;
+          return fn;
+        },
+      };
+      return {
+        middleware: () => ({ inputValidator: () => builder, validator: () => builder }),
+        inputValidator: () => builder,
+        validator: () => builder,
+        // GET functions chain `createServerFn(...).handler(...)` directly.
+        handler: builder.handler,
+      };
+    },
     createMiddleware: () => ({ server: (handler: unknown) => handler }),
   };
 }
@@ -92,7 +108,10 @@ export function loginAuditModule() {
 
 /** مصنع `vi.mock("@/company/requestCompany.server", …)`. */
 export function requestCompanyModule() {
-  return { requireRequestCompany: () => signInState.requestCompany };
+  return {
+    requireRequestCompany: () => signInState.requestCompany,
+    getRequestCompany: () => signInState.requestCompany,
+  };
 }
 
 /**

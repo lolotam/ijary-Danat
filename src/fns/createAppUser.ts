@@ -19,6 +19,7 @@ import { requireRole } from "@/fns/requirePermission";
 import {
   assertUsernameAvailable,
   emailTakenError,
+  isEmailConflict,
   isEmailTaken,
   isUsernameConflict,
   usernameTakenError,
@@ -29,9 +30,10 @@ import {
  *
  * Create a managerial user or a tenant portal user.
  *
- * - Uses Supabase admin API so the caller (admin) is not signed in as the new user.
- * - Username is converted to an email of the form `<username>@users.local` to
- *   match the loginIdentifierToEmail() helper used by the sign-in flow.
+ * - Uses the platform's GoTrue admin helper so the caller (admin) is not signed
+ *   in as the new user, and so the login is keyed on the account's synthetic
+ *   auth email (research.md R3) — the supplied `email` is the person's real
+ *   address and is stored on the profile only, unique per company.
  * - For tenant portal accounts, the new profile is linked to `tenant_id` and
  *   the `tenant` role is granted.
  * - For managerial accounts a role is required and granted.
@@ -261,6 +263,12 @@ export const createAppUser = createServerFn({ method: "POST" })
       await deleteAuthUser(userId);
       if (isUsernameConflict(profileRes.error)) {
         throw usernameTakenError(data.username);
+      }
+      // Real addresses are unique per company (migration 255): with the
+      // synthetic auth email carrying the login, the profile write is what
+      // refuses a duplicate inside the company — explained, not raw.
+      if (isEmailConflict(profileRes.error)) {
+        throw await emailTakenError(email);
       }
       throw new Error(
         isTenantAccountConflict(profileRes.error)

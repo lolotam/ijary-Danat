@@ -4,18 +4,40 @@ import { serverCompanyClient } from "@/company/companyClient.server";
 import { userConflictMessage } from "@/lib/userConflicts";
 
 /**
- * يتعرّف على رفض قاعدة البيانات لاسم مستخدم محجوز لحساب آخر.
+ * يتعرّف على رفض قاعدة البيانات لاسم مستخدم محجوز لحساب آخر داخل الشركة.
  *
  * The race fallback for {@link assertUsernameAvailable}: two admins saving the
- * same name at once both pass the pre-check, and `profiles_username_key`
- * refuses the second write. Matched by constraint name so another unique
- * violation on `profiles` (a tenant's second portal account) keeps its own
- * message.
+ * same name at once both pass the pre-check, and the per-company unique
+ * constraint (`profiles_company_username_key`, migration 255) refuses the second
+ * write. Matched by constraint name so another unique violation on `profiles`
+ * (a tenant's second portal account, a duplicate email) keeps its own message.
+ * The pre-255 global name is still matched for the same reason.
  */
 export function isUsernameConflict(
   error: { code?: string; message?: string } | null | undefined,
 ): boolean {
-  return error?.code === "23505" && Boolean(error.message?.includes("profiles_username_key"));
+  if (error?.code !== "23505") return false;
+  return Boolean(
+    error.message?.includes("profiles_company_username_key") ||
+    error.message?.includes("profiles_username_key"),
+  );
+}
+
+/**
+ * يتعرّف على رفض قاعدة البيانات لبريد إلكتروني محجوز لحساب آخر داخل الشركة.
+ *
+ * Real addresses are unique per company (`profiles_company_email_lower_idx`,
+ * migration 255) because they live in `profiles`, not in GoTrue — the synthetic
+ * auth email (R3) can never collide. So the profile write, not the auth call,
+ * is what refuses a duplicate, and it needs its own name match to be explained
+ * rather than surfaced as a raw constraint.
+ */
+export function isEmailConflict(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  return (
+    error?.code === "23505" && Boolean(error.message?.includes("profiles_company_email_lower_idx"))
+  );
 }
 
 /**
@@ -68,7 +90,9 @@ export async function assertUsernameAvailable(
  * يتعرّف على رفض GoTrue لبريد إلكتروني مسجّل مسبقاً لحساب آخر.
  *
  * Newer GoTrue sets `code: "email_exists"`; older builds only say so in the
- * message, so both are accepted.
+ * message, so both are accepted. Kept as the GoTrue-side guard even though the
+ * synthetic auth email (R3) makes a collision near-impossible: {@link isEmailConflict}
+ * is what catches real-address duplicates today, at the profile write.
  */
 export function isEmailTaken(error: Pick<AuthError, "message" | "code">): boolean {
   return error.code === "email_exists" || /already been registered/i.test(error.message);
@@ -77,9 +101,11 @@ export function isEmailTaken(error: Pick<AuthError, "message" | "code">): boolea
 /**
  * يبني خطأ «البريد الإلكتروني مسجّل مسبقاً» ويسمّي صاحبه من جدول profiles.
  *
- * `profiles.email` is not unique (only `auth.users.email` is), so the lookup
- * is best-effort: a failed or empty read still yields the conflict, just
- * without a name.
+ * The lookup reads the company's own profiles only (`serverCompanyClient`
+ * scopes the query), so it can never name an owner from another company.
+ * `profiles.email` is unique per company (migration 255), so the lookup finds
+ * the racing row in the common case; a failed or empty read still yields the
+ * conflict, just without a name.
  */
 export async function emailTakenError(email: string, explicitCompanyId?: string): Promise<Error> {
   const { companyId, client } = serverCompanyClient(explicitCompanyId);

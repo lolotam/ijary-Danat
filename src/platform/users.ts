@@ -395,6 +395,13 @@ export async function platformResetPassword(input: {
     throw new Error(`password update failed: ${updated.error.message}`);
   }
 
+  // A sign-in with the old password between the first revoke and the password
+  // change would open a fresh session; revoking again ends it too.
+  const revokedAgain = await signOutAuthUser(reset.userId);
+  if (revokedAgain.error) {
+    throw new Error(`session revoke failed: ${revokedAgain.error.message}`);
+  }
+
   await writePlatformAudit({
     action: "user.password_reset",
     entity: "user",

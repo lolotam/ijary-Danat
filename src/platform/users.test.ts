@@ -413,5 +413,19 @@ describe("the platform account operations", () => {
       expect(audits).toHaveLength(1);
       expect(JSON.stringify(audits[0].payload)).not.toContain(result.tempPassword);
     });
+
+    // Security review: a sign-in with the old password between the first
+    // revoke and the password change must not survive the reset.
+    it("revokes the sessions again after the password has changed", async () => {
+      installFakeDatabase({ "profiles:select": { data: { id: USER_ID } } });
+
+      await platformResetPassword({ companyId: COMPANY_ID, userId: USER_ID });
+
+      const revokeCalls = mocks.rpc.mock.calls.filter(([name]) => name === "revoke_user_sessions");
+      expect(revokeCalls).toHaveLength(2);
+      const passwordOrder = mocks.updateUserById.mock.invocationCallOrder.at(-1) ?? 0;
+      const lastRevokeOrder = mocks.rpc.mock.invocationCallOrder.at(-1) ?? 0;
+      expect(lastRevokeOrder).toBeGreaterThan(passwordOrder);
+    });
   });
 });

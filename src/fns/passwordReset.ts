@@ -367,10 +367,11 @@ async function verifyCurrentPassword(
       email,
       password: currentPassword,
     });
-    if (!attempt.error && attempt.data.session) {
-      await loginClient.auth.signOut({ scope: "local" });
-      return true;
-    }
+    if (attempt.error || !attempt.data.session) continue;
+    await loginClient.auth.signOut({ scope: "local" });
+    // A profile email or username can name a different GoTrue account whose
+    // password the caller knows; only a sign-in as the caller proves anything.
+    if (attempt.data.user?.id === userId) return true;
   }
   return false;
 }

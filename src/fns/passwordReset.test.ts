@@ -295,7 +295,7 @@ describe("changing the signed-in account's password", () => {
   it("allows a non-forced change when the current password verifies and revokes every session", async () => {
     resetState.profiles[0].must_change_password = false;
     resetBoundary.signInWithPassword.mockResolvedValueOnce({
-      data: { session: { access_token: "verify-jwt" } },
+      data: { session: { access_token: "verify-jwt" }, user: { id: RESET_USER.id } },
       error: null,
     });
     changeOwn.context = { userId: RESET_USER.id, supabase: {} };
@@ -339,6 +339,26 @@ describe("changing the signed-in account's password", () => {
       });
     },
   );
+
+  it("refuses a current password that only signs in to a different account", async () => {
+    // Profile email/username can point at another GoTrue account whose password
+    // the caller knows; that sign-in must not count as proof (security review).
+    resetState.profiles[0].must_change_password = false;
+    resetBoundary.signInWithPassword.mockResolvedValue({
+      data: {
+        session: { access_token: "other-jwt" },
+        user: { id: "77777777-7777-4777-8777-777777777777" },
+      },
+      error: null,
+    });
+    changeOwn.context = { userId: RESET_USER.id, supabase: {} };
+
+    const result = await changeOwn({ currentPassword: "OtherPassw0rd!", password: NEW_PASSWORD });
+
+    expect(result).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
+    expect(resetBoundary.updateAuthUserById).not.toHaveBeenCalled();
+    expect(resetBoundary.signOutAuthUser).not.toHaveBeenCalled();
+  });
 
   it("refuses a foreign-company user without touching the password", async () => {
     const foreignUserId = "66666666-6666-4666-8666-666666666666";

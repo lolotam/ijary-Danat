@@ -257,12 +257,12 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 ### Tests for User Story 5
 
 - [ ] T105 [P] [US5] SQL tests: with a section off `has_permission` is false for every role including `admin`, data is kept, the other company is unaffected, in `src/db/modules/moduleGate.sqltest.ts`
-- [ ] T106 [P] [US5] Test that every permission code in `src/lib/permissions.ts` maps to a section or is marked always-on, in `src/company/modules.test.ts`
+- [x] T106 [P] [US5] Test that every permission code in `src/lib/permissions.ts` maps to a section or is marked always-on, in `src/company/modules.test.ts`
 
 ### Implementation for User Story 5
 
 - [ ] T107 [US5] Write migration `db/migrations/290_company_modules.sql`: `company_modules`, `module_enabled()`, the `has_permission` change, `get_my_modules()` (data-model.md: `company_modules.module_key`; research.md R10)
-- [ ] T108 [US5] Section keys and the permission-to-section map in `src/company/modules.ts`
+- [x] T108 [US5] Section keys and the permission-to-section map in `src/company/modules.ts`
 - [ ] T109 [US5] `platformSetModules` in `src/platform/modules.ts` and `src/components/platform/ModuleSwitches.tsx`
 - [ ] T110 [US5] `myModules` in `src/fns/myModules.ts` and `src/hooks/useModules.ts` (cache at most 60 seconds)
 - [ ] T111 [US5] Build navigation and dashboard from enabled sections in `src/components/admin/AdminSidebar.tsx` and `src/lib/cardRegistry.ts`; add `src/company/requireModule.ts` and call it in the `beforeLoad` of each `src/routes/admin.*.tsx` section route

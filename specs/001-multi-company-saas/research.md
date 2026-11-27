@@ -144,6 +144,8 @@ Custom domains (User Story 13): Cloudflare for SaaS custom hostnames, added by t
 
 **VERIFY**: that a trigger on `storage.objects` is permitted for the owning role in the self-hosted Storage version in use; fallback is server-issued signed upload URLs with the check in the issuing function.
 
+**VERIFY result (T125, 2026-11-27)**: permitted. The migration role creates triggers on `storage.objects` in the Supabase Postgres image the SQL tests run on (the same image family the stack uses, with Storage API `v1.98.8` pinned in `dev-local/docker-compose.yml`). Migration 323 installs `company_storage_limit_insert` and `company_storage_usage_sync`; migration 327 adds `company_storage_limit_update`, because Storage's upsert path rewrites an existing row instead of inserting one. `src/db/limits/limits.sqltest.ts` covers insert, growth by update, shrink, delete and rebuild. The fallback (signed upload URLs) is not needed. One check is left for the staging run (T202): an upload through the Storage API itself past the limit must come back refused with `LIMIT_STORAGE`, and not as an opaque 500, so the screen can show the limit message.
+
 ## R12. File isolation
 
 **Decision**: Every object path in all 14 buckets starts with `companies/<company_id>/`. Storage policies require `(storage.foldername(name))[2] = (select public.current_company_id())::text` for insert, update, delete and for select on private buckets. Public buckets (`branding`, `landing`) keep public read. Paths without the prefix are rejected. Because IJARY starts empty, no file migration is needed.

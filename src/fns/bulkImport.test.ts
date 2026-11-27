@@ -1,5 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+
+/**
+ * عميل Supabase الذي يمرّر companyClient — الحدّ الفاصل الذي يُحاكى هنا.
+ *
+ * The builder is thenable so `await` sees the prepared PostgREST result, and
+ * the RPC records what the import sent to the database.
+ */
+const mocks = vi.hoisted(() => ({
+  /** نتيجة استدعاء `bulk_import_phase6`. */
+  importResult: { data: null, error: null } as { data: unknown; error: unknown },
+  /** الاستدعاءات التي وصلت إلى قاعدة البيانات. */
+  rpcCalls: [] as Array<{ args: unknown; name: string }>,
+  /** نتائج جداول الشركة. */
+  tableResults: {} as Record<string, unknown>,
+}));
+
 // The handler is only reachable with `createServerFn` stubbed; the pure helpers
 // below are unaffected by the stub and keep importing normally.
 vi.mock("@tanstack/react-start", () => {
@@ -18,7 +35,39 @@ vi.mock("@tanstack/react-start", () => {
   };
 });
 
-import { bulkImport, dedupeRowsByCode, ENTITIES_DEDUPED_BY_CODE } from "@/fns/bulkImport";
+vi.mock("@/company/companyClient.server", () => ({
+  companyClient: () => ({
+    from: (table: string) => {
+      const builder: Record<string, unknown> = {};
+      for (const method of ["select", "eq", "maybeSingle"]) {
+        builder[method] = () => builder;
+      }
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(mocks.tableResults[table]).then(resolve);
+      return builder;
+    },
+    rpc: (name: string, args: unknown) => {
+      mocks.rpcCalls.push({ args, name });
+      return Promise.resolve(mocks.importResult);
+    },
+  }),
+}));
+
+vi.mock("@/company/requestCompany.server", () => ({
+  requireRequestCompany: () => ({
+    id: COMPANY_ID,
+    slug: "acme",
+    status: "active",
+    host: "acme.localhost",
+  }),
+}));
+
+import {
+  bulkImport,
+  dedupeRowsByCode,
+  ENTITIES_DEDUPED_BY_CODE,
+  type BulkImportResult,
+} from "@/fns/bulkImport";
 
 describe("dedupeRowsByCode", () => {
   it("imports a tenant once when the CSV repeats it per contract", () => {
@@ -123,5 +172,137 @@ describe("bulkImport permission refusal", () => {
         ...audited,
       }),
     );
+  });
+});
+
+/**
+ * يسجّل رفض دفعة الاستيراد بسبب حد من حدود الشركة (T130).
+ *
+ * `bulk_import_phase6` imports an entity as one statement, so the trigger that
+ * raises `LIMIT_UNITS` aborts the whole batch: the import is all-or-nothing and
+ * the operator has to be told which limit refused it, how many rows were
+ * refused, and what the file would have added.
+ */
+describe("bulkImport limit refusal", () => {
+  /** يجهّز عميل Supabase مزيَّفاً يسمح بالاستيراد ويسجّل ما يصل إلى التدقيق. */
+  function allowImport() {
+    const rpc = vi.fn((name: string) =>
+      name === "has_permission" ? { data: true, error: null } : { data: null, error: null },
+    );
+    (bulkImport as any)._context = { supabase: { rpc }, userId: "test-user-id" };
+    return rpc;
+  }
+
+  /** صفّا وحدة في ملف ينتمي إلى عقار واحد. */
+  const UNIT_ROWS = [
+    { code: "U-1", name: "A", property_code: "P-1" },
+    { code: "U-2", name: "B", property_code: "P-1" },
+  ];
+
+  /** يستدعي استيراد الوحدات عبر دالة الخادم الوهمية. */
+  function importUnits(
+    rows: Array<Record<string, unknown>>,
+    rowNumbers?: number[],
+  ): Promise<BulkImportResult> {
+    const fn = bulkImport as unknown as (input: {
+      entity: string;
+      rows: Array<Record<string, unknown>>;
+      rowNumbers?: number[];
+    }) => Promise<BulkImportResult>;
+    return fn({ entity: "units", rows, rowNumbers });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.importResult = { data: null, error: { code: "P0001", message: "LIMIT_UNITS" } };
+    mocks.rpcCalls = [];
+    mocks.tableResults = {
+      building_categories: { data: [], error: null },
+      buildings: { data: [], error: null },
+      // The ceiling is 10 units and 8 are already there, so 2 still fit.
+      company_limits: { data: { max_units: 10 }, error: null },
+      properties: { data: [{ code: "P-1", id: "prop-1" }], error: null },
+      tenants: { data: [], error: null },
+      units: { count: 8, data: [], error: null },
+    };
+  });
+
+  it.each([
+    [
+      "the units limit",
+      { code: "P0001", message: "LIMIT_UNITS" },
+      { code: "LIMIT_UNITS", i18nKey: "limits.LIMIT_UNITS", unitsAdded: 2, unitsAvailable: 2 },
+    ],
+    [
+      "the staff limit",
+      { code: "P0001", message: "LIMIT_STAFF" },
+      {
+        code: "LIMIT_STAFF",
+        i18nKey: "limits.LIMIT_STAFF",
+        unitsAdded: null,
+        unitsAvailable: null,
+      },
+    ],
+  ])("reports the whole batch as refused when %s refuses it", async (_limit, error, expected) => {
+    mocks.importResult = { data: null, error };
+    allowImport();
+
+    const result = await importUnits(UNIT_ROWS);
+
+    expect(result.inserted).toBe(0);
+    expect(result.limit).toEqual({
+      refusedRows: 2,
+      rows: [
+        { code: "U-1", row: 2 },
+        { code: "U-2", row: 3 },
+      ],
+      ...expected,
+    });
+  });
+
+  it("names the refused rows by their line in the file, not by their place in the batch", async () => {
+    allowImport();
+
+    const result = await importUnits(UNIT_ROWS, [5, 9]);
+
+    expect(result.limit?.rows).toEqual([
+      { code: "U-1", row: 5 },
+      { code: "U-2", row: 9 },
+    ]);
+  });
+
+  it("records the refusal in the audit trail", async () => {
+    const rpc = allowImport();
+
+    await importUnits([UNIT_ROWS[0]]);
+
+    expect(rpc).toHaveBeenCalledWith(
+      "write_audit",
+      expect.objectContaining({ p_error_code: "LIMIT_UNITS", p_result: "failure" }),
+    );
+  });
+
+  it("still fails the import when the database refuses for another reason", async () => {
+    mocks.importResult = { data: null, error: { message: "syntax error at or near insert" } };
+    allowImport();
+
+    await expect(importUnits([UNIT_ROWS[0]])).rejects.toThrow("syntax error");
+  });
+
+  it("imports the rows the database accepted and reports no limit", async () => {
+    mocks.importResult = { data: 2, error: null };
+    allowImport();
+
+    const result = await importUnits(UNIT_ROWS);
+
+    expect(result).toEqual({ errors: [], inserted: 2, limit: null });
+    // The SQL inserts exactly these rows: the resolved unit, with the ids it
+    // resolved its codes into.
+    const sent = (mocks.rpcCalls[0].args as { p_rows: Array<Record<string, unknown>> }).p_rows;
+    expect(sent).toEqual([
+      expect.objectContaining({ code: "U-1", property_id: "prop-1" }),
+      expect.objectContaining({ code: "U-2", property_id: "prop-1" }),
+    ]);
+    expect(sent[0]).not.toHaveProperty("property_code");
   });
 });

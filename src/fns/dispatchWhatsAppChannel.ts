@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { deliverEvolutionNotification, type WhatsAppPacer } from "@/fns/evolutionDelivery";
@@ -8,7 +10,11 @@ import {
   type EnabledConfigs,
   type NotificationIssue,
 } from "@/fns/notificationChannel";
-import type { Tables } from "@/integrations/supabase/database.types";
+import type {
+  Database,
+  NotificationSkipReason,
+  Tables,
+} from "@/integrations/supabase/database.types";
 import { sendWithPostora } from "@/lib/providers/postora";
 import { sendWithTwilio } from "@/lib/providers/twilio";
 import type {
@@ -47,9 +53,10 @@ export function whatsappProvider(configs: EnabledConfigs): Tables<"provider_conf
 /** يقرأ ربط القالب المعتمد لدى المزوّد لرمز القالب المحلي (migration 38) ضمن الشركة. */
 async function loadTemplateMapping(
   templateCode: string | null,
+  db: SupabaseClient<Database>,
 ): Promise<ProviderTemplateMapping | null> {
   if (!templateCode) return null;
-  const result = await companyClient(requireRequestCompany().id)
+  const result = await db
     .from("notification_templates")
     .select(
       "allow_freeform, provider_language_code, provider_param_keys, provider_template_name, twilio_content_sid, twilio_variable_keys",
@@ -63,7 +70,7 @@ async function loadTemplateMapping(
 type WhatsAppSend = { ok: true; value: WhatsAppProviderMessage } | { ok: false; reason: string };
 
 /**
- * مدخلات قناة واتساب: كل ما تحتاجه القناة، ومنظّم الإيقاع اختياري.
+ * مدخلات قناة واتساب: كل ما تحتاجه القناة، ومنظّم الإيقاع وعميل الشركة اختياريان.
  *
  * `pace` is the notify worker's per-connection lock (FR-067). A caller that
  * dispatches outside the notify worker — the notification drain, the manual
@@ -71,7 +78,13 @@ type WhatsAppSend = { ok: true; value: WhatsAppProviderMessage } | { ok: false; 
  * in-process per-connection pacer.
  */
 export interface WhatsAppChannelInput extends ChannelInput {
+  db?: SupabaseClient<Database>;
   pace?: WhatsAppPacer;
+}
+
+/** نتيجة قناة واتساب مع سبب التخطّي المهيكل عند رفض الإرسال بسبب الحصة أو الإعدادات. */
+export interface WhatsAppChannelOutcome extends ChannelOutcome {
+  skipReason?: NotificationSkipReason;
 }
 
 interface WhatsAppSendContext {
@@ -189,10 +202,18 @@ function evolutionMessage(
  * that throws propagates, so `dispatchNotificationRecord` records the row
  * failed with the provider's error code, exactly as before the split.
  */
-export async function sendWhatsAppChannel(input: WhatsAppChannelInput): Promise<ChannelOutcome> {
+export async function sendWhatsAppChannel(
+  input: WhatsAppChannelInput,
+): Promise<WhatsAppChannelOutcome> {
   const { notification, tenant, configs, attachments, senderAddress } = input;
+  const db = input.db ?? companyClient(requireRequestCompany().id);
   const issues: NotificationIssue[] = [];
-  const noSend = (): ChannelOutcome => ({ messageIds: [], issues, provider: null, senderAddress });
+  const noSend = (): WhatsAppChannelOutcome => ({
+    messageIds: [],
+    issues,
+    provider: null,
+    senderAddress,
+  });
   const config = whatsappProvider(configs);
   const waNumber =
     (notification.recipient_address && !notification.recipient_address.includes("@")
@@ -217,7 +238,7 @@ export async function sendWhatsAppChannel(input: WhatsAppChannelInput): Promise<
 
   // The approved provider-side template lives on the notification_templates
   // row, keyed by the local template_code (migration 38).
-  const mapping = await loadTemplateMapping(notification.template_code);
+  const mapping = await loadTemplateMapping(notification.template_code, db);
   const context = { config, mapping, notification, to: waNumber };
   const send =
     config.provider === "twilio"
@@ -233,6 +254,20 @@ export async function sendWhatsAppChannel(input: WhatsAppChannelInput): Promise<
     issues.push({ kind: "failure", message: `WhatsApp not sent: ${send.reason}` });
     return noSend();
   }
+
+  // نحجز من الحصة الشهرية قبل استدعاء المزوّد مباشرةً؛ وإذا فشل الإرسال بعد الحجز
+  // يظل الإرسال محسوباً لأن المزوّد قد يكون أوصل الرسالة فعلاً.
+  // Reserve monthly quota right before calling the provider; a failed send
+  // after reservation stays counted because the provider may have delivered.
+  const quota = await db.rpc("consume_whatsapp_quota");
+  if (quota.error) {
+    throw new Error(`consume_whatsapp_quota: ${quota.error.message}`);
+  }
+  if (quota.data === false) {
+    issues.push({ kind: "skip", message: "WhatsApp skipped: monthly WhatsApp quota reached." });
+    return { ...noSend(), skipReason: "limit_reached" };
+  }
+
   const result =
     config.provider === "twilio"
       ? await sendWithTwilio(send.value)

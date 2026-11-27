@@ -21,6 +21,8 @@ import { limits } from "./ar/limits";
 import { gatewayLaunch } from "./ar/gatewayLaunch";
 import { limitsUi } from "./ar/limitsUi";
 import { platformOverview } from "./ar/platformOverview";
+import { platformOverviewUsage } from "./ar/platformOverviewUsage";
+import { importLimits } from "./ar/importLimits";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -59,4 +61,6 @@ export const ar: Record<string, string> = {
   ...gatewayLaunch,
   ...limitsUi,
   ...platformOverview,
+  ...platformOverviewUsage,
+  ...importLimits,
 };

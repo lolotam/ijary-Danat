@@ -1140,6 +1140,8 @@ export type NotificationRow = {
   scheduled_at: string | null;
   sender_address: string | null;
   sent_at: string | null;
+  /** Migration 328 — سبب تخطّي الإرسال عند `state = 'skipped'`، أو null. */
+  skip_reason: NotificationSkipReason | null;
   state: NotificationState;
   subject: string | null;
   template_code: string | null;
@@ -1147,6 +1149,9 @@ export type NotificationRow = {
   type: NotificationType;
   updated_at: string;
 };
+
+/** Migration 328 — أسباب تخطّي الإشعار (data-model.md: `notifications.skip_reason`). */
+export type NotificationSkipReason = "limit_reached" | "module_disabled" | "company_suspended";
 
 export type ReportScheduleRow = {
   company_id: string;
@@ -2461,6 +2466,18 @@ export interface Database {
           gateway_ok: boolean | null;
           jobs_failed_24h: number;
           notifications_failed_24h: number;
+          /** Migration 329 (FR-074) — المحصّل هذا الشهر بتوقيت الكويت. */
+          collected_this_month: number;
+          units_used: number;
+          units_max: number | null;
+          staff_used: number;
+          staff_max: number | null;
+          whatsapp_used: number;
+          whatsapp_max: number | null;
+          storage_bytes: number;
+          storage_max: number | null;
+          subscription_status: "trial" | "active" | "overdue" | "cancelled" | null;
+          subscription_renewal_date: string | null;
         }[];
       };
       /** Migration 284 — يرفع عدّاد نوع مستند معيّن للشركة الحالية ذرياً ويعيد القيمة التالية. */

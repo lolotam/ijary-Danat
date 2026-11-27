@@ -21,6 +21,8 @@ import { limits } from "./en/limits";
 import { gatewayLaunch } from "./en/gatewayLaunch";
 import { limitsUi } from "./en/limitsUi";
 import { platformOverview } from "./en/platformOverview";
+import { platformOverviewUsage } from "./en/platformOverviewUsage";
+import { importLimits } from "./en/importLimits";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -56,4 +58,6 @@ export const en: Record<string, string> = {
   ...gatewayLaunch,
   ...limitsUi,
   ...platformOverview,
+  ...platformOverviewUsage,
+  ...importLimits,
 };

@@ -48,6 +48,7 @@ const ROW: NotificationWithRelations = {
   scheduled_at: null,
   sender_address: "noreply@example.com",
   sent_at: null,
+  skip_reason: null,
   state: "failed",
   subject: "Invoice due",
   template_code: "due_reminder",

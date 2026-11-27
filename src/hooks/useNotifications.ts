@@ -159,9 +159,11 @@ export function useRetryNotification() {
       // Keep this list and the table's in sync; `needs_review` is deliberately
       // retryable, so narrowing this to failed/skipped would silently strand
       // every row the drain job parks for a human decision.
+      // skip_reason is cleared too: migration 328 only allows it on `skipped`
+      // rows, so a re-queued row that kept it would be refused.
       const reset = await supabase
         .from("notifications")
-        .update({ state: "queued", failure_reason: null, error_code: null })
+        .update({ state: "queued", failure_reason: null, error_code: null, skip_reason: null })
         .eq("id", notification.id)
         .in("state", ["failed", "skipped", "needs_review"])
         .select("id")

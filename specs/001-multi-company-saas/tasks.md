@@ -311,14 +311,14 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Implementation for User Story 7
 
-- [ ] T125 [US7] VERIFY that a trigger on `storage.objects` is allowed in the self-hosted Storage version; record in `specs/001-multi-company-saas/research.md` R11 (fallback: server-issued signed upload URLs)
+- [x] T125 [US7] VERIFY that a trigger on `storage.objects` is allowed in the self-hosted Storage version; record in `specs/001-multi-company-saas/research.md` R11 (fallback: server-issued signed upload URLs)
 - [x] T126 [US7] Write migration `db/migrations/292_company_limits.sql`: `company_limits`, `company_usage_monthly`, `company_storage_usage`, the unit and staff triggers, `storage_within_limit()` (data-model.md: `company_limits.max_units`, `company_limits.max_staff_users`, `company_limits.max_whatsapp_per_month`, `company_limits.max_storage_bytes`)
 - [x] T127 [US7] Map `LIMIT_*` errors to messages in `src/company/limits.ts` and `src/i18n/`
 - [x] T128 [US7] `platformSetLimits` in `src/platform/limits.ts` and `src/components/platform/LimitsPanel.tsx`
-- [ ] T129 [US7] Count and cap WhatsApp sends per month in `src/jobs/handlers/notification.ts`, marking over-limit messages skipped (data-model.md: `notifications.skip_reason`)
-- [ ] T130 [US7] Report rows refused by a limit in `src/jobs/handlers/bulk.ts` (`import.run`)
+- [x] T129 [US7] Count and cap WhatsApp sends per month in `src/jobs/handlers/notification.ts`, marking over-limit messages skipped (data-model.md: `notifications.skip_reason`)
+- [x] T130 [US7] Report rows refused by a limit in `src/jobs/handlers/bulk.ts` (`import.run`)
 - [x] T131 [US7] `companyUsage` in `src/fns/companyUsage.ts` and `src/components/admin/settings/UsageCard.tsx` with the 80% notice
-- [ ] T132 [US7] `usage.rebuild` handler in `src/jobs/handlers/sync.ts`
+- [x] T132 [US7] `usage.rebuild` handler in `src/jobs/handlers/sync.ts`
 - [ ] T133 [US7] Gate: quickstart.md Phase 2 step 8; record SC-009
 
 **Checkpoint**: Plan Phase 2 gate reached; a second real company may be onboarded.

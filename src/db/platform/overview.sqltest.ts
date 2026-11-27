@@ -38,6 +38,17 @@ interface HealthRow {
   gateway_ok: boolean | null;
   jobs_failed_24h: string;
   notifications_failed_24h: string;
+  collected_this_month: string;
+  units_used: string;
+  units_max: number | null;
+  staff_used: string;
+  staff_max: number | null;
+  whatsapp_used: number;
+  whatsapp_max: number | null;
+  storage_bytes: string;
+  storage_max: string | null;
+  subscription_status: string | null;
+  subscription_renewal_date: string | null;
 }
 
 /** وسم يميّز صفوف هذا الاختبار عن غيرها. */
@@ -266,7 +277,9 @@ async function readTotals(client: PoolClient): Promise<TotalsRow> {
 /** يقرأ حالة كل شركة. */
 async function readHealth(client: PoolClient): Promise<HealthRow[]> {
   const { rows } = await client.query<HealthRow>(
-    "select * from public.platform_company_health() order by slug",
+    `select *, subscription_renewal_date::text as subscription_renewal_date
+       from public.platform_company_health()
+      order by slug`,
   );
   return rows;
 }
@@ -371,6 +384,34 @@ async function seedOverviewFixtures(client: PoolClient): Promise<void> {
            connected_number = excluded.connected_number`,
     [HEALTHY_WHATSAPP, healthyId],
   );
+
+  // FR-074: limits, monthly WhatsApp usage, storage usage, and subscriptions.
+  await client.query(
+    `insert into public.company_limits
+       (company_id, max_units, max_staff_users, max_whatsapp_per_month, max_storage_bytes)
+     values ($1, 10, 5, 100, 104857600),
+            ($2, 1, 1, 10, 1024)`,
+    [healthyId, degradedId],
+  );
+  await client.query(
+    `insert into public.company_usage_monthly (company_id, month, whatsapp_sent)
+     values ($1, date_trunc('month', now() at time zone 'Asia/Kuwait')::date, 42),
+            ($2, date_trunc('month', now() at time zone 'Asia/Kuwait')::date, 9)`,
+    [healthyId, degradedId],
+  );
+  await client.query(
+    `insert into public.company_storage_usage (company_id, bytes)
+     values ($1, 2048), ($2, 900)`,
+    [healthyId, degradedId],
+  );
+  await client.query(
+    `insert into public.company_subscriptions
+       (company_id, plan_name, price, period_start, renewal_date, status)
+     values ($1, 'Starter', 50.000, '2026-01-01', '2026-02-01', 'trial'),
+            ($1, 'Pro', 120.000, '2026-02-01', '2027-01-15', 'active'),
+            ($2, 'Starter', 50.000, '2025-12-01', '2026-01-01', 'overdue')`,
+    [healthyId, degradedId],
+  );
 }
 
 describe("the platform overview functions (T184)", () => {
@@ -409,6 +450,17 @@ describe("the platform overview functions (T184)", () => {
       gatewayOk: true,
       jobsFailed: 0,
       notificationsFailed: 0,
+      collectedThisMonth: 100,
+      unitsUsed: 2,
+      unitsMax: 10,
+      staffUsed: 1,
+      staffMax: 5,
+      whatsappUsed: 42,
+      whatsappMax: 100,
+      storageBytes: 2048,
+      storageMax: 104857600,
+      subscriptionStatus: "active",
+      subscriptionRenewalDate: "2027-01-15",
     },
     {
       label: "a company whose WhatsApp number is not the paired one and whose gateway test failed",
@@ -418,6 +470,17 @@ describe("the platform overview functions (T184)", () => {
       gatewayOk: false,
       jobsFailed: 2,
       notificationsFailed: 3,
+      collectedThisMonth: 0,
+      unitsUsed: 1,
+      unitsMax: 1,
+      staffUsed: 1,
+      staffMax: 1,
+      whatsappUsed: 9,
+      whatsappMax: 10,
+      storageBytes: 900,
+      storageMax: 1024,
+      subscriptionStatus: "overdue",
+      subscriptionRenewalDate: "2026-01-01",
     },
     {
       label: "a company with no WhatsApp connection and no gateway",
@@ -427,12 +490,41 @@ describe("the platform overview functions (T184)", () => {
       gatewayOk: null,
       jobsFailed: 0,
       notificationsFailed: 0,
+      collectedThisMonth: 0,
+      unitsUsed: 0,
+      unitsMax: null,
+      staffUsed: 0,
+      staffMax: null,
+      whatsappUsed: 0,
+      whatsappMax: null,
+      storageBytes: 0,
+      storageMax: null,
+      subscriptionStatus: null,
+      subscriptionRenewalDate: null,
     },
   ] as const;
 
   test.each(HEALTH_CASES)(
     "$label is flagged with its own state",
-    async ({ slug, status, whatsappOk, gatewayOk, jobsFailed, notificationsFailed }) => {
+    async ({
+      slug,
+      status,
+      whatsappOk,
+      gatewayOk,
+      jobsFailed,
+      notificationsFailed,
+      collectedThisMonth,
+      unitsUsed,
+      unitsMax,
+      staffUsed,
+      staffMax,
+      whatsappUsed,
+      whatsappMax,
+      storageBytes,
+      storageMax,
+      subscriptionStatus,
+      subscriptionRenewalDate,
+    }) => {
       await withRollback(async (client) => {
         const adminId = await seedAuthUser(client);
         await grantPlatformAdmin(client, adminId);
@@ -450,6 +542,17 @@ describe("the platform overview functions (T184)", () => {
         expect(row!.gateway_ok).toBe(gatewayOk);
         expect(Number(row!.jobs_failed_24h)).toBe(jobsFailed);
         expect(Number(row!.notifications_failed_24h)).toBe(notificationsFailed);
+        expect(Number(row!.collected_this_month)).toBe(collectedThisMonth);
+        expect(Number(row!.units_used)).toBe(unitsUsed);
+        expect(row!.units_max).toBe(unitsMax);
+        expect(Number(row!.staff_used)).toBe(staffUsed);
+        expect(row!.staff_max).toBe(staffMax);
+        expect(row!.whatsapp_used).toBe(whatsappUsed);
+        expect(row!.whatsapp_max).toBe(whatsappMax);
+        expect(Number(row!.storage_bytes)).toBe(storageBytes);
+        expect(row!.storage_max === null ? null : Number(row!.storage_max)).toBe(storageMax);
+        expect(row!.subscription_status).toBe(subscriptionStatus);
+        expect(row!.subscription_renewal_date).toBe(subscriptionRenewalDate);
       });
     },
   );

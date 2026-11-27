@@ -67,8 +67,9 @@ export interface ScheduleDefinition {
  * `company.export` is the nightly backup fan-out — one export per active,
  * unpaused company at 01:50, the crontab's old backup slot.
  *
- * `usage.rebuild` has no row here: the catalogue lists the kind but no work
- * function exists for it yet, so a row would fail permanently.
+ * `usage.rebuild` is the nightly storage-usage rebuild — one rebuild per
+ * active company at 02:30, half an hour after the log retention job it
+ * follows.
  */
 export const SCHEDULES: readonly ScheduleDefinition[] = [
   {
@@ -128,6 +129,20 @@ export const SCHEDULES: readonly ScheduleDefinition[] = [
     kind: "log.retention",
     pattern: "0 2 * * *",
     registryKey: "log-retention",
+    unit: "company",
+    slot: "day",
+  },
+  {
+    // The nightly storage-usage rebuild — the counters are kept in step by the
+    // storage triggers, and this recomputes the total from the stored objects
+    // themselves. 02:30 is free: the 02:00 batch is behind it and the 08:00
+    // platform tick is hours away.
+    //
+    // The key is registry-only: no `cron_jobs` row carries it, so no company
+    // can pause this rebuild and no panel entry promises a cadence for it.
+    kind: "usage.rebuild",
+    pattern: "30 2 * * *",
+    registryKey: "usage-rebuild",
     unit: "company",
     slot: "day",
   },

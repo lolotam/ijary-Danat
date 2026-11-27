@@ -213,6 +213,34 @@ describe("the scheduler's fan-out", () => {
     expect(rows).toHaveLength(1);
   });
 
+  test("the nightly usage rebuild files one row per active company with the day slot key", async () => {
+    const { db, rows } = fakeDatabase({
+      listCompanies: vi.fn().mockResolvedValue([
+        { id: COMPANY_A, status: "active" },
+        { id: COMPANY_B, status: "active" },
+        { id: SUSPENDED_COMPANY, status: "suspended" },
+      ]),
+    });
+
+    const filed = await fanOut(scheduleFor("usage.rebuild"), db, FIRED_AT);
+
+    expect(filed).toBe(2);
+    expect(rows).toEqual([
+      {
+        companyId: COMPANY_A,
+        kind: "usage.rebuild",
+        payload: { date: "2026-11-28" },
+        dedupeKey: `usage.rebuild__${COMPANY_A}__2026-11-28`,
+      },
+      {
+        companyId: COMPANY_B,
+        kind: "usage.rebuild",
+        payload: { date: "2026-11-28" },
+        dedupeKey: `usage.rebuild__${COMPANY_B}__2026-11-28`,
+      },
+    ]);
+  });
+
   test.each(SCHEDULES)(
     "the $kind row carries a payload the catalogue accepts",
     async (schedule) => {
@@ -239,7 +267,14 @@ describe("the scheduler's fan-out", () => {
 
   // The subscription reminder is platform-owned: it never appears on a company's
   // workflow panel, so it has no catalogue entry to agree with.
-  const companyPanelSchedules = SCHEDULES.filter((entry) => entry.unit !== "subscription");
+  //
+  // The usage rebuild is registry-only for the same reason: no `cron_jobs` row
+  // carries its key, so there is no pause switch on a company panel and no
+  // catalogue entry promising a cadence.
+  const registryOnlyKinds = ["usage.rebuild"];
+  const companyPanelSchedules = SCHEDULES.filter(
+    (entry) => entry.unit !== "subscription" && !registryOnlyKinds.includes(entry.kind),
+  );
 
   test.each(companyPanelSchedules)(
     "the $kind cadence is the one the workflow catalogue shows",
@@ -249,4 +284,15 @@ describe("the scheduler's fan-out", () => {
       expect(WORKFLOW_CATALOG[schedule.registryKey]?.schedule).toBe(schedule.pattern);
     },
   );
+
+  test("a registry-only schedule is the one the catalogue does not show", () => {
+    // The exclusion above only holds while the key stays out of the catalogue:
+    // an entry there would put a cadence on a panel that has no switch to
+    // pause it with, and the panel test would no longer cover this row.
+    for (const kind of registryOnlyKinds) {
+      const schedule = SCHEDULES.find((entry) => entry.kind === kind);
+      if (!schedule) throw new Error(`no schedule for ${kind}`);
+      expect(WORKFLOW_CATALOG[schedule.registryKey]).toBeUndefined();
+    }
+  });
 });

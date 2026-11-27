@@ -18,6 +18,7 @@ import type {
   Database,
   Json,
   NotificationProvider,
+  NotificationSkipReason,
   Tables,
 } from "@/integrations/supabase/database.types";
 import type { EmailAttachment } from "@/lib/providers/types";
@@ -229,6 +230,7 @@ async function sendClaimedNotification(
   const messageIds: string[] = [];
   let selectedProvider: NotificationProvider | null = null;
   let senderAddress: string | null = notification.sender_address;
+  let whatsappSkipReason: NotificationSkipReason | undefined;
   const issues: NotificationIssue[] = [];
   const attachments = await loadAttachments(db, notification.payload);
 
@@ -248,6 +250,7 @@ async function sendClaimedNotification(
     if (wantsWhatsApp) {
       const whatsapp = await sendWhatsAppChannel({
         ...channelInput,
+        db,
         senderAddress,
         pace: opts?.pace,
       });
@@ -255,18 +258,21 @@ async function sendClaimedNotification(
       issues.push(...whatsapp.issues);
       selectedProvider = whatsapp.provider ?? selectedProvider;
       senderAddress = whatsapp.senderAddress;
+      whatsappSkipReason = whatsapp.skipReason;
     }
 
     if (!messageIds.length) {
+      const nextState =
+        issues.length > 0 && issues.every((issue) => issue.kind === "skip") ? "skipped" : "failed";
       return updateNotification(db, notification.id, {
         // `every`, not `some`: a batch whose email skipped but whose WhatsApp
         // genuinely failed must stay `failed` so the drain job retries the
         // leg a retry can still deliver. The length guard keeps an empty
         // `issues` recording `failed`, exactly as before.
-        state:
-          issues.length > 0 && issues.every((issue) => issue.kind === "skip")
-            ? "skipped"
-            : "failed",
+        state: nextState,
+        ...(nextState === "skipped" && whatsappSkipReason
+          ? { skip_reason: whatsappSkipReason }
+          : {}),
         failure_reason: issues.map((issue) => issue.message).join(" "),
         retry_count: notification.retry_count + 1,
         sender_address: senderAddress,
@@ -339,7 +345,7 @@ async function failClaimedNotification(
 /**
  * يرسل صف إشعار واحد عبر قناتيه ويسجّل حالته النهائية: مُرسَل، أو متخطّى، أو فاشل.
  *
- * A `sent` or `cancelled` row is returned untouched — no claim, no write.
+ * A `sent`, `skipped`, or `cancelled` row is returned untouched — no claim, no write.
  * Everything else must be claimed first (GR-001): of the drain, the
  * `notification.dispatch` worker and the retry paths, exactly one caller is
  * allowed to send a row, and a caller that loses the claim returns the row as
@@ -361,7 +367,13 @@ export async function dispatchNotificationRecord(
     .single();
   if (notificationResult.error) throw new Error(notificationResult.error.message);
   const notification = notificationResult.data;
-  if (notification.state === "cancelled" || notification.state === "sent") return notification;
+  if (
+    notification.state === "cancelled" ||
+    notification.state === "sent" ||
+    notification.state === "skipped"
+  ) {
+    return notification;
+  }
 
   const claimed = await claimNotificationForDispatch(db, notificationId, companyId);
   if (!claimed) {

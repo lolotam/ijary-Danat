@@ -6,6 +6,7 @@ import type { JobHandler } from "@/worker/runJob";
 
 import { createCompanyExportHandler } from "./syncExport";
 import { createCompanyRestoreHandler } from "./syncRestore";
+import { createUsageRebuildHandler } from "./syncUsage";
 import { createWhatsappAvatarsSyncHandler, createWhatsappHistorySyncHandler } from "./syncWhatsapp";
 
 /**
@@ -75,12 +76,13 @@ export async function loadBackupByJobKey(
 /**
  * يبني معالجات مهام المزامنة والتصدير والاستعادة في `src/jobs/handlers/sync.ts`.
  *
- * Four kinds are claimed here — `company.export`, `company.restore`,
- * `whatsapp.history.sync`, `whatsapp.avatars.sync`. The two other `sync`-queue
- * kinds are deliberately absent: `gmail.sync` and `payment.reconcile` are the
- * cron machinery's own (T076 registered them in `cron.ts`, where their work,
- * pause switches and run records already live), and a second registration here
- * would shadow one of the two — the registry refuses duplicates outright.
+ * Five kinds are claimed here — `company.export`, `company.restore`,
+ * `whatsapp.history.sync`, `whatsapp.avatars.sync`, `usage.rebuild`. The
+ * `sync`-queue kinds that stay out are the cron machinery's own: `gmail.sync`
+ * and `payment.reconcile` are registered in `cron.ts` (T076), where their
+ * work, pause switches and run records already live, and a second
+ * registration here would shadow one of them — the registry refuses
+ * duplicates outright.
  */
 export function createSyncHandlers(): Partial<Record<JobKind, JobHandler>> {
   return {
@@ -88,5 +90,6 @@ export function createSyncHandlers(): Partial<Record<JobKind, JobHandler>> {
     "company.restore": createCompanyRestoreHandler(),
     "whatsapp.history.sync": createWhatsappHistorySyncHandler(),
     "whatsapp.avatars.sync": createWhatsappAvatarsSyncHandler(),
+    "usage.rebuild": createUsageRebuildHandler(),
   };
 }

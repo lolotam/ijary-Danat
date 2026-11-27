@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBulkImport } from "@/hooks/useBulkImport";
+import type { BulkImportLimitRefusal } from "@/fns/bulkImport";
 import { useI18n } from "@/i18n/provider";
 import { parseCsv, type CsvRow } from "@/lib/csv";
 import { canonicalizeCsvRows } from "@/lib/csvHeaders";
@@ -47,9 +48,21 @@ export function CsvImportDialog({
   const [fileName, setFileName] = useState("");
   const [parseError, setParseError] = useState("");
   const [serverErrors, setServerErrors] = useState<ImportValidationError[]>([]);
+  const [limitRefusal, setLimitRefusal] = useState<BulkImportLimitRefusal | null>(null);
   const validation = useMemo(() => validateImportRows(entity, rows), [entity, rows]);
   const headers = useMemo(() => Object.keys(rows[0] ?? {}), [rows]);
-  const invalidRows = new Set(validation.errors.map((error) => error.row));
+  const invalidRows = useMemo(
+    () => new Set(validation.errors.map((error) => error.row)),
+    [validation.errors],
+  );
+  const refusedRows = new Set(limitRefusal?.rows.map((row) => row.row) ?? []);
+  // The server only receives the rows that passed validation, so the line each
+  // row came from travels with it — otherwise a row below an invalid one is
+  // reported against the wrong line of the file.
+  const validRowNumbers = useMemo(
+    () => rows.map((_, index) => index + 2).filter((rowNumber) => !invalidRows.has(rowNumber)),
+    [rows, invalidRows],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -57,6 +70,7 @@ export function CsvImportDialog({
       setFileName("");
       setParseError("");
       setServerErrors([]);
+      setLimitRefusal(null);
     }
   }, [open]);
 
@@ -65,6 +79,7 @@ export function CsvImportDialog({
     setFileName(file.name);
     setParseError("");
     setServerErrors([]);
+    setLimitRefusal(null);
     try {
       // Arabic templates carry translated headers — map them back to the
       // canonical English keys the validators and server import expect.
@@ -82,8 +97,16 @@ export function CsvImportDialog({
       const result = await bulkImport.mutateAsync({
         entity,
         rows: validation.validRows,
+        rowNumbers: validRowNumbers,
       });
       setServerErrors(result.errors);
+      setLimitRefusal(result.limit);
+      if (result.limit) {
+        // A limit refused the whole batch: nothing was imported, so the dialog
+        // stays open with the reason and the rows that were refused.
+        toast.error(t(result.limit.i18nKey));
+        return;
+      }
       toast.success(
         `${result.inserted} ${t("import.rowsImported")} / ${validation.errors.length + result.errors.length} ${t("import.errors")}`,
       );
@@ -123,6 +146,35 @@ export function CsvImportDialog({
           {parseError && <p className="mt-2 text-sm text-destructive">{parseError}</p>}
         </div>
 
+        {limitRefusal ? (
+          <div
+            className="rounded-lg border border-destructive/40 bg-destructive/10 p-4"
+            role="alert"
+          >
+            <p className="font-medium">{t("importLimits.refusedTitle")}</p>
+            <p className="mt-1 text-sm">{t(limitRefusal.i18nKey)}</p>
+            <ul className="mt-2 list-disc space-y-1 ps-5 text-sm">
+              <li>{t("importLimits.nothingImported")}</li>
+              <li>
+                {t("importLimits.refusedRows").replace("{count}", String(limitRefusal.refusedRows))}
+              </li>
+              {limitRefusal.unitsAdded !== null ? (
+                <li>
+                  {t("importLimits.unitsAdded").replace("{count}", String(limitRefusal.unitsAdded))}
+                </li>
+              ) : null}
+              {limitRefusal.unitsAvailable !== null ? (
+                <li>
+                  {t("importLimits.unitsAvailable").replace(
+                    "{count}",
+                    String(limitRefusal.unitsAvailable),
+                  )}
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        ) : null}
+
         {rows.length > 0 && (
           <>
             <div className="flex flex-wrap gap-2">
@@ -151,18 +203,23 @@ export function CsvImportDialog({
                   {rows.map((row, index) => {
                     const rowNumber = index + 2;
                     const error = errors.find((item) => item.row === rowNumber);
+                    const refused = refusedRows.has(rowNumber);
                     return (
                       <TableRow
                         key={rowNumber}
-                        className={invalidRows.has(rowNumber) ? "bg-destructive/10" : ""}
+                        className={invalidRows.has(rowNumber) || refused ? "bg-destructive/10" : ""}
                       >
                         <TableCell>{rowNumber}</TableCell>
                         <TableCell
-                          className={error ? "min-w-64 text-destructive" : "text-emerald-700"}
+                          className={
+                            error || refused ? "min-w-64 text-destructive" : "text-emerald-700"
+                          }
                         >
-                          {error
-                            ? `${error.fields.join(", ")}: ${t("import.invalidValue")}`
-                            : t("import.valid")}
+                          {refused
+                            ? t("importLimits.rowRefused")
+                            : error
+                              ? `${error.fields.join(", ")}: ${t("import.invalidValue")}`
+                              : t("import.valid")}
                         </TableCell>
                         {headers.map((header) => (
                           <TableCell key={header} className="max-w-56 truncate">

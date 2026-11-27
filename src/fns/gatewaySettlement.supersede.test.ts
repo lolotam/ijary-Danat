@@ -21,7 +21,9 @@ import {
 
 const fake = vi.hoisted(() => ({ db: null as FakeDb | null }));
 const notifyPaymentSuccess = vi.hoisted(() => vi.fn());
-const fetchGatewayPaymentStatus = vi.hoisted(() => vi.fn());
+const getPaymentStatus = vi.hoisted(() => vi.fn());
+
+const CONNECTION_ID = "conn-mf-1";
 
 vi.mock("@/company/companyClient.server", () => ({
   companyClient: () => ({
@@ -51,17 +53,24 @@ vi.mock("@/fns/notifyPaymentSuccess", () => ({
 vi.mock("@/lib/suppressedPayments", () => ({
   getSuppressedPaymentIds: async () => new Set<string>(),
 }));
-vi.mock("@/fns/myfatoorahGateway", () => ({
-  gatewayConfigFromEnv: () => ({ apiKey: "k", baseUrl: "https://apitest.myfatoorah.com" }),
-}));
-vi.mock("@/fns/confirmGatewayPayment", async () => {
-  const actual =
-    await vi.importActual<typeof import("./confirmGatewayPayment")>("./confirmGatewayPayment");
+vi.mock("@/gateways/connectionStore.server", async () => {
+  const actual = await vi.importActual<typeof import("@/gateways/connectionStore.server")>(
+    "@/gateways/connectionStore.server",
+  );
   return {
-    paymentOutcome: actual.paymentOutcome,
-    fetchGatewayPaymentStatus: (...args: unknown[]) => fetchGatewayPaymentStatus(...args),
+    GatewayConnectionError: actual.GatewayConnectionError,
+    loadGatewayConnection: async (_db: unknown, id: string) => ({
+      connection: { id, provider: "myfatoorah", mode: "test", credentials: {} },
+    }),
   };
 });
+vi.mock("@/gateways/registry", () => ({
+  gatewayRegistry: {
+    create: () => ({
+      getPaymentStatus: (...args: unknown[]) => getPaymentStatus(...args),
+    }),
+  },
+}));
 
 const { settleGatewayPayment } = await import("@/fns/gatewaySettlement");
 const { reservePaymentRequest } = await import("@/fns/paymentRequestReservation");
@@ -97,6 +106,7 @@ async function issueLink(providerInvoiceId: string, method: "KNET" | "GOOGLE_PAY
     tenantId: "tenant-1",
     userId: "user-1",
     paymentMethod: method,
+    gatewayConnectionId: CONNECTION_ID,
   });
   const row = (fake.db as FakeDb).tables.payment_requests.find(
     (request) => request.id === reservation.request.id,
@@ -248,30 +258,29 @@ describe("a paid link whose invoices were regenerated away", () => {
 });
 
 describe("the reconcile job polls superseded links", () => {
-  /** حالة البوابة لرابط معيّن كما يعيدها GetPaymentStatus. */
-  function gatewayStatus(
-    providerInvoiceId: string,
-    invoiceStatus: string,
-    transactionStatus: string,
-  ) {
+  /** حالة البوابة المطبّعة لرابط معيّن كما يعيدها محوّل الاتصال. */
+  function gatewayStatus(providerInvoiceId: string, outcome: "paid" | "pending" | "failed") {
     return {
       error: null,
-      invoiceId: providerInvoiceId,
-      invoiceStatus,
-      methodRaw: "KNET",
+      method: "knet",
+      outcome,
+      providerInvoiceId,
       providerPaymentId: `PAY-${providerInvoiceId}`,
       raw: {},
-      transactionStatus,
     };
+  }
+
+  /** يجعل البوابة تعيد حالة لكل رابط بحسب معرّف فاتورته لدى المزوّد. */
+  function stubGateway(statusFor: (id: string) => "paid" | "pending" | "failed") {
+    getPaymentStatus.mockImplementation(
+      async ({ providerInvoiceId }: { providerInvoiceId: string }) =>
+        gatewayStatus(providerInvoiceId, statusFor(providerInvoiceId)),
+    );
   }
 
   it("settles a superseded link the gateway reports paid and marks it completed", async () => {
     const { oldId } = await oldAndNewLinks();
-    fetchGatewayPaymentStatus.mockImplementation(async (_config: unknown, id: string) =>
-      id === "MF-OLD"
-        ? gatewayStatus(id, "Paid", "Success")
-        : gatewayStatus(id, "Pending", "Pending"),
-    );
+    stubGateway((id) => (id === "MF-OLD" ? "paid" : "pending"));
 
     const result = await runPaymentReconcileJob();
 
@@ -283,9 +292,7 @@ describe("the reconcile job polls superseded links", () => {
   it("polls a superseded link past the pending window until it settles", async () => {
     const { oldId } = await oldAndNewLinks();
     vi.setSystemTime(new Date(NOW.getTime() + 10 * 24 * 60 * 60 * 1000));
-    fetchGatewayPaymentStatus.mockImplementation(async (_config: unknown, id: string) =>
-      gatewayStatus(id, "Paid", "Success"),
-    );
+    stubGateway(() => "paid");
 
     const result = await runPaymentReconcileJob();
 
@@ -293,19 +300,17 @@ describe("the reconcile job polls superseded links", () => {
     expect(paymentsTotalForRequest(fake.db!, oldId)).toBe(700);
     // The 10-day-old PENDING link is past its abandonment window and not asked about.
     expect(result.count).toBe(1);
-    expect(fetchGatewayPaymentStatus).not.toHaveBeenCalledWith(expect.anything(), "MF-NEW");
+    expect(getPaymentStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({ providerInvoiceId: "MF-NEW" }),
+    );
   });
 
   it.each([
-    ["still unpaid", "Pending", "Pending"],
-    ["failed at the gateway", "Pending", "Failed"],
-  ])("leaves a superseded link that is %s superseded", async (_case, invoiceStatus, txStatus) => {
+    ["still unpaid", "pending"],
+    ["failed at the gateway", "failed"],
+  ] as const)("leaves a superseded link that is %s superseded", async (_case, outcome) => {
     const { oldId, newId } = await oldAndNewLinks();
-    fetchGatewayPaymentStatus.mockImplementation(async (_config: unknown, id: string) =>
-      id === "MF-OLD"
-        ? gatewayStatus(id, invoiceStatus, txStatus)
-        : gatewayStatus(id, "Pending", "Pending"),
-    );
+    stubGateway((id) => (id === "MF-OLD" ? outcome : "pending"));
 
     await runPaymentReconcileJob();
 

@@ -6,104 +6,123 @@ import {
   requireRequestCompany,
   runWithRequestCompany,
 } from "@/company/requestCompany.server";
-import { fetchGatewayPaymentStatus, paymentOutcome } from "@/fns/confirmGatewayPayment";
-import { gatewayConfigFromEnv } from "@/fns/myfatoorahGateway";
-import { normalizeMethod, settleGatewayPayment } from "@/fns/myfatoorahWebhook";
+import { settleGatewayPayment } from "@/fns/gatewaySettlement";
+import { GatewayConnectionError, loadGatewayConnection } from "@/gateways/connectionStore.server";
+import { gatewayRegistry } from "@/gateways/registry";
 import type { Database } from "@/integrations/supabase/database.types";
 
 /**
- * Reconcile payment requests the gateway settled but the app never heard about.
+ * عدد الأيام التي يُستعلم فيها عن طلبات الدفع المعلّقة قبل عدّها مهجورة.
  *
- * Settlement is otherwise reachable only from `confirmGatewayPayment`, which
- * needs an authenticated browser sitting on the portal callback page. A tenant
- * who pays a link without signing in — or who simply closes the tab — leaves the
- * money taken and the invoice unpaid, with no path that ever corrects it. The
- * webhook was meant to be that path and had not fired once in production as of
- * 2026-08-06 (`webhook_events` was empty).
- *
- * So this job is the liveness guarantee for the whole gateway money path, not a
- * convenience. It is idempotent: `settleGatewayPayment` returns immediately for
- * a request already marked completed.
+ * Pending rows keep the window: a link nobody paid in a week should not cost a
+ * gateway round-trip every tick forever. Superseded rows have no window because
+ * their links remain payable at the gateway.
  */
 const RECONCILE_WINDOW_DAYS = 7;
 
-type PendingRequest = {
-  code: string;
-  id: string;
-  provider_invoice_id: string | null;
-  status: string;
-};
-
-/**
- * Ask the gateway about one request and act on the answer.
- *
- * Returns which counter the caller should bump, so the decision about what a
- * gateway status *means* stays here and the tallying stays in the job.
- */
 type ReconcileDb = SupabaseClient<Database>;
 
+interface PendingRequest {
+  code: string;
+  gateway_connection_id: string | null;
+  id: string;
+  provider_invoice_id: string | null;
+  provider_payment_id: string | null;
+  status: string;
+}
+
+type ReconcileOutcome =
+  | { kind: "settled" | "failed" | "unchanged" }
+  | { kind: "skipped"; reason: string };
+
+/**
+ * يستعلم من محوّل الاتصال المسجّل على طلب الدفع عن حالته ويسوّيه عند الدفع.
+ *
+ * Loads the request's own `gateway_connection_id` so an in-flight payment
+ * settles on its original connection even after the company switches gateways;
+ * a missing or deleted connection leaves the request pending and is reported
+ * without ever falling back to another connection.
+ */
 async function reconcileOneRequest(
   db: ReconcileDb,
-  config: ReturnType<typeof gatewayConfigFromEnv>,
+  companyId: string,
   request: PendingRequest,
-): Promise<"settled" | "failed" | "unchanged"> {
-  const status = await fetchGatewayPaymentStatus(config, request.provider_invoice_id as string);
-  const outcome = paymentOutcome(status.invoiceStatus, status.transactionStatus);
+): Promise<ReconcileOutcome> {
+  if (!request.gateway_connection_id) {
+    return { kind: "skipped", reason: `${request.code}: missing gateway_connection_id` };
+  }
 
-  if (outcome === "paid") {
+  let loaded: Awaited<ReturnType<typeof loadGatewayConnection>>;
+  try {
+    loaded = await loadGatewayConnection(db, request.gateway_connection_id);
+  } catch (error) {
+    if (error instanceof GatewayConnectionError && error.code === "CONNECTION_NOT_FOUND") {
+      return { kind: "skipped", reason: `${request.code}: ${error.message}` };
+    }
+    throw error;
+  }
+
+  const gateway = gatewayRegistry.create(loaded.connection);
+  const status = await gateway.getPaymentStatus({
+    providerInvoiceId: request.provider_invoice_id,
+    providerPaymentId: request.provider_payment_id,
+  });
+
+  if (status.outcome === "paid") {
     await settleGatewayPayment(
       {
         eventType: "cron.reconcile",
-        invoiceId: status.invoiceId,
-        method: normalizeMethod(status.methodRaw) ?? "card",
-        paymentId: status.providerPaymentId,
+        invoiceId: status.providerInvoiceId ?? request.provider_invoice_id,
+        method: status.method ?? "card",
+        paymentId: status.providerPaymentId ?? request.provider_payment_id,
         providerEventId: `reconcile:${request.code}`,
-        status: status.invoiceStatus ?? status.transactionStatus ?? "PAID",
+        status: "PAID",
       },
       status.raw,
+      { companyId },
     );
-    return "settled";
+    return { kind: "settled" };
   }
 
   // A superseded link that failed is simply dead; its row stays superseded
   // rather than looking like the selection's current request failed.
-  if (outcome === "failed" && request.status === "pending") {
+  if (status.outcome === "failed" && request.status === "pending") {
     const update = await db
       .from("payment_requests")
       .update({ status: "failed" })
       .eq("id", request.id)
       .eq("status", "pending");
     if (update.error) throw new Error(update.error.message);
-    return "failed";
+    return { kind: "failed" };
   }
 
-  // "pending" means the tenant may still be mid-payment — leave it alone.
-  return "unchanged";
+  // "pending" means the renter may still be mid-payment — leave it alone.
+  return { kind: "unchanged" };
 }
 
 /**
- * يجمع طلبات الدفع التي يجب سؤال البوابة عنها: المعلّقة ضمن النافذة، والمُستبدَلة كلها.
- *
- * Pending rows keep the window: that is their abandonment rule — a link
- * nobody paid in a week should not cost a gateway round-trip every tick
- * forever. Superseded rows have no window: their links stay payable at the
- * gateway, and while the webhook does not settle, this job is the only thing
- * that records a charge on one (migration 223). They are polled until they
- * settle. Fine at today's scale (~22 payment_requests in total); revisit if
- * superseded rows reach the hundreds.
+ * يجمع طلبات الدفع التي يجب سؤال البوابة عنها لشركة محدّدة: المعلّقة ضمن النافذة والمُستبدَلة كلها.
  */
-async function requestsToPoll(db: ReconcileDb, since: string): Promise<PendingRequest[]> {
+async function requestsToPoll(
+  db: ReconcileDb,
+  companyId: string,
+  since: string,
+): Promise<PendingRequest[]> {
+  const columns =
+    "id, code, provider_invoice_id, provider_payment_id, gateway_connection_id, status";
   const [pending, superseded] = await Promise.all([
     db
       .from("payment_requests")
-      .select("id, code, provider_invoice_id, status")
+      .select(columns)
+      .eq("company_id", companyId)
       .eq("status", "pending")
       .not("provider_invoice_id", "is", null)
       .gt("created_at", since)
       .order("created_at"),
     db
       .from("payment_requests")
-      .select("id, code, provider_invoice_id, status")
+      .select(columns)
+      .eq("company_id", companyId)
       .eq("status", "superseded")
       .not("provider_invoice_id", "is", null)
       .order("created_at"),
@@ -114,11 +133,52 @@ async function requestsToPoll(db: ReconcileDb, since: string): Promise<PendingRe
 }
 
 /**
+ * ينفّذ حلقة المطابقة على طلبات شركة واحدة ويسجّل النتيجة في سجل المراجعة.
+ */
+async function executeCompanyReconcile(db: ReconcileDb, companyId: string) {
+  const since = new Date(Date.now() - RECONCILE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const requests = await requestsToPoll(db, companyId, since);
+  const errors: string[] = [];
+  let settled = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const request of requests) {
+    try {
+      const outcome = await reconcileOneRequest(db, companyId, request);
+      if (outcome.kind === "settled") settled += 1;
+      if (outcome.kind === "failed") failed += 1;
+      if (outcome.kind === "skipped") {
+        skipped += 1;
+        errors.push(outcome.reason);
+      }
+    } catch (error) {
+      // One unreachable request must not stop the rest: a gateway blip would
+      // otherwise strand every later request until the next tick.
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${request.code}: ${message}`);
+      console.error("[paymentReconcileJob] request failed", request.code, message);
+    }
+  }
+
+  await db.rpc("write_audit", {
+    p_action: "job.payment_reconcile",
+    p_entity_type: "payment_request",
+    p_entity_id: null,
+    p_before: null,
+    p_after: { count: requests.length, settled, failed, skipped, errors: errors.length },
+    p_result: errors.length ? "failure" : "success",
+    p_error_code: errors.length ? "RECONCILE_PARTIAL_FAILURE" : null,
+  });
+
+  return { count: requests.length, settled, failed, skipped, errors };
+}
+
+/**
  * يسوّي طلبات الدفع المعلّقة التي حُصّلت عبر البوابة لشركة محددة أو لشركة الطلب الحالي.
  *
- * `asOf` is ignored: this job asks the gateway for live transaction status, and
- * there is no such thing as "what did MyFatoorah think last Tuesday". The
- * parameter exists only because the shared JOBS map passes it to every job.
+ * `asOf` is ignored: this job asks each connection's gateway for live status.
+ * The parameter exists because the shared cron signature passes it to every job.
  */
 export async function runPaymentReconcileJob(_asOf: string | null = null, companyId?: string) {
   const activeCompany = getRequestCompany();
@@ -126,44 +186,8 @@ export async function runPaymentReconcileJob(_asOf: string | null = null, compan
   // Payment settlement reconciliation may settle pending links even when suspended.
   const db = companyClient(resolvedCompanyId, { allowSuspended: true });
 
-  const execute = async () => {
-    const config = gatewayConfigFromEnv();
-    const since = new Date(Date.now() - RECONCILE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-
-    const requests = await requestsToPoll(db, since);
-    const errors: string[] = [];
-    let settled = 0;
-    let failed = 0;
-
-    for (const request of requests) {
-      try {
-        const outcome = await reconcileOneRequest(db, config, request);
-        if (outcome === "settled") settled += 1;
-        if (outcome === "failed") failed += 1;
-      } catch (error) {
-        // One unreachable request must not stop the rest: a gateway blip would
-        // otherwise strand every later request until the next tick.
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`${request.code}: ${message}`);
-        console.error("[paymentReconcileJob] request failed", request.code, message);
-      }
-    }
-
-    await db.rpc("write_audit", {
-      p_action: "job.payment_reconcile",
-      p_entity_type: "payment_request",
-      p_entity_id: null,
-      p_before: null,
-      p_after: { count: requests.length, settled, failed, errors: errors.length },
-      p_result: errors.length ? "failure" : "success",
-      p_error_code: errors.length ? "RECONCILE_PARTIAL_FAILURE" : null,
-    });
-
-    return { count: requests.length, settled, failed, errors };
-  };
-
   if (activeCompany?.id === resolvedCompanyId) {
-    return execute();
+    return executeCompanyReconcile(db, resolvedCompanyId);
   }
   return runWithRequestCompany(
     {
@@ -172,6 +196,6 @@ export async function runPaymentReconcileJob(_asOf: string | null = null, compan
       status: "active",
       host: activeCompany?.host ?? "",
     },
-    execute,
+    () => executeCompanyReconcile(db, resolvedCompanyId),
   );
 }

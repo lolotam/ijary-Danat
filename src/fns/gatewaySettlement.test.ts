@@ -6,7 +6,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeDb, type FakeDb } from "@/fns/gatewaySettlementFakeDb.test-support";
-import type { LoadedGatewayConnection } from "@/gateways/connectionStore.server";
+import {
+  GatewayConnectionError,
+  type LoadedGatewayConnection,
+} from "@/gateways/connectionStore.server";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const OLD_CONNECTION_ID = "22222222-2222-4222-8222-222222222222";
@@ -21,7 +24,11 @@ const loadGatewayConnectionMock = vi.hoisted(() => vi.fn());
 const loadActiveGatewayConnectionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-start", () => {
-  const fn: any = (data: unknown) => fn._handler({ data, context: fn._context });
+  const fn: any = (arg: unknown) => {
+    const data =
+      arg && typeof arg === "object" && "data" in arg ? (arg as { data: unknown }).data : arg;
+    return fn._handler({ data, context: fn._context });
+  };
   fn.middleware = vi.fn().mockReturnValue(fn);
   fn.validator = vi.fn().mockReturnValue(fn);
   fn.inputValidator = vi.fn().mockReturnValue(fn);
@@ -75,10 +82,16 @@ vi.mock("@/company/requestCompany.server", () => ({
   runWithRequestCompany: (_company: unknown, fn: () => unknown) => fn(),
 }));
 
-vi.mock("@/gateways/connectionStore.server", () => ({
-  loadGatewayConnection: (...args: unknown[]) => loadGatewayConnectionMock(...args),
-  loadActiveGatewayConnection: (...args: unknown[]) => loadActiveGatewayConnectionMock(...args),
-}));
+vi.mock("@/gateways/connectionStore.server", async () => {
+  const actual = await vi.importActual<typeof import("@/gateways/connectionStore.server")>(
+    "@/gateways/connectionStore.server",
+  );
+  return {
+    GatewayConnectionError: actual.GatewayConnectionError,
+    loadGatewayConnection: (...args: unknown[]) => loadGatewayConnectionMock(...args),
+    loadActiveGatewayConnection: (...args: unknown[]) => loadActiveGatewayConnectionMock(...args),
+  };
+});
 
 vi.mock("@/fns/notifyPaymentSuccess", () => ({
   notifyPaymentSuccess: vi.fn().mockResolvedValue({ ok: true }),
@@ -88,8 +101,8 @@ vi.mock("@/lib/suppressedPayments", () => ({
   getSuppressedPaymentIds: async () => new Set<string>(),
 }));
 
-const { confirmGatewayPayment } = await import("@/fns/confirmGatewayPayment");
-const { settleGatewayPayment } = await import("@/fns/gatewaySettlement");
+const { confirmPaymentReturnPage } = await import("@/fns/paymentReturnPage");
+const { runPaymentReconcileJob } = await import("@/fns/paymentReconcileJob");
 const { createInboundHandlers } = await import("@/jobs/handlers/inbound");
 
 function makeConnection(id: string, apiKey: string, isActive: boolean): LoadedGatewayConnection {
@@ -157,7 +170,7 @@ beforeEach(() => {
   loadGatewayConnectionMock.mockImplementation(async (_db: unknown, id: string) => {
     if (id === OLD_CONNECTION_ID) return oldConn;
     if (id === NEW_CONNECTION_ID) return newConn;
-    throw new Error(`Unknown connection ${id}`);
+    throw new GatewayConnectionError("CONNECTION_NOT_FOUND", `Unknown connection ${id}`);
   });
 });
 
@@ -197,25 +210,14 @@ describe("T138 gateway settlement across paths and connection switches", () => {
     });
 
     // 2) Return page arrives after webhook
-    const returnResult = await (confirmGatewayPayment as any)({
-      paymentRequestCode: "PREQ-0000001",
+    const returnResult = await confirmPaymentReturnPage({
+      data: { paymentRequestCode: "PREQ-0000001", paymentId: "MF-PAY-100" },
     });
-    expect(returnResult).toEqual({ status: "paid", tenantId: TENANT_ID });
+    expect(returnResult).toEqual({ status: "paid", code: "PREQ-0000001" });
 
     // 3) Reconciliation arrives last
-    const reconcileAlreadyCompleted = await settleGatewayPayment(
-      {
-        eventType: "cron.reconcile",
-        invoiceId: "MF-INV-100",
-        method: "knet",
-        paymentId: "MF-PAY-100",
-        providerEventId: "reconcile:PREQ-0000001",
-        status: "Paid",
-      },
-      {},
-      { companyId: COMPANY_ID },
-    );
-    expect(reconcileAlreadyCompleted).toBe(true);
+    const reconcileResult = await runPaymentReconcileJob(null, COMPANY_ID);
+    expect(reconcileResult).toMatchObject({ count: 0, settled: 0, failed: 0, skipped: 0 });
 
     expect(fake.db!.tables.payments).toHaveLength(1);
     expect(fake.db!.tables.payment_allocations).toHaveLength(1);
@@ -253,5 +255,18 @@ describe("T138 gateway settlement across paths and connection switches", () => {
     expect((requestInit.headers as Record<string, string>).Authorization).toBe(
       "Bearer mf_old_connection_key",
     );
+  });
+
+  it("skips a request in reconcile when its recorded connection was deleted", async () => {
+    fake.db!.tables.payment_requests[0].gateway_connection_id =
+      "99999999-9999-4999-8999-999999999999";
+
+    const result = await runPaymentReconcileJob(null, COMPANY_ID);
+
+    expect(result).toMatchObject({ count: 1, settled: 0, failed: 0, skipped: 1 });
+    expect(result.errors[0]).toContain("PREQ-0000001");
+    expect(fake.db!.tables.payment_requests[0].status).toBe("pending");
+    expect(fake.db!.tables.payments).toHaveLength(0);
+    expect(loadActiveGatewayConnectionMock).not.toHaveBeenCalled();
   });
 });

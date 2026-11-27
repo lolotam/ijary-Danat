@@ -337,7 +337,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T135 [P] [US8] Shared adapter contract suite run against every adapter in `src/gateways/contract.test.ts`
 - [x] T136 [P] [US8] SQL tests: one active connection, activation needs a passing test, secrets unreadable by another company and by `authenticated`, in `src/db/gateways/gatewayConnections.sqltest.ts`
 - [x] T137 [P] [US8] Webhook route tests (unknown connection 404, bad signature stored and ignored, duplicate event enqueues nothing) in `src/routes/api/public/webhooks/gateway.test.ts`
-- [ ] T138 [P] [US8] Settlement tests: recorded once by webhook, return page and reconciliation; an in-flight payment settles on its original connection, in `src/fns/gatewaySettlement.test.ts`
+- [x] T138 [P] [US8] Settlement tests: recorded once by webhook, return page and reconciliation; an in-flight payment settles on its original connection, in `src/fns/gatewaySettlement.test.ts`
 
 ### Implementation for User Story 8
 
@@ -348,8 +348,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T143 [US8] MyFatoorah adapter in `src/gateways/myfatoorah.ts`, moved from `src/fns/myfatoorahGateway.ts`
 - [x] T144 [US8] Bind each payment request to its connection and credentials version in `src/fns/createPayment.ts`, `src/fns/confirmGatewayPayment.ts` and `src/fns/gatewaySettlement*.ts`
 - [x] T145 [US8] Webhook route `src/routes/api/public/webhooks/$provider.$connectionId.ts` and the `webhook.process` and `payment.settle` handlers in `src/jobs/handlers/inbound.ts`; delete `src/routes/api/public/myfatoorah-webhook.ts`
-- [ ] T146 [US8] Reconcile per company and connection in `src/fns/paymentReconcileJob.ts`
-- [ ] T147 [US8] Make the return page session-free and company-bound in `src/routes/portal_.payments.callback_.$preq.tsx` (`contracts/webhooks.md`)
+- [x] T146 [US8] Reconcile per company and connection in `src/fns/paymentReconcileJob.ts`
+- [x] T147 [US8] Make the return page session-free and company-bound in `src/routes/portal_.payments.callback_.$preq.tsx` (`contracts/webhooks.md`)
 - [x] T148 [US8] `gatewayList`, `gatewaySaveCredentials`, `gatewayTestConnection`, `gatewayActivate`, `gatewayDeactivate` in `src/fns/gatewaySettings.ts`
 - [ ] T149 [US8] Payment gateway card in `src/components/admin/settings/PaymentGatewayCard.tsx`, shown from `src/routes/admin.settings.integrations.tsx`
 - [ ] T150 [US8] Hide online payment in the portal when no gateway is active, in `src/routes/portal.invoices.tsx` and `src/routes/portal.payments.tsx`

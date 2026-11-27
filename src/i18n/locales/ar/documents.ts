@@ -305,6 +305,7 @@ export const documents: Record<string, string> = {
   "import.chooseFile": "اختر ملف CSV",
   "import.emptyFile": "لا يحتوي الملف على صفوف بيانات.",
   "import.parseError": "تعذرت قراءة ملف CSV.",
+  "import.queued": "أُدرج الاستيراد في قائمة الانتظار وسيُنفَّذ في الخلفية، وسيصلك إشعار بالنتيجة.",
   "import.validation": "التحقق",
   "import.valid": "صحيح",
   "import.invalidValue": "قيمة غير صحيحة أو حقل مطلوب مفقود",

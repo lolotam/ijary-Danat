@@ -2015,6 +2015,37 @@ export interface Database {
         };
         Relationships: [];
       };
+      /** Migration 337 (T069a) — validated import rows staged for `import.run`. */
+      import_batches: {
+        Row: {
+          company_id: string;
+          created_at: string;
+          entity: string;
+          id: string;
+          requested_by: string;
+          row_numbers: Json | null;
+          rows: Json;
+        };
+        Insert: {
+          company_id?: string;
+          created_at?: string;
+          entity: string;
+          id?: string;
+          requested_by: string;
+          row_numbers?: Json | null;
+          rows: Json;
+        };
+        Update: {
+          company_id?: string;
+          created_at?: string;
+          entity?: string;
+          id?: string;
+          requested_by?: string;
+          row_numbers?: Json | null;
+          rows?: Json;
+        };
+        Relationships: [];
+      };
       /** Migration 306 — إشعارات داخل التطبيق لنتيجة مهمة خلفية؛ المستخدم يقرأ إشعاراته ويعلّمها مقروءة فقط. */
       user_notices: {
         Row: {

@@ -313,6 +313,8 @@ export const documents: Record<string, string> = {
   "import.chooseFile": "Choose CSV file",
   "import.emptyFile": "The file contains no data rows.",
   "import.parseError": "The CSV file could not be parsed.",
+  "import.queued":
+    "Import queued. It will run in the background and you will get a notice with the result.",
   "import.validation": "Validation",
   "import.valid": "Valid",
   "import.invalidValue": "Invalid value or missing required field",

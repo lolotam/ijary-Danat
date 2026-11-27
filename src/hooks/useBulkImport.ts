@@ -3,11 +3,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { bulkImportRows } from "@/lib/bulkImport";
 import type { BulkImportInput } from "@/fns/bulkImport";
 
+/**
+ * خطاف React Query لتنفيذ الاستيراد الجماعي وتحديث الكاش عند النتيجة الفورية.
+ */
 export function useBulkImport() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: BulkImportInput) => bulkImportRows(input),
-    onSuccess: (_result, input) => {
+    onSuccess: (result, input) => {
+      if ("queued" in result && result.queued) return;
       queryClient.invalidateQueries({ queryKey: [input.entity] });
       if (["properties", "buildings", "units"].includes(input.entity)) {
         queryClient.invalidateQueries({ queryKey: ["properties"] });

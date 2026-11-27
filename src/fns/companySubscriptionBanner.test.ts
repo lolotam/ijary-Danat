@@ -91,8 +91,11 @@ describe("companySubscriptionBanner (T119)", () => {
       maybeSingle,
     };
     fromMock.mockReturnValue(query);
+    // The server function reads the real clock; pin it so "7 days left" stays true.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
 
-    const result = await companySubscriptionBanner();
+    const result = await companySubscriptionBanner().finally(() => vi.useRealTimers());
 
     expect(fromMock).toHaveBeenCalledWith("company_subscriptions");
     expect(query.order).toHaveBeenCalledWith("period_start", { ascending: false });

@@ -100,6 +100,12 @@ export function CsvImportDialog({
         rowNumbers: validRowNumbers,
       });
       setServerErrors(result.errors);
+      if ("queued" in result && result.queued) {
+        setLimitRefusal(null);
+        toast.success(t("import.queued"));
+        if (!result.errors.length) onOpenChange(false);
+        return;
+      }
       setLimitRefusal(result.limit);
       if (result.limit) {
         // A limit refused the whole batch: nothing was imported, so the dialog

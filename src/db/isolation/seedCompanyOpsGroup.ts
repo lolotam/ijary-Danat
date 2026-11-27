@@ -525,6 +525,13 @@ export async function seedCompanyOpsGroup(
       [cid, adminId],
     );
   }
+  if (colMap.has("import_batches")) {
+    await client.query(
+      `insert into public.import_batches (company_id, entity, rows, requested_by)
+       values ($1, 'units', '[]', $2)`,
+      [cid, adminId],
+    );
+  }
 
   return {
     invoiceId,

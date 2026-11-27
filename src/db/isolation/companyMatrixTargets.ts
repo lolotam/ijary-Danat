@@ -561,6 +561,23 @@ export function buildCompanyMatrixTargets(
     );
   }
 
+  if (colMap.has("import_batches")) {
+    targets.push({
+      table: "import_batches",
+      whereSql: "company_id = $1",
+      whereParams: [cid],
+      updateSetSql: "entity = 'units'",
+      updateParams: [cid],
+      buildCrossCompanyInsert: (foreignCid, cm) =>
+        buildScopedInsert(cm, "import_batches", foreignCid, {
+          company_id: foreignCid,
+          entity: "units",
+          rows: "[]",
+          requested_by: adminId,
+        }),
+    });
+  }
+
   if (colMap.has("password_reset_tokens")) {
     targets.push({
       table: "password_reset_tokens",

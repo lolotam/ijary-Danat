@@ -3,6 +3,7 @@ import type { JobHandler } from "@/worker/runJob";
 
 import { createInvoicesGenerateHandler, createInvoicesRegenerateHandler } from "./bulkInvoices";
 import { createElectricityGenerateHandler } from "./bulkElectricity";
+import { createBulkImportRunHandler } from "./bulkImportRun";
 import { createNotificationBulkHandler } from "./bulkNotification";
 
 /**
@@ -29,11 +30,10 @@ export interface QueuedBulkJob {
  *   and it records its run in the workflow registry the admin panel reads.
  *   A second registration here would shadow that one silently; the registry
  *   now refuses duplicates outright.
- * - `import.run` has no handler yet: its payload can only carry an upload id
- *   (contracts/jobs.md section 1 keeps file contents out of the queue), and
- *   there is no staging table to hold the parsed rows for the worker. Until
- *   one exists, `bulkImport` keeps importing synchronously (the task brief's
- *   own instruction: do not invent a staging table).
+ * - `import.run` is registered here and reads staged rows from `import_batches`
+ *   using `{ uploadId }` from the queue payload (contracts/jobs.md section 1
+ *   keeps file contents out of the queue). It claims the row by deleting it
+ *   before inserting, so a retried job can never import the same rows twice.
  */
 export function createBulkHandlers(): Partial<Record<JobKind, JobHandler>> {
   return {
@@ -41,5 +41,6 @@ export function createBulkHandlers(): Partial<Record<JobKind, JobHandler>> {
     "invoices.generate": createInvoicesGenerateHandler(),
     "invoices.regenerate": createInvoicesRegenerateHandler(),
     "electricity.generate": createElectricityGenerateHandler(),
+    "import.run": createBulkImportRunHandler(),
   };
 }

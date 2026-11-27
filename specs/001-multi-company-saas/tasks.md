@@ -226,13 +226,13 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 
 ### Tests for User Story 4
 
-- [ ] T091 [P] [US4] SQL tests: `is_platform_admin()` needs the row and `aal2`; a super admin reads 0 company rows through RLS; `platform_audit_log` is insert-only, in `src/db/platform/platformAdmin.sqltest.ts`
+- [x] T091 [P] [US4] SQL tests: `is_platform_admin()` needs the row and `aal2`; a super admin reads 0 company rows through RLS; `platform_audit_log` is insert-only, in `src/db/platform/platformAdmin.sqltest.ts`
 - [ ] T092 [P] [US4] Company creation tests (seeds roles, templates, lists, workflows, sections, limits, first admin; `SLUG_TAKEN`, `SLUG_RESERVED`, `SLUG_INVALID`) in `src/platform/companies.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T093 [US4] Write migration `db/migrations/289_platform_admins.sql`: `platform_admins`, full `is_platform_admin()`, `platform_audit_log`, `seed_company_defaults()` (data-model.md: `companies.slug`, `reserved_slugs.slug`; research.md R16)
-- [ ] T094 [US4] Platform audit writer with secret stripping in `src/platform/audit.ts`
+- [x] T093 [US4] Write migration `db/migrations/317_platform_admins.sql`: `platform_admins`, full `is_platform_admin()`, `platform_audit_log`, `seed_company_defaults()` (data-model.md: `companies.slug`, `reserved_slugs.slug`; research.md R16)
+- [x] T094 [US4] Platform audit writer with secret stripping in `src/platform/audit.ts`
 - [ ] T095 [US4] `platformCreateCompany`, `platformListCompanies`, `platformUpdateCompany` in `src/platform/companies.ts`
 - [ ] T096 [US4] `platformListUsers`, `platformCreateUser`, `platformSetUserActive`, `platformResetPassword` in `src/platform/users.ts`
 - [ ] T097 [US4] Super admin layout with guard and forced second-factor enrolment in `src/routes/platform.tsx`, `src/routes/platform.login.tsx`, `src/routes/platform.mfa.tsx`

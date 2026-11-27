@@ -18,6 +18,9 @@ const DEFINER_ALLOWLIST = new Set<string>([
   // Global sign-out after a password reset or change: deletes the GoTrue
   // sessions of one user, executable by service_role only (migration 321).
   "revoke_user_sessions",
+  // Seeds a new company's defaults from platform.default_rows; it names the
+  // company it fills and is executable by service_role only (migration 317).
+  "seed_company_defaults",
   "session_lifetime_for",
   "backup_excluded_tables",
   "backup_protected_tables",

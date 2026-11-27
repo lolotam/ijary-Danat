@@ -887,6 +887,29 @@ export type PaymentRequestRow = {
   credentials_version: number | null;
 };
 
+/** مشرف منصة (ترحيل 317)؛ الصلاحية تحتاج صفاً نشطاً وادعاء `aal2`. */
+export type PlatformAdminRow = {
+  user_id: string;
+  full_name: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+/** سطر في سجل تدقيق المنصة (ترحيل 317)؛ إضافة فقط، لا تعديل ولا حذف. */
+export type PlatformAuditLogRow = {
+  id: string;
+  actor_id: string | null;
+  company_id: string | null;
+  action: string;
+  entity: string;
+  entity_id: string | null;
+  before: Json | null;
+  after: Json | null;
+  ip: string | null;
+  request_id: string | null;
+  created_at: string;
+};
+
 /** حالة قسم واحد لشركة (ترحيل 320)؛ غياب الصف يعني القيمة الافتراضية للقسم. */
 export type CompanyModuleRow = {
   company_id: string;
@@ -1738,6 +1761,8 @@ export interface Database {
       >;
       gateway_connections: TableDefinition<GatewayConnectionRow, "company_id" | "provider">;
       company_modules: TableDefinition<CompanyModuleRow, "company_id" | "module_key" | "enabled">;
+      platform_admins: TableDefinition<PlatformAdminRow, "user_id" | "full_name">;
+      platform_audit_log: TableDefinition<PlatformAuditLogRow, "action" | "entity">;
       profiles: {
         Row: {
           company_id: string | null;
@@ -2645,6 +2670,10 @@ export interface Database {
       has_permission: {
         Args: { _code: string; _user_id: string };
         Returns: boolean;
+      };
+      seed_company_defaults: {
+        Args: { _company_id: string };
+        Returns: undefined;
       };
       revoke_user_sessions: {
         Args: { _user_id: string };

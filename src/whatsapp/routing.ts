@@ -94,12 +94,19 @@ export async function findActiveConnectionByPhoneNumberId(
 
 /**
  * يقرأ ويفك تشفير سرّ التطبيق (`app_secret`) لاتصال واتساب محدّد من جدول `company_secrets`.
+ *
+ * Reads under the company's normal context, without `allowSuspended` (T201 F5).
+ * The secret used to load for a suspended company while the inbound writes
+ * that follow did not, so RLS refused the write, the handler threw, and Meta
+ * redelivered the same event for days. Now a suspended company reads no
+ * secret and the event is dropped with the usual 200, as the Evolution route
+ * already does; `allowSuspended` stays reserved for payment settlement.
  */
 export async function loadMetaAppSecret(
   companyId: string,
   connectionId: string,
 ): Promise<string | null> {
-  const db = companyClient(companyId, { allowSuspended: true });
+  const db = companyClient(companyId);
   const { data, error } = await db
     .from("company_secrets")
     .select("ciphertext, iv, auth_tag, key_version")
@@ -316,7 +323,9 @@ export async function handleMetaWebhookPost(
 
     const appSecret = await loadSecretFn(connection.companyId, connection.id);
     if (!appSecret) {
-      logger.warn(`Meta webhook dropped: no app secret for connection=${connection.id}`);
+      logger.warn(
+        `Meta webhook dropped: no app secret (or company suspended) for connection=${connection.id}`,
+      );
       continue;
     }
 

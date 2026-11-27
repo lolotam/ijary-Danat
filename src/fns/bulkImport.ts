@@ -9,7 +9,7 @@ import {
   type BulkImportLimitRefusal,
   type RefusedImportRow,
 } from "@/fns/bulkImportRun.server";
-import { stageImportBatch } from "@/fns/importBatches.server";
+import { IMPORT_PERMISSION_BY_ENTITY, stageImportBatch } from "@/fns/importBatches.server";
 import { requirePermission } from "@/fns/requirePermission";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { enqueueJob } from "@/jobs/enqueue";
@@ -54,30 +54,25 @@ export interface BulkImportQueuedResult {
 
 export type BulkImportResult = BulkImportImmediateResult | BulkImportQueuedResult;
 
-const permissionByEntity = {
-  expenses: "expenses.create",
-  deposits: "deposits.create",
-  tenants: "tenants.create",
-  properties: "properties.create",
-  buildings: "buildings.create",
-  units: "units.create",
-  maintenance: "maintenance.create",
-  contracts: "contracts.create",
-} as const;
-
 /**
  * يستورد دفعة صفوف عبر التحقق المتزامن ثم التمرحيل في `import_batches` وحجز مهمة `import.run`.
  *
  * Validation runs synchronously so the dialog gets row-level errors right away;
  * when at least one valid row remains, the rows are staged in Postgres (never
  * in the queue payload — contracts/jobs.md section 1) and handed to the worker.
+ *
+ * The request is audited here, through the caller's own client, because only
+ * this client carries who asked (and the impersonating super admin, if any):
+ * the worker runs as `company_service`, whose audit rows have no actor. Its
+ * outcome rows carry `upload_id` and `requested_by` to link back to this one.
+ * The audit runs before the enqueue and throws, so no import runs unaudited.
  */
 export const bulkImport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(schema)
   .handler(async ({ data, context }): Promise<BulkImportResult> => {
     await requirePermission(context, {
-      code: permissionByEntity[data.entity],
+      code: IMPORT_PERMISSION_BY_ENTITY[data.entity],
       attempted: `import.${data.entity}`,
       refusal: `You do not have permission to import ${data.entity}.`,
     });
@@ -97,6 +92,21 @@ export const bulkImport = createServerFn({ method: "POST" })
       rowNumbers: data.rowNumbers,
       requestedBy: context.userId,
     });
+
+    const audit = await context.supabase.rpc("write_audit", {
+      p_action: `${data.entity}.bulk_import_requested`,
+      p_after: {
+        error_count: validated.errors.length,
+        staged_rows: validated.validRows.length,
+        upload_id: batch.id,
+      },
+      p_before: null,
+      p_entity_id: null,
+      p_entity_type: data.entity,
+      p_error_code: null,
+      p_result: "success",
+    });
+    if (audit.error) throw new Error(`Audit write failed: ${audit.error.message}`);
 
     const { jobId } = await enqueueJob(
       db,

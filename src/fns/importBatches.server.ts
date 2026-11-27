@@ -3,6 +3,23 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 import type { ImportEntity } from "@/lib/bulkImportSchemas";
 
+/**
+ * صلاحية الإنشاء المطلوبة لاستيراد كل نوع، يقرؤها `bulkImport` عند الطلب والعامل عند التنفيذ.
+ *
+ * One map for both checks: the worker re-checks the requester at run time, and
+ * two copies would let the request and the run disagree on what an import needs.
+ */
+export const IMPORT_PERMISSION_BY_ENTITY = {
+  expenses: "expenses.create",
+  deposits: "deposits.create",
+  tenants: "tenants.create",
+  properties: "properties.create",
+  buildings: "buildings.create",
+  units: "units.create",
+  maintenance: "maintenance.create",
+  contracts: "contracts.create",
+} as const satisfies Record<ImportEntity, string>;
+
 /** دفعة استيراد مرحَّلة في جدول `import_batches`. */
 export interface ImportBatchRow {
   id: string;

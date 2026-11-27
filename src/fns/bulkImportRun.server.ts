@@ -355,6 +355,16 @@ async function describeLimitRefusal(input: LimitRefusalInput): Promise<BulkImpor
 }
 
 /**
+ * يعيد حقلَي ربط صف التدقيق بطلب الاستيراد: معرّف الدفعة ومَن طلبها.
+ *
+ * The worker's audit rows have no actor (`company_service`), so these fields
+ * tie them to the `bulk_import_requested` row the requester's client wrote.
+ */
+function batchLink(batch: ImportBatchRow): { upload_id: string; requested_by: string } {
+  return { upload_id: batch.id, requested_by: batch.requested_by };
+}
+
+/**
  * يسجّل رفض الاستيراد بسبب حد في سجل التدقيق.
  *
  * The refusal already happened and nothing was imported, so a failed audit write
@@ -363,9 +373,10 @@ async function describeLimitRefusal(input: LimitRefusalInput): Promise<BulkImpor
  */
 async function recordLimitRefusal(
   db: SupabaseClient<Database>,
-  entity: ImportEntity,
+  batch: ImportBatchRow,
   refusal: BulkImportLimitRefusal,
 ): Promise<void> {
+  const entity = batch.entity;
   try {
     const { error } = await db.rpc("write_audit", {
       p_action: `${entity}.bulk_import`,
@@ -375,6 +386,7 @@ async function recordLimitRefusal(
         refused_rows: refusal.refusedRows,
         units_added: refusal.unitsAdded,
         units_available: refusal.unitsAvailable,
+        ...batchLink(batch),
       },
       p_before: null,
       p_entity_id: null,
@@ -424,7 +436,7 @@ export async function runImportBatch(
       db,
       rows: rowsForInsert,
     });
-    await recordLimitRefusal(db, batch.entity, refusal);
+    await recordLimitRefusal(db, batch, refusal);
     return { inserted: 0, errors: resolved.errors, limit: refusal };
   }
 
@@ -432,7 +444,11 @@ export async function runImportBatch(
   // job does not fail after a successful import and invite a second attempt.
   const audit = await db.rpc("write_audit", {
     p_action: `${batch.entity}.bulk_import`,
-    p_after: { error_count: resolved.errors.length, inserted: imported.data },
+    p_after: {
+      error_count: resolved.errors.length,
+      inserted: imported.data,
+      ...batchLink(batch),
+    },
     p_before: null,
     p_entity_id: null,
     p_entity_type: batch.entity,

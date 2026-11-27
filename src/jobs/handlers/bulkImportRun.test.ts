@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   deletedBatchIds: [] as string[],
   auditResult: { data: null, error: null } as { data: unknown; error: unknown },
   importResult: { data: 2, error: null } as { data: unknown; error: unknown },
+  jobRequest: null as { company_id: string; requested_by: string | null } | null,
+  permitted: true,
   rpcCalls: [] as Array<{ args: unknown; name: string }>,
   tableResults: {} as Record<string, unknown>,
 }));
@@ -44,6 +46,13 @@ vi.mock("@/company/companyClient.server", () => ({
           }),
         };
       }
+      if (table === "job_requests") {
+        return {
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: mocks.jobRequest, error: null }) }),
+          }),
+        };
+      }
       const builder: Record<string, unknown> = {};
       for (const method of ["select", "eq", "maybeSingle"]) {
         builder[method] = () => builder;
@@ -56,6 +65,7 @@ vi.mock("@/company/companyClient.server", () => ({
       mocks.rpcCalls.push({ args, name });
       if (name === "bulk_import_phase6") return mocks.importResult;
       if (name === "write_audit") return mocks.auditResult;
+      if (name === "has_permission") return { data: mocks.permitted, error: null };
       return { data: null, error: null };
     },
   }),
@@ -95,6 +105,8 @@ beforeEach(() => {
   mocks.deletedBatchIds = [];
   mocks.auditResult = { data: null, error: null };
   mocks.importResult = { data: 2, error: null };
+  mocks.jobRequest = { company_id: COMPANY_ID, requested_by: REQUESTED_BY };
+  mocks.permitted = true;
   mocks.rpcCalls = [];
   mocks.tableResults = {
     building_categories: { data: [], error: null },
@@ -128,7 +140,7 @@ describe("import.run bulk handler", () => {
       args: expect.objectContaining({
         p_action: "units.bulk_import",
         p_result: "success",
-        p_after: { error_count: 0, inserted: 2 },
+        p_after: { error_count: 0, inserted: 2, upload_id: UPLOAD_ID, requested_by: REQUESTED_BY },
       }),
     });
   });
@@ -203,6 +215,26 @@ describe("import.run bulk handler", () => {
 
     const inserts = mocks.rpcCalls.filter((call) => call.name === "bulk_import_phase6");
     expect(inserts).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      "the requester lost the create permission",
+      () => (mocks.permitted = false),
+      "no longer import",
+    ],
+    [
+      "the job was requested by someone other than the batch owner",
+      () => (mocks.jobRequest = { company_id: COMPANY_ID, requested_by: "someone-else" }),
+      "not requested by the batch's owner",
+    ],
+  ])("refuses without inserting when %s", async (_scenario, arrange, message) => {
+    arrange();
+    const handler = createBulkImportRunHandler();
+
+    await expect(handler(makeContext())).rejects.toThrow(message);
+    expect(mocks.rpcCalls.filter((call) => call.name === "bulk_import_phase6")).toHaveLength(0);
+    expect(mocks.deletedBatchIds).toEqual([UPLOAD_ID]);
   });
 
   it("does not fail the job when the success audit cannot be written after the rows committed", async () => {

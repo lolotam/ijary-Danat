@@ -170,15 +170,20 @@ describe("bulkImport permission refusal", () => {
 });
 
 describe("bulkImport staging and queuing", () => {
-  /** يسمح بالصلاحية ويهيّئ سياق الموظف لإرسال الاستيراد. */
-  function allowImport() {
-    const rpc = vi.fn((name: string) =>
-      name === "has_permission" ? { data: true, error: null } : { data: null, error: null },
-    );
+  /** يسمح بالصلاحية ويهيّئ سياق الموظف لإرسال الاستيراد، مع نتيجة كتابة التدقيق. */
+  function allowImport(
+    auditResult: { data: unknown; error: unknown } = { data: "a1", error: null },
+  ) {
+    const rpc = vi.fn((name: string) => {
+      if (name === "has_permission") return { data: true, error: null };
+      if (name === "write_audit") return auditResult;
+      return { data: null, error: null };
+    });
     (bulkImport as unknown as { _context: unknown })._context = {
       supabase: { rpc },
       userId: "staff-user-1",
     };
+    return rpc;
   }
 
   /** يستدعي دالة الخادم عبر الموك. */
@@ -194,8 +199,8 @@ describe("bulkImport staging and queuing", () => {
     mocks.rpcCalls = [];
   });
 
-  it("stages valid rows, enqueues import.run with uploadId, and returns validation errors", async () => {
-    allowImport();
+  it("stages valid rows, audits the request as the caller, enqueues import.run, and returns validation errors", async () => {
+    const callerRpc = allowImport();
 
     const result = await callImport({
       entity: "units",
@@ -231,6 +236,27 @@ describe("bulkImport staging and queuing", () => {
         },
       },
     ]);
+    expect(callerRpc).toHaveBeenCalledWith("write_audit", {
+      p_action: "units.bulk_import_requested",
+      p_after: { error_count: 1, staged_rows: 1, upload_id: BATCH_ID },
+      p_before: null,
+      p_entity_id: null,
+      p_entity_type: "units",
+      p_error_code: null,
+      p_result: "success",
+    });
+  });
+
+  it("enqueues nothing when the request audit cannot be written", async () => {
+    allowImport({ data: null, error: { message: "audit down" } });
+
+    await expect(
+      callImport({
+        entity: "units",
+        rows: [{ code: "U-1", name: "Unit 1", property_code: "P-1" }],
+      }),
+    ).rejects.toThrow("audit down");
+    expect(mocks.rpcCalls).toHaveLength(0);
   });
 
   it("stages nothing and enqueues no job when no valid row remains", async () => {

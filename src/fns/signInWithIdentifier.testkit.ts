@@ -193,10 +193,16 @@ export function resetSignInFixtures() {
  * Tokens carry the account id so a test can observe *which* account signed in
  * without asserting on mock arguments.
  */
-export function stageAuthAccounts(accounts: Record<string, { userId: string; password: string }>) {
+export function stageAuthAccounts(
+  accounts: Record<string, { userId: string; password: string; banned?: boolean }>,
+) {
   signInBoundary.signInWithPassword.mockImplementation(
     async ({ email, password }: { email: string; password: string }) => {
       const account = accounts[email];
+      // GoTrue answers `user_banned` before it checks the password.
+      if (account?.banned) {
+        return { data: { session: null }, error: { code: "user_banned", message: "banned" } };
+      }
       if (!account || account.password !== password) {
         return { data: { session: null }, error: { message: "Invalid login credentials" } };
       }

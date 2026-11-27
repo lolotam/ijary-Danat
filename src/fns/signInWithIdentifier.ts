@@ -183,7 +183,16 @@ export const signInWithIdentifier = createServerFn({ method: "POST" })
       // `user_banned` to a direct caller whatever this function does. Mirroring it
       // here costs nothing an attacker cannot already obtain, and the alternative is
       // telling a real deactivated tenant their password is wrong.
-      if (attempt.error && (attempt.error as { code?: string }).code === "user_banned") {
+      // Only the resolved account's own address may report deactivation. A
+      // fallback address (`profiles.email`, the legacy mapping) can belong to
+      // another company's GoTrue account; its ban must neither lock this
+      // account out nor tell this person their account is disabled. Banning
+      // goes through `updateAuthUserById`, which writes the synthetic address,
+      // so a banned account of this company always answers on that address.
+      const isResolvedAccount = resolved !== null && email === syntheticAuthEmail(resolved.id);
+      const banned = (attempt.error as { code?: string } | null)?.code === "user_banned";
+      if (banned && !isResolvedAccount) continue;
+      if (banned) {
         await recordFailedLoginAttempt({
           identifier: data.identifier,
           accountId: resolved?.id ?? null,

@@ -16,6 +16,7 @@ vi.mock("@/fns/loginAudit", async () =>
   (await import("./signInWithIdentifier.testkit")).loginAuditModule(),
 );
 
+import { syntheticAuthEmail } from "@/auth/loginIdentity";
 import type { RequestCompany } from "@/company/requestCompany.server";
 import { getPublicRequestCompanyId, signInWithIdentifier } from "./signInWithIdentifier";
 import {
@@ -296,6 +297,28 @@ describe("signInWithIdentifier", () => {
     // so a session of another company leaves nothing signed in behind it.
     expect(signInBoundary.signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(lastAuditInput()).toMatchObject({ accountId: null, result: "failure" });
+  });
+
+  it("another company's banned account on a shared address does not lock this account out", async () => {
+    // Company A's GoTrue account holds the shared real address and is banned;
+    // company B's person signs in on B's host with B's own password. The ban on
+    // the fallback address belongs to someone else and must not be reported.
+    signInState.requestCompany = companyB;
+    stageAuthAccounts({
+      "home@shared.test": { userId: userA, password: "pw-a", banned: true },
+      [syntheticAuthEmail(userB)]: { userId: userB, password: "pw-b" },
+    });
+    signInState.profilesByCompany = {
+      [companyA.id]: [{ id: userA, email: "home@shared.test", is_active: true }],
+      [companyB.id]: [{ id: userB, email: "home@shared.test", is_active: true }],
+    };
+    signInState.phoneRowsByCompany = {};
+
+    const wrong = await callHandler({ identifier: "home@shared.test", password: "nope" });
+    const right = await callHandler({ identifier: "home@shared.test", password: "pw-b" });
+
+    expect(wrong).toEqual({ ok: false, error: "INVALID_CREDENTIALS" });
+    expect(right).toMatchObject({ ok: true, accessToken: `access-${userB}` });
   });
 
   it("a suspended company's host refuses sign-in even with a correct password", async () => {

@@ -53,6 +53,25 @@ vi.mock("@/company/requestCompany.server", () => ({
   }),
 }));
 
+// Every company in this suite has one active MyFatoorah test connection; the
+// connection-binding rules themselves are covered in createPayment.gateway.test.ts.
+vi.mock("@/gateways/connectionStore.server", () => ({
+  loadActiveGatewayConnection: async () => ({
+    id: "connection-123",
+    companyId: "company-123",
+    provider: "myfatoorah",
+    mode: "test",
+    isActive: true,
+    credentialsVersion: 1,
+    connection: {
+      provider: "myfatoorah",
+      mode: "test",
+      credentials: { apiKey: "test-api-key" },
+      publicConfig: {},
+    },
+  }),
+}));
+
 const supabaseAdmin = adminMock;
 import {
   assertPortalMethodEnabled,
@@ -189,6 +208,8 @@ describe("createPayment chronological validation", () => {
         status: "pending",
         payment_url: "https://myfatoorah.com/pay-b",
         created_at: FRESH_CREATED_AT,
+        gateway_connection_id: "connection-123",
+        credentials_version: 1,
         code: "PREQ-CB",
         amount: 200,
       },
@@ -359,6 +380,8 @@ describe("createPayment chronological validation", () => {
         status: "pending",
         payment_url: "https://myfatoorah.com/pay",
         created_at: FRESH_CREATED_AT,
+        gateway_connection_id: "connection-123",
+        credentials_version: 1,
         code: "PAY-1",
         amount: 150,
       },
@@ -460,6 +483,8 @@ describe("createPayment authorization", () => {
         status: "pending",
         payment_url: "https://myfatoorah.com/pay",
         created_at: FRESH_CREATED_AT,
+        gateway_connection_id: "connection-123",
+        credentials_version: 1,
         code: "PAY-2",
         amount: 50,
       },
@@ -598,6 +623,8 @@ describe("createPayment honours a switched payment method", () => {
     status: "pending",
     payment_url: "https://myfatoorah.com/knet-link",
     created_at: FRESH_CREATED_AT,
+    gateway_connection_id: "connection-123",
+    credentials_version: 1,
     code: "PREQ-0000009",
     amount: 50,
     request_payload: { PaymentMethod: "KNET" },
@@ -753,6 +780,8 @@ describe("createPayment enforces the admin's portal payment methods", () => {
         status: "pending",
         payment_url: "https://myfatoorah.com/knet-link",
         created_at: FRESH_CREATED_AT,
+        gateway_connection_id: "connection-123",
+        credentials_version: 1,
         code: "PREQ-1",
         amount: 50,
         request_payload: { PaymentMethod: "KNET" },
@@ -777,6 +806,8 @@ describe("createPayment enforces the admin's portal payment methods", () => {
         status: "pending",
         payment_url: "https://myfatoorah.com/googlepay-link",
         created_at: FRESH_CREATED_AT,
+        gateway_connection_id: "connection-123",
+        credentials_version: 1,
         code: "PREQ-2",
         amount: 50,
         request_payload: { PaymentMethod: "GOOGLE_PAY" },

@@ -5,11 +5,17 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { companyOrigin } from "@/company/companyUrl.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
+import { loadActiveGatewayConnection } from "@/gateways/connectionStore.server";
+import { gatewayRegistry } from "@/gateways/registry";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { Database, Json, Tables } from "@/integrations/supabase/database.types";
+import type {
+  Database,
+  GatewayPaymentMethod,
+  Json,
+  Tables,
+} from "@/integrations/supabase/database.types";
 import { enabledPaymentMethods } from "@/lib/paymentHandoff";
 
-import { gatewayConfigFromEnv, postToGateway, type GatewayConfig } from "./myfatoorahGateway";
 import { roundToFils } from "@/lib/fils";
 import { requirePermission } from "@/fns/requirePermission";
 import { reservePaymentRequest, type InvoiceSelection } from "./paymentRequestReservation";
@@ -52,17 +58,13 @@ export const inputSchema = z.object({
    */
   contractId: z.string().uuid().nullable().optional(),
 });
-const createPaymentResponseSchema = z.object({
-  IsSuccess: z.boolean().optional(),
-  Data: z
-    .object({
-      // The v3 hosted-payment API returns PaymentURL and InvoiceId.
-      InvoiceId: z.union([z.string(), z.number()]).optional(),
-      PaymentURL: z.string().optional(),
-    })
-    .optional(),
-  Message: z.string().nullish(),
-});
+export const NO_ACTIVE_GATEWAY = "NO_ACTIVE_GATEWAY";
+
+const HOSTED_TO_GATEWAY_METHOD: Record<HostedPaymentMethod, GatewayPaymentMethod> = {
+  APPLE_PAY: "applepay",
+  GOOGLE_PAY: "googlepay",
+  KNET: "knet",
+};
 
 type AuthenticatedSupabase = SupabaseClient<Database>;
 
@@ -93,11 +95,9 @@ interface GatewayExecution {
   requestPayload: Json;
 }
 
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value)) as Json;
-}
-
 /**
+ * يستخرج معرّف المستأجر الدافع من الفواتير المختارة فقط، ويرفض أي خلط بين أكثر من مستأجر.
+ *
  * The paying tenant is derived from the selected invoices, never from client
  * input — a caller cannot name a tenant they do not have invoices for. All
  * selected invoices must belong to the same tenant.
@@ -124,6 +124,8 @@ async function tenantIdFromInvoices(
 }
 
 /**
+ * يتحقق من صلاحية المستخدم لدفع فواتير المستأجر: إمّا المستأجر نفسه أو موظف يملك `payment_links.create`.
+ *
  * Authorizes payment for `tenantId`, which is either the caller's own tenant or
  * — for staff holding `payment_links.create` — any tenant. The staff path is
  * what lets an admin complete a payment while previewing a tenant's portal;
@@ -163,6 +165,7 @@ async function tenantPaymentContext(
   return enabledTenantContext(supabase, tenantId, { actingAsStaff: !isOwnTenant });
 }
 
+/** يقرأ سجل المستأجر ويتحقق من تفعيل بوابته ما لم يكن الدافع موظفاً. */
 async function enabledTenantContext(
   supabase: AuthenticatedSupabase,
   tenantId: string,
@@ -291,6 +294,7 @@ async function invoiceSelection(input: {
   };
 }
 
+/** يكتب سجل التدقيق لإنشاء طلب الدفع، ويعلّم الطلب فاشلاً إن تعذّر التدقيق. */
 async function auditPaymentRequest(
   supabase: AuthenticatedSupabase,
   db: AuthenticatedSupabase,
@@ -316,7 +320,7 @@ async function auditPaymentRequest(
 }
 
 /**
- * The MyFatoorah v3 `/v3/payments` request body.
+ * يبني جسم طلب الدفع المستضاف لـ MyFatoorah v3 (`/v3/payments`).
  *
  * Exported so the method-restriction rule is testable without standing up the
  * whole gateway path: whether `PaymentMethod` is present at all is the entire
@@ -345,38 +349,6 @@ export function buildHostedPaymentPayload(input: {
   };
 }
 
-async function createHostedPayment(input: {
-  config: GatewayConfig;
-  paymentRequestCode: string;
-  redirectUrl: string;
-  selection: InvoiceSelection;
-  tenant: Tables<"tenants">;
-  paymentMethod?: HostedPaymentMethod;
-}): Promise<GatewayExecution> {
-  const payload = asJson(
-    buildHostedPaymentPayload({
-      amount: input.selection.total,
-      paymentRequestCode: input.paymentRequestCode,
-      redirectUrl: input.redirectUrl,
-      tenantName: input.tenant.name,
-      tenantId: input.tenant.id,
-      paymentMethod: input.paymentMethod,
-    }),
-  );
-  const responseBody = await postToGateway(input.config, "/v3/payments", payload);
-  const created = createPaymentResponseSchema.parse(responseBody);
-  if (!created.Data?.PaymentURL || created.IsSuccess === false) {
-    throw new Error(created.Message ?? "MyFatoorah did not return a payment URL.");
-  }
-  return {
-    gatewayResponse: responseBody,
-    paymentUrl: created.Data.PaymentURL,
-    providerInvoiceId: created.Data.InvoiceId?.toString() ?? null,
-    providerPaymentId: null,
-    requestPayload: payload,
-  };
-}
-
 /** يعلّم طلب الدفع فاشلاً ويحفظ رسالة الخطأ عبر عميل الشركة. */
 async function failPaymentRequest(
   db: AuthenticatedSupabase,
@@ -389,15 +361,24 @@ async function failPaymentRequest(
     .eq("id", paymentRequestId);
 }
 
-/** يحفظ رابط البوابة ومعرّف الفاتورة الناتج على طلب الدفع عبر عميل الشركة. */
+/** يحفظ رابط البوابة ومعرّف الفاتورة الناتج وربط الاتصال على طلب الدفع عبر عميل الشركة. */
 async function saveGatewayExecution(
   db: AuthenticatedSupabase,
   paymentRequestId: string,
   execution: GatewayExecution,
+  binding: {
+    gateway: "myfatoorah" | "tap" | "upayments";
+    gatewayConnectionId: string;
+    credentialsVersion: number;
+  },
 ) {
   const updateQuery = await db
     .from("payment_requests")
     .update({
+      gateway:
+        binding.gateway as Database["public"]["Tables"]["payment_requests"]["Insert"]["gateway"],
+      gateway_connection_id: binding.gatewayConnectionId,
+      credentials_version: binding.credentialsVersion,
       provider_invoice_id: execution.providerInvoiceId,
       provider_payment_id: execution.providerPaymentId,
       payment_url: execution.paymentUrl,
@@ -413,6 +394,7 @@ async function saveGatewayExecution(
 
 export type CreatePaymentInput = z.infer<typeof inputSchema>;
 
+/** ينشئ طلب دفع ورابط بوابة مرتبطين باتصال البوابة النشط للشركة. */
 export const createPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(inputSchema)
@@ -439,13 +421,19 @@ export const createPayment = createServerFn({ method: "POST" })
         method: requestInput.paymentMethod,
       });
     }
+    const activeConnection = await loadActiveGatewayConnection(db);
+    if (!activeConnection) {
+      throw new Error(
+        `${NO_ACTIVE_GATEWAY}: No active payment gateway is configured for this company.`,
+      );
+    }
+    const gateway = gatewayRegistry.create(activeConnection.connection);
     const selection = await invoiceSelection({
       supabase: context.supabase,
       tenantId: tenantContext.tenant.id,
       invoiceIds: requestInput.invoiceIds,
       contractId: requestInput.contractId,
     });
-    const gatewayConfig = gatewayConfigFromEnv();
     // The renter returns to the host they paid from, so the callback stays on
     // this company's address and its session cookie.
     const appBaseUrl = companyOrigin(company.host);
@@ -455,6 +443,9 @@ export const createPayment = createServerFn({ method: "POST" })
       userId: context.userId,
       selection,
       paymentMethod: requestInput.paymentMethod,
+      gateway: activeConnection.provider,
+      gatewayConnectionId: activeConnection.id,
+      credentialsVersion: activeConnection.credentialsVersion,
     });
     if (reservation.reused) {
       return {
@@ -466,18 +457,24 @@ export const createPayment = createServerFn({ method: "POST" })
     try {
       // MyFatoorah replaces callback query strings, so keep the fallback code in the path.
       const redirectUrl = `${appBaseUrl.replace(/\/$/, "")}/portal/payments/callback/${encodeURIComponent(reservation.request.code)}`;
-      const execution = await createHostedPayment({
-        config: gatewayConfig,
+      const execution = await gateway.createPayment({
+        amount: selection.total,
         paymentRequestCode: reservation.request.code,
         redirectUrl,
-        selection,
-        tenant: tenantContext.tenant,
-        paymentMethod: requestInput.paymentMethod,
+        customerName: tenantContext.tenant.name,
+        customerReference: tenantContext.tenant.id,
+        method: requestInput.paymentMethod
+          ? HOSTED_TO_GATEWAY_METHOD[requestInput.paymentMethod]
+          : undefined,
       });
-      return await saveGatewayExecution(db, reservation.request.id, execution);
+      return await saveGatewayExecution(db, reservation.request.id, execution, {
+        gateway: activeConnection.provider,
+        gatewayConnectionId: activeConnection.id,
+        credentialsVersion: activeConnection.credentialsVersion,
+      });
     } catch (gatewayError) {
       const message =
-        gatewayError instanceof Error ? gatewayError.message : "MyFatoorah request failed.";
+        gatewayError instanceof Error ? gatewayError.message : "Payment gateway request failed.";
       await failPaymentRequest(db, reservation.request.id, message);
       throw new Error(message, { cause: gatewayError });
     }

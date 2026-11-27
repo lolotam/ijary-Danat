@@ -5,16 +5,14 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { requirePermission } from "@/fns/requirePermission";
+import { loadGatewayConnection } from "@/gateways/connectionStore.server";
+import { gatewayRegistry } from "@/gateways/registry";
+import type { GatewayPaymentStatus } from "@/gateways/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/database.types";
 
-import {
-  gatewayConfigFromEnv,
-  getFromGateway,
-  postToGateway,
-  type GatewayConfig,
-} from "./myfatoorahGateway";
-import { normalizeMethod, settleGatewayPayment } from "./myfatoorahWebhook";
+import { getFromGateway, postToGateway, type GatewayConfig } from "./myfatoorahGateway";
+import { settleGatewayPayment } from "./myfatoorahWebhook";
 
 const paymentRefSchema = z
   .string()
@@ -109,6 +107,8 @@ interface NormalizedPaymentStatus {
 }
 
 /**
+ * ينسّق سبب رفض البوابة لمعاملة غير مدفوعة من شكلي v2 وv3.
+ *
  * MyFatoorah reports a decline in two different shapes: v2 gives a flat `Error`
  * string alongside `ErrorCode`, v3 nests `{ Code, Message }`. Either way this is
  * the only place the gateway explains *why* a charge failed — "MF020:
@@ -127,6 +127,8 @@ function formatGatewayError(
 }
 
 /**
+ * يطبع حالتي الفاتورة والمعاملة إلى نتيجة موحّدة (`paid` أو `pending` أو `failed`).
+ *
  * Exported so the reconciliation job classifies gateway status with the same
  * vocabulary the callback uses. Two copies of this list would drift, and the
  * drift would show up as "the portal says paid, the job says pending".
@@ -147,6 +149,7 @@ export function paymentOutcome(invoiceStatus: string | null, transactionStatus: 
   return "pending" as const;
 }
 
+/** يطبّع رد استعلام v2 إلى البنية الموحّدة لحالة الدفعة. */
 function normalizeV2Status(v2Body: unknown, fallbackPaymentId: string): NormalizedPaymentStatus {
   const v2 = v2StatusSchema.parse(v2Body);
   if (v2.IsSuccess === false || !v2.Data) {
@@ -166,6 +169,8 @@ function normalizeV2Status(v2Body: unknown, fallbackPaymentId: string): Normaliz
 }
 
 /**
+ * يستعلم عن حالة الدفعة لدى ماي فاتورة بالترتيب الآمن لبيئة الاختبار (v3 ثم v2).
+ *
  * Resolve gateway payment status for the callback PaymentId.
  *
  * Order of attempts (sandbox-safe):
@@ -233,6 +238,7 @@ export interface ConfirmGatewayPaymentResult {
   tenantId: string;
 }
 
+/** يتحقق من أن المستخدم يملك تأكيد طلب الدفع (صاحب الطلب أو موظف بصلاحية `payment_links.create`). */
 async function authorizePaymentRequest(
   supabase: SupabaseClient<Database>,
   userId: string,
@@ -260,9 +266,63 @@ async function authorizePaymentRequest(
   );
 }
 
+export const LEGACY_UNBOUND_PAYMENT_REQUEST = "LEGACY_UNBOUND_PAYMENT_REQUEST";
+
+interface BoundPaymentRequest {
+  id: string;
+  tenant_id: string;
+  provider_invoice_id: string | null;
+  provider_payment_id: string | null;
+  code: string;
+  gateway_connection_id: string | null;
+  credentials_version: number | null;
+}
+
+const BOUND_PAYMENT_REQUEST_COLUMNS =
+  "id, tenant_id, provider_invoice_id, provider_payment_id, code, gateway_connection_id, credentials_version";
+
 /**
- * يؤكد حالة دفع بوابة MyFatoorah بعد عودة المستأجر إلى صفحة الاستلام،
- * ويسجّل الدفع في الفواتير إن كانت البوابة تقول إنه نجح.
+ * يبحث عن طلب الدفع المرتبط بالمعاملة بالرمز أو بمعرّف الدفعة أو الفاتورة لدى المزوّد.
+ */
+async function findPaymentRequestForConfirmation(
+  db: SupabaseClient<Database>,
+  input: ConfirmGatewayPaymentInput,
+): Promise<BoundPaymentRequest> {
+  if (input.paymentRequestCode) {
+    const preqQuery = await db
+      .from("payment_requests")
+      .select(BOUND_PAYMENT_REQUEST_COLUMNS)
+      .eq("code", input.paymentRequestCode.toUpperCase())
+      .maybeSingle();
+    if (preqQuery.error) throw new Error(preqQuery.error.message);
+    if (preqQuery.data) return preqQuery.data;
+    throw new Error("No payment request matches this payment.");
+  }
+
+  if (input.paymentId) {
+    const byPaymentId = await db
+      .from("payment_requests")
+      .select(BOUND_PAYMENT_REQUEST_COLUMNS)
+      .eq("provider_payment_id", input.paymentId)
+      .maybeSingle();
+    if (byPaymentId.error) throw new Error(byPaymentId.error.message);
+    if (byPaymentId.data) return byPaymentId.data;
+
+    const byInvoiceId = await db
+      .from("payment_requests")
+      .select(BOUND_PAYMENT_REQUEST_COLUMNS)
+      .eq("provider_invoice_id", input.paymentId)
+      .maybeSingle();
+    if (byInvoiceId.error) throw new Error(byInvoiceId.error.message);
+    if (byInvoiceId.data) return byInvoiceId.data;
+  }
+
+  throw new Error("No payment request matches this payment.");
+}
+
+/**
+ * يؤكد حالة دفع بوابة الدفع بعد عودة المستأجر إلى صفحة الاستلام،
+ * باستخدام الاتصال المسجّل على طلب الدفع نفسه، ويسجّل الدفع في الفواتير إن نجح.
  *
  * Every failure path throws an `Error`, never a `Response`. TanStack Start
  * hands a thrown `Response` back to the client as the mutation's SUCCESS
@@ -279,99 +339,63 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
     const company = requireRequestCompany();
     // Settlement path is explicitly allowed to complete in-flight charges even if suspended.
     const db = companyClient(company.id, { allowSuspended: true });
-    const config = gatewayConfigFromEnv();
+    const paymentRequest = await findPaymentRequestForConfirmation(db, requestInput);
+    await authorizePaymentRequest(context.supabase, context.userId, paymentRequest.tenant_id);
 
-    // Optional PREQ-… from our redirect URL — survives PaymentId float corruption.
-    let preqInvoiceId: string | null = null;
-    if (requestInput.paymentRequestCode) {
-      const preqQuery = await db
-        .from("payment_requests")
-        .select("tenant_id, provider_invoice_id, code")
-        .eq("code", requestInput.paymentRequestCode.toUpperCase())
-        .maybeSingle();
-      if (preqQuery.error) throw new Error(preqQuery.error.message);
-      if (!preqQuery.data) {
-        throw new Error("No payment request matches this payment.");
-      }
-      preqInvoiceId = preqQuery.data.provider_invoice_id;
+    if (!paymentRequest.gateway_connection_id) {
+      console.error(
+        "[confirmGatewayPayment] payment request has no bound gateway_connection_id",
+        JSON.stringify({ paymentRequestId: paymentRequest.id, code: paymentRequest.code }),
+      );
+      throw new Error(
+        `${LEGACY_UNBOUND_PAYMENT_REQUEST}: Payment request has no bound gateway connection.`,
+      );
     }
 
-    let status: NormalizedPaymentStatus;
-    try {
-      if (requestInput.paymentId) {
-        status = await fetchGatewayPaymentStatus(config, requestInput.paymentId);
-      } else if (preqInvoiceId) {
-        status = await fetchGatewayPaymentStatus(config, preqInvoiceId);
-      } else {
-        throw new Error("Payment reference is missing.");
-      }
-    } catch (lookupError) {
-      // Corrupted PaymentId (JSON number precision) — recover via PREQ invoice.
-      if (preqInvoiceId && requestInput.paymentId) {
-        console.error(
-          "[confirmGatewayPayment] PaymentId lookup failed, falling back to PREQ invoice",
-          requestInput.paymentId,
-          preqInvoiceId,
-          lookupError instanceof Error ? lookupError.message : lookupError,
-        );
-        status = await fetchGatewayPaymentStatus(config, preqInvoiceId);
-      } else {
-        throw lookupError;
-      }
-    }
+    const loadedConnection = await loadGatewayConnection(db, paymentRequest.gateway_connection_id);
+    const gateway = gatewayRegistry.create(loadedConnection.connection);
 
-    const requestQuery = status.invoiceId
-      ? await db
-          .from("payment_requests")
-          .select("tenant_id")
-          .eq("provider_invoice_id", status.invoiceId)
-          .maybeSingle()
-      : await db
-          .from("payment_requests")
-          .select("tenant_id")
-          .eq("provider_payment_id", status.providerPaymentId)
-          .maybeSingle();
-    if (requestQuery.error) throw new Error(requestQuery.error.message);
-    if (!requestQuery.data) {
-      throw new Error("No payment request matches this payment.");
-    }
-    await authorizePaymentRequest(context.supabase, context.userId, requestQuery.data.tenant_id);
+    const status: GatewayPaymentStatus = await gateway.getPaymentStatus({
+      providerPaymentId: requestInput.paymentId ?? paymentRequest.provider_payment_id,
+      providerInvoiceId: paymentRequest.provider_invoice_id,
+    });
 
-    const outcome = paymentOutcome(status.invoiceStatus, status.transactionStatus);
-    if (outcome !== "paid") {
+    if (status.outcome !== "paid") {
       // The portal can only tell the tenant "the payment did not complete" — it
       // must not leak a gateway code into the UI. Without this line the reason
       // is lost entirely, and telling a broken gateway apart from a tenant who
-      // cancelled costs a live query against MyFatoorah.
+      // cancelled costs a live query against the gateway.
       console.warn(
         "[confirmGatewayPayment] gateway did not report a paid invoice",
         JSON.stringify({
-          outcome,
-          invoiceId: status.invoiceId,
+          outcome: status.outcome,
+          invoiceId: status.providerInvoiceId,
           paymentId: status.providerPaymentId,
-          invoiceStatus: status.invoiceStatus,
-          transactionStatus: status.transactionStatus,
           gatewayError: status.error,
         }),
       );
-      return { status: outcome, tenantId: requestQuery.data.tenant_id };
+      return { status: status.outcome, tenantId: paymentRequest.tenant_id };
     }
 
     // Card / KNET / etc. — never leave method null after a successful charge.
-    const method = normalizeMethod(status.methodRaw) ?? "card";
+    const method = status.method ?? "card";
     const inquiryKey =
-      requestInput.paymentId ?? requestInput.paymentRequestCode ?? status.providerPaymentId;
+      requestInput.paymentId ??
+      requestInput.paymentRequestCode ??
+      status.providerPaymentId ??
+      paymentRequest.code;
     try {
       await settleGatewayPayment(
         {
           eventType: "callback.inquiry",
-          invoiceId: status.invoiceId,
+          invoiceId: status.providerInvoiceId ?? paymentRequest.provider_invoice_id,
           method,
           paymentId: status.providerPaymentId,
           providerEventId: `inquiry:${inquiryKey}`,
-          status: status.invoiceStatus ?? status.transactionStatus ?? "PAID",
+          status: "PAID",
         },
         status.raw,
+        { companyId: company.id },
       );
     } catch (settleError) {
       // Surface a clear log line in Dokploy/docker logs — the portal only shows
@@ -379,7 +403,7 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
       console.error(
         "[confirmGatewayPayment] settle failed",
         inquiryKey,
-        status.invoiceId,
+        status.providerInvoiceId,
         settleError instanceof Error ? settleError.message : settleError,
       );
       // Re-throw the settlement's own Error unchanged so its message (the
@@ -387,5 +411,5 @@ export const confirmGatewayPayment = createServerFn({ method: "POST" })
       // throw is replaced with the generic message.
       throw settleError instanceof Error ? settleError : new Error("Payment settlement failed.");
     }
-    return { status: "paid", tenantId: requestQuery.data.tenant_id };
+    return { status: "paid", tenantId: paymentRequest.tenant_id };
   });

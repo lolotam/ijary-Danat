@@ -75,7 +75,7 @@ describe("isRouteAllowedForHost", () => {
 
   it.each([
     "/api/public",
-    "/api/public/myfatoorah-webhook",
+    "/api/public/webhooks/myfatoorah/00000000-0000-4000-8000-000000000001",
     "/api/public/resend-webhook",
     "/api/public/evolution-webhook",
   ])("public webhook %s stays reachable on an unknown host", (pathname) => {

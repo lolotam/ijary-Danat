@@ -235,12 +235,12 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T094 [US4] Platform audit writer with secret stripping in `src/platform/audit.ts`
 - [x] T095 [US4] `platformCreateCompany`, `platformListCompanies`, `platformUpdateCompany` in `src/platform/companies.ts`
 - [x] T096 [US4] `platformListUsers`, `platformCreateUser`, `platformSetUserActive`, `platformResetPassword` in `src/platform/users.ts`
-- [ ] T097 [US4] Super admin layout with guard and forced second-factor enrolment in `src/routes/platform.tsx`, `src/routes/platform.login.tsx`, `src/routes/platform.mfa.tsx`
+- [x] T097 [US4] Super admin layout with guard and forced second-factor enrolment in `src/routes/platform.tsx`, `src/routes/platform.login.tsx`, `src/routes/platform.mfa.tsx`
 - [ ] T098 [P] [US4] Companies screens: `src/routes/platform.companies.tsx`, `src/routes/platform.companies.$id.tsx`, `src/components/platform/CompaniesTable.tsx`, `src/components/platform/CompanyCreateDialog.tsx`
 - [ ] T099 [P] [US4] Company users panel in `src/components/platform/CompanyUsersPanel.tsx`
-- [ ] T100 [P] [US4] Audit log screen in `src/routes/platform.audit.tsx`
+- [x] T100 [P] [US4] Audit log screen in `src/routes/platform.audit.tsx`
 - [x] T101 [US4] Enforce the first-sign-in password change in `src/routes/admin.tsx` and `src/routes/portal.tsx`
-- [ ] T102 [P] [US4] Bootstrap script for the first super admin in `scripts/create-platform-admin.ts`
+- [x] T102 [P] [US4] Bootstrap script for the first super admin in `scripts/create-platform-admin.ts`
 - [ ] T103 [P] [US4] Arabic and English strings for the super admin panel in `src/i18n/`
 - [ ] T104 [US4] Gate: quickstart.md Phase 2 steps 1, 2 and 11; record SC-002 and SC-015
 
@@ -336,7 +336,7 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T134 [P] [US8] Encryption tests (round trip, wrong key fails, key version, `last4`) in `src/lib/secrets.server.test.ts`
 - [x] T135 [P] [US8] Shared adapter contract suite run against every adapter in `src/gateways/contract.test.ts`
 - [x] T136 [P] [US8] SQL tests: one active connection, activation needs a passing test, secrets unreadable by another company and by `authenticated`, in `src/db/gateways/gatewayConnections.sqltest.ts`
-- [ ] T137 [P] [US8] Webhook route tests (unknown connection 404, bad signature stored and ignored, duplicate event enqueues nothing) in `src/routes/api/public/webhooks/gateway.test.ts`
+- [x] T137 [P] [US8] Webhook route tests (unknown connection 404, bad signature stored and ignored, duplicate event enqueues nothing) in `src/routes/api/public/webhooks/gateway.test.ts`
 - [ ] T138 [P] [US8] Settlement tests: recorded once by webhook, return page and reconciliation; an in-flight payment settles on its original connection, in `src/fns/gatewaySettlement.test.ts`
 
 ### Implementation for User Story 8
@@ -346,8 +346,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T141 [US8] Write migration `db/migrations/319_gateway_connections.sql`: `gateway_connections`, `payment_requests` and `webhook_events` extensions (data-model.md: `gateway_connections.provider`, `gateway_connections.mode`, `gateway_connections.is_active`)
 - [x] T142 [US8] `PaymentGateway` interface and registry in `src/gateways/types.ts` and `src/gateways/registry.ts`
 - [x] T143 [US8] MyFatoorah adapter in `src/gateways/myfatoorah.ts`, moved from `src/fns/myfatoorahGateway.ts`
-- [ ] T144 [US8] Bind each payment request to its connection and credentials version in `src/fns/createPayment.ts`, `src/fns/confirmGatewayPayment.ts` and `src/fns/gatewaySettlement*.ts`
-- [ ] T145 [US8] Webhook route `src/routes/api/public/webhooks/$provider.$connectionId.ts` and the `webhook.process` and `payment.settle` handlers in `src/jobs/handlers/inbound.ts`; delete `src/routes/api/public/myfatoorah-webhook.ts`
+- [x] T144 [US8] Bind each payment request to its connection and credentials version in `src/fns/createPayment.ts`, `src/fns/confirmGatewayPayment.ts` and `src/fns/gatewaySettlement*.ts`
+- [x] T145 [US8] Webhook route `src/routes/api/public/webhooks/$provider.$connectionId.ts` and the `webhook.process` and `payment.settle` handlers in `src/jobs/handlers/inbound.ts`; delete `src/routes/api/public/myfatoorah-webhook.ts`
 - [ ] T146 [US8] Reconcile per company and connection in `src/fns/paymentReconcileJob.ts`
 - [ ] T147 [US8] Make the return page session-free and company-bound in `src/routes/portal_.payments.callback_.$preq.tsx` (`contracts/webhooks.md`)
 - [x] T148 [US8] `gatewayList`, `gatewaySaveCredentials`, `gatewayTestConnection`, `gatewayActivate`, `gatewayDeactivate` in `src/fns/gatewaySettings.ts`

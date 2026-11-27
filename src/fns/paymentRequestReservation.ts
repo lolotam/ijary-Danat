@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
+import type { GatewayProvider } from "@/gateways/types";
 import type { Database, Json, Tables } from "@/integrations/supabase/database.types";
 import { roundToFils } from "@/lib/fils";
 
@@ -52,13 +53,16 @@ export interface InvoiceSelection {
   total: number;
 }
 
-/** ما يحتاجه الحجز: اختيار الفواتير ومن يدفع وبأي طريقة ومعرّف الشركة. */
+/** ما يحتاجه الحجز: اختيار الفواتير ومن يدفع وبأي طريقة ومعرّف الشركة واتصال البوابة. */
 interface ReservationInput {
   companyId?: string;
   selection: InvoiceSelection;
   tenantId: string;
   userId: string;
   paymentMethod?: HostedPaymentMethod;
+  gateway?: GatewayProvider;
+  gatewayConnectionId?: string;
+  credentialsVersion?: number;
 }
 
 /** نتيجة الحجز: الصف المستخدم، وهل رابطه القائم صالح لإعادة الاستخدام. */
@@ -134,7 +138,13 @@ function reuseOrRefuse(row: Tables<"payment_requests">, input: ReservationInput)
     return null;
   }
   const sameMethod = pinnedPaymentMethod(row.request_payload) === input.paymentMethod;
-  return sameCharge && sameMethod && fresh ? { request: row, reused: true } : null;
+  const sameConnection =
+    !input.gatewayConnectionId ||
+    (row.gateway_connection_id === input.gatewayConnectionId &&
+      row.credentials_version === input.credentialsVersion);
+  return sameCharge && sameMethod && sameConnection && fresh
+    ? { request: row, reused: true }
+    : null;
 }
 
 /**
@@ -181,6 +191,16 @@ function insertRequest(
       requested_invoice_ids: input.selection.invoiceIds,
       idempotency_key: requestKey,
       created_by: input.userId,
+      ...(input.gateway
+        ? {
+            gateway:
+              input.gateway as Database["public"]["Tables"]["payment_requests"]["Insert"]["gateway"],
+          }
+        : {}),
+      ...(input.gatewayConnectionId ? { gateway_connection_id: input.gatewayConnectionId } : {}),
+      ...(input.credentialsVersion !== undefined
+        ? { credentials_version: input.credentialsVersion }
+        : {}),
       request_payload: {
         invoice_ids: input.selection.invoiceIds,
         amount: input.selection.total,

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { postToGatewayMock, getFromGatewayMock, settleGatewayPaymentMock, adminMaybeSingle } =
+const { fetchMock, settleGatewayPaymentMock, adminMaybeSingle, loadGatewayConnectionMock } =
   vi.hoisted(() => ({
-    postToGatewayMock: vi.fn(),
-    getFromGatewayMock: vi.fn(),
+    fetchMock: vi.fn(),
     settleGatewayPaymentMock: vi.fn().mockResolvedValue(undefined),
     adminMaybeSingle: vi.fn(),
+    loadGatewayConnectionMock: vi.fn(),
   }));
 
 // Mock createServerFn before importing the module under test
@@ -54,10 +54,8 @@ vi.mock("@/company/requestCompany.server", () => ({
   }),
 }));
 
-vi.mock("./myfatoorahGateway", () => ({
-  gatewayConfigFromEnv: () => ({ apiKey: "test-key", baseUrl: "https://example.test" }),
-  postToGateway: (...args: unknown[]) => postToGatewayMock(...args),
-  getFromGateway: (...args: unknown[]) => getFromGatewayMock(...args),
+vi.mock("@/gateways/connectionStore.server", () => ({
+  loadGatewayConnection: (...args: unknown[]) => loadGatewayConnectionMock(...args),
 }));
 
 vi.mock("./myfatoorahWebhook", async () => {
@@ -112,44 +110,77 @@ function runHandler(
   });
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(typeof body === "string" ? body : JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function boundPaymentRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "preq-1",
+    code: "PREQ-0000001",
+    tenant_id: mockTenantId,
+    gateway_connection_id: "conn-1",
+    credentials_version: 1,
+    provider_invoice_id: null,
+    provider_payment_id: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
-  process.env.MYFATOORAH_API_KEY = "test-api-key";
-  process.env.APP_BASE_URL = "https://example.test";
-  postToGatewayMock.mockReset();
-  getFromGatewayMock.mockReset();
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
   settleGatewayPaymentMock.mockClear();
   adminMaybeSingle.mockReset();
+  loadGatewayConnectionMock.mockReset().mockResolvedValue({
+    id: "conn-1",
+    companyId: "company-1",
+    provider: "myfatoorah",
+    mode: "test",
+    isActive: true,
+    credentialsVersion: 1,
+    connection: {
+      provider: "myfatoorah",
+      mode: "test",
+      credentials: { apiKey: "test-key" },
+      publicConfig: {},
+    },
+  });
 });
 
 afterEach(() => {
-  delete process.env.MYFATOORAH_API_KEY;
-  delete process.env.APP_BASE_URL;
+  vi.unstubAllGlobals();
 });
 
 describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
   it("prefers GET /v3/payments/{paymentId} when the nested hosted-page shape is returned", async () => {
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "987654", Status: "PAID" },
-        Transaction: {
-          Status: "SUCCESS",
-          PaymentMethod: "KNET",
-          PaymentId: "MF-PAY-1",
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          Invoice: { Id: "987654", Status: "PAID" },
+          Transaction: {
+            Status: "SUCCESS",
+            PaymentMethod: "KNET",
+            PaymentId: "MF-PAY-1",
+          },
         },
-      },
-    });
+      }),
+    );
 
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     const result = await runHandler({ paymentId: "MF-PAY-1" });
 
     expect(result).toEqual({ status: "paid", tenantId: mockTenantId });
-    expect(getFromGatewayMock).toHaveBeenCalledWith(
-      { apiKey: "test-key", baseUrl: "https://example.test" },
-      "/v3/payments/MF-PAY-1",
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://apitest.myfatoorah.com/v3/payments/MF-PAY-1",
+      expect.objectContaining({ method: "GET" }),
     );
-    expect(postToGatewayMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(settleGatewayPaymentMock).toHaveBeenCalledTimes(1);
     const [details] = settleGatewayPaymentMock.mock.calls[0];
     expect(details).toMatchObject({
@@ -162,103 +193,113 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
   });
 
   it("falls back to POST /v2/GetPaymentStatus when v3 is unavailable (apitest)", async () => {
-    getFromGatewayMock.mockRejectedValueOnce(new Error("MyFatoorah request failed (404)"));
-    postToGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        InvoiceId: 987654,
-        InvoiceStatus: "Paid",
-        InvoiceTransactions: [
-          {
-            TransactionStatus: "Succss",
-            PaymentGateway: "KNET",
-            PaymentId: "MF-PAY-1",
-          },
-        ],
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
-
-    const result = await runHandler({ paymentId: "MF-PAY-1" });
-
-    expect(result).toEqual({ status: "paid", tenantId: mockTenantId });
-    expect(postToGatewayMock).toHaveBeenCalledWith(
-      { apiKey: "test-key", baseUrl: "https://example.test" },
-      "/v2/GetPaymentStatus",
-      { Key: "MF-PAY-1", KeyType: "PaymentId" },
-    );
-    expect(settleGatewayPaymentMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("falls back to KeyType InvoiceId when PaymentId inquiry fails", async () => {
-    getFromGatewayMock.mockRejectedValueOnce(new Error("404"));
-    postToGatewayMock
-      .mockRejectedValueOnce(new Error("MyFatoorah request failed (400): no match"))
-      .mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(jsonResponse("Not Found", 404)).mockResolvedValueOnce(
+      jsonResponse({
         IsSuccess: true,
         Data: {
-          InvoiceId: 6990573,
+          InvoiceId: 987654,
           InvoiceStatus: "Paid",
           InvoiceTransactions: [
             {
               TransactionStatus: "Succss",
               PaymentGateway: "KNET",
-              PaymentId: "100620210000000064",
+              PaymentId: "MF-PAY-1",
             },
           ],
         },
-      });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
+
+    const result = await runHandler({ paymentId: "MF-PAY-1" });
+
+    expect(result).toEqual({ status: "paid", tenantId: mockTenantId });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://apitest.myfatoorah.com/v2/GetPaymentStatus",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ Key: "MF-PAY-1", KeyType: "PaymentId" }),
+      }),
+    );
+    expect(settleGatewayPaymentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to KeyType InvoiceId when PaymentId inquiry fails", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse("Not Found", 404))
+      .mockResolvedValueOnce(jsonResponse("no match", 400))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          IsSuccess: true,
+          Data: {
+            InvoiceId: 6990573,
+            InvoiceStatus: "Paid",
+            InvoiceTransactions: [
+              {
+                TransactionStatus: "Succss",
+                PaymentGateway: "KNET",
+                PaymentId: "100620210000000064",
+              },
+            ],
+          },
+        }),
+      );
+    adminMaybeSingle.mockResolvedValueOnce({
+      data: boundPaymentRequest({ provider_invoice_id: "6990573" }),
+      error: null,
+    });
 
     const result = await runHandler({ paymentId: "6990573" });
 
     expect(result).toEqual({ status: "paid", tenantId: mockTenantId });
-    expect(postToGatewayMock).toHaveBeenNthCalledWith(
-      1,
-      { apiKey: "test-key", baseUrl: "https://example.test" },
-      "/v2/GetPaymentStatus",
-      { Key: "6990573", KeyType: "PaymentId" },
-    );
-    expect(postToGatewayMock).toHaveBeenNthCalledWith(
+    expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      { apiKey: "test-key", baseUrl: "https://example.test" },
-      "/v2/GetPaymentStatus",
-      { Key: "6990573", KeyType: "InvoiceId" },
+      "https://apitest.myfatoorah.com/v2/GetPaymentStatus",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ Key: "6990573", KeyType: "PaymentId" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://apitest.myfatoorah.com/v2/GetPaymentStatus",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ Key: "6990573", KeyType: "InvoiceId" }),
+      }),
     );
     expect(settleGatewayPaymentMock).toHaveBeenCalledTimes(1);
   });
 
   it("recovers a corrupted payment ID through its payment request code", async () => {
     const corruptedPaymentId = "100620210000016000";
-    getFromGatewayMock.mockRejectedValue(new Error("400 Invalid data"));
-    postToGatewayMock
-      .mockRejectedValueOnce(new Error("no match"))
-      .mockRejectedValueOnce(new Error("no match"))
-      .mockRejectedValueOnce(new Error("v3 path skipped"))
-      .mockResolvedValueOnce({
-        IsSuccess: true,
-        Data: {
-          InvoiceId: 6995259,
-          InvoiceStatus: "Paid",
-          InvoiceTransactions: [
-            {
-              TransactionStatus: "Succss",
-              PaymentGateway: "KNET",
-              PaymentId: "100620210000016004",
-            },
-          ],
-        },
-      });
-    adminMaybeSingle
-      .mockResolvedValueOnce({
-        data: {
-          tenant_id: mockTenantId,
-          provider_invoice_id: "6995259",
-          code: "PREQ-0000006",
-        },
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse("Invalid data", 400))
+      .mockResolvedValueOnce(jsonResponse("no match", 400))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          IsSuccess: true,
+          Data: {
+            InvoiceId: 6995259,
+            InvoiceStatus: "Paid",
+            InvoiceTransactions: [
+              {
+                TransactionStatus: "Succss",
+                PaymentGateway: "KNET",
+                PaymentId: "100620210000016004",
+              },
+            ],
+          },
+        }),
+      );
+    adminMaybeSingle.mockResolvedValueOnce({
+      data: boundPaymentRequest({
+        provider_invoice_id: "6995259",
+        code: "PREQ-0000006",
+      }),
+      error: null,
+    });
 
     const result = await runHandler({
       paymentId: corruptedPaymentId,
@@ -269,41 +310,45 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
     expect(settleGatewayPaymentMock).toHaveBeenCalledWith(
       expect.objectContaining({ paymentId: "100620210000016004" }),
       expect.anything(),
+      { companyId: "company-1" },
     );
   });
 
   it("never calls the non-existent POST /v3/GetPaymentStatus on the test API", async () => {
-    getFromGatewayMock.mockRejectedValueOnce(new Error("404"));
-    postToGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        InvoiceId: 1,
-        InvoiceStatus: "Paid",
-        InvoiceTransactions: [
-          { TransactionStatus: "Succss", PaymentGateway: "VISA/MASTER", PaymentId: "MF-PAY-3" },
-        ],
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    fetchMock.mockResolvedValueOnce(jsonResponse("Not Found", 404)).mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          InvoiceId: 1,
+          InvoiceStatus: "Paid",
+          InvoiceTransactions: [
+            { TransactionStatus: "Succss", PaymentGateway: "VISA/MASTER", PaymentId: "MF-PAY-3" },
+          ],
+        },
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     await runHandler({ paymentId: "MF-PAY-3" });
 
-    for (const call of postToGatewayMock.mock.calls) {
-      expect(call[1]).not.toBe("/v3/GetPaymentStatus");
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/v3/GetPaymentStatus");
     }
-    expect(postToGatewayMock.mock.calls[0][1]).toBe("/v2/GetPaymentStatus");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/v2/GetPaymentStatus");
   });
 
   it("returns {status:'pending'} without settling when the gateway reports a non-paid invoice", async () => {
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "987654", Status: "Pending" },
-        Transaction: { Status: "Pending", PaymentMethod: "KNET", PaymentId: "MF-PAY-2" },
-      },
-    });
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          Invoice: { Id: "987654", Status: "Pending" },
+          Transaction: { Status: "Pending", PaymentMethod: "KNET", PaymentId: "MF-PAY-2" },
+        },
+      }),
+    );
     adminMaybeSingle.mockResolvedValueOnce({
-      data: { tenant_id: mockTenantId },
+      data: boundPaymentRequest(),
       error: null,
     });
 
@@ -313,16 +358,17 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
   });
 
   it("defaults method to card when the gateway omits PaymentGateway/PaymentMethod", async () => {
-    getFromGatewayMock.mockRejectedValueOnce(new Error("skip v3"));
-    postToGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        InvoiceId: 42,
-        InvoiceStatus: "Paid",
-        InvoiceTransactions: [{ TransactionStatus: "Succss", PaymentId: "MF-PAY-4" }],
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    fetchMock.mockResolvedValueOnce(jsonResponse("skip v3", 404)).mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          InvoiceId: 42,
+          InvoiceStatus: "Paid",
+          InvoiceTransactions: [{ TransactionStatus: "Succss", PaymentId: "MF-PAY-4" }],
+        },
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     await runHandler({ paymentId: "MF-PAY-4" });
     expect(settleGatewayPaymentMock.mock.calls[0][0].method).toBe("card");
@@ -330,26 +376,25 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
 
   it("logs the v2 decline reason and code when the gateway reports a failed transaction", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    getFromGatewayMock.mockRejectedValueOnce(new Error("skip v3"));
-    // Captured verbatim from apitest for PREQ-0000011: KNET never rendered its
-    // payment page, so the charge failed before the tenant could pay.
-    postToGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        InvoiceId: 7039145,
-        InvoiceStatus: "Pending",
-        InvoiceTransactions: [
-          {
-            TransactionStatus: "Failed",
-            PaymentGateway: "KNET",
-            PaymentId: "07077039145371097673",
-            Error: "IPAY0100044-Problem occured while loading payment page.",
-            ErrorCode: "MF020",
-          },
-        ],
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    fetchMock.mockResolvedValueOnce(jsonResponse("skip v3", 404)).mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          InvoiceId: 7039145,
+          InvoiceStatus: "Pending",
+          InvoiceTransactions: [
+            {
+              TransactionStatus: "Failed",
+              PaymentGateway: "KNET",
+              PaymentId: "07077039145371097673",
+              Error: "IPAY0100044-Problem occured while loading payment page.",
+              ErrorCode: "MF020",
+            },
+          ],
+        },
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     const result = await runHandler({ paymentId: "07077039145371097673" });
 
@@ -363,22 +408,24 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
 
   it("logs the nested v3 {Code,Message} decline shape", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "7039145", Status: "PENDING" },
-        Transaction: {
-          Status: "FAILED",
-          PaymentMethod: "KNET",
-          PaymentId: "07077039145371097673",
-          Error: {
-            Code: "MF020",
-            Message: "IPAY0100044-Problem occured while loading payment page.",
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          Invoice: { Id: "7039145", Status: "PENDING" },
+          Transaction: {
+            Status: "FAILED",
+            PaymentMethod: "KNET",
+            PaymentId: "07077039145371097673",
+            Error: {
+              Code: "MF020",
+              Message: "IPAY0100044-Problem occured while loading payment page.",
+            },
           },
         },
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     const result = await runHandler({ paymentId: "07077039145371097673" });
 
@@ -390,36 +437,43 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
 
   it("still logs a non-paid outcome when the gateway supplies no error detail", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "7031735", Status: "Pending" },
-        Transaction: { Status: "InProgress", PaymentMethod: "KNET", PaymentId: "MF-PAY-9" },
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    fetchMock.mockResolvedValueOnce(jsonResponse("skip v3", 404)).mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          InvoiceId: 7031735,
+          InvoiceStatus: "Pending",
+          InvoiceTransactions: [
+            { TransactionStatus: "InProgress", PaymentGateway: "KNET", PaymentId: "MF-PAY-9" },
+          ],
+        },
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     const result = await runHandler({ paymentId: "MF-PAY-9" });
 
     expect(result).toEqual({ status: "pending", tenantId: mockTenantId });
     const logged = warn.mock.calls.map((call) => call.join(" ")).join(" ");
-    expect(logged).toContain("InProgress");
+    expect(logged).toContain("pending");
     warn.mockRestore();
   });
 
   it("settles a paid callback for staff authorized to create payment links", async () => {
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "987654", Status: "PAID" },
-        Transaction: {
-          Status: "SUCCESS",
-          PaymentMethod: "KNET",
-          PaymentId: "MF-PAY-STAFF",
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          Invoice: { Id: "987654", Status: "PAID" },
+          Transaction: {
+            Status: "SUCCESS",
+            PaymentMethod: "KNET",
+            PaymentId: "MF-PAY-STAFF",
+          },
         },
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     const result = await runHandler({ paymentId: "MF-PAY-STAFF" }, { tenant_id: null }, true);
 
@@ -428,18 +482,7 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
   });
 
   it("rejects staff without payment-link permission before settlement", async () => {
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "987654", Status: "PAID" },
-        Transaction: {
-          Status: "SUCCESS",
-          PaymentMethod: "KNET",
-          PaymentId: "MF-PAY-FORBIDDEN",
-        },
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     // An `Error`, never a `Response`: TanStack Start resolves a thrown
     // `Response` client-side, which used to turn this refusal into a
@@ -452,14 +495,7 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
   });
 
   it("records the refused confirmation in the audit trail against the payment's tenant", async () => {
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "987654", Status: "PAID" },
-        Transaction: { Status: "SUCCESS", PaymentMethod: "KNET", PaymentId: "MF-PAY-AUDIT" },
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
 
     await expect(runHandler({ paymentId: "MF-PAY-AUDIT" }, { tenant_id: null })).rejects.toThrow(
       "This payment belongs to another tenant's account.",
@@ -475,21 +511,37 @@ describe("confirmGatewayPayment — sandbox-safe status lookup", () => {
     );
   });
 
+  it("refuses legacy unbound payment requests without falling back to env", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    adminMaybeSingle.mockResolvedValueOnce({
+      data: boundPaymentRequest({ gateway_connection_id: null }),
+      error: null,
+    });
+
+    await expect(runHandler({ paymentId: "MF-PAY-LEGACY" })).rejects.toThrow(
+      "LEGACY_UNBOUND_PAYMENT_REQUEST",
+    );
+    expect(loadGatewayConnectionMock).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
   it("rethrows the settlement Error instead of resolving when settlement fails after a paid charge", async () => {
     const settleFailure = new Error("Invoice PREQ-0000006 has no remaining balance to settle.");
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    getFromGatewayMock.mockResolvedValueOnce({
-      IsSuccess: true,
-      Data: {
-        Invoice: { Id: "987654", Status: "PAID" },
-        Transaction: {
-          Status: "SUCCESS",
-          PaymentMethod: "KNET",
-          PaymentId: "MF-PAY-SETTLE-FAIL",
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        IsSuccess: true,
+        Data: {
+          Invoice: { Id: "987654", Status: "PAID" },
+          Transaction: {
+            Status: "SUCCESS",
+            PaymentMethod: "KNET",
+            PaymentId: "MF-PAY-SETTLE-FAIL",
+          },
         },
-      },
-    });
-    adminMaybeSingle.mockResolvedValueOnce({ data: { tenant_id: mockTenantId }, error: null });
+      }),
+    );
+    adminMaybeSingle.mockResolvedValueOnce({ data: boundPaymentRequest(), error: null });
     settleGatewayPaymentMock.mockRejectedValueOnce(settleFailure);
 
     const confirmation = runHandler({ paymentId: "MF-PAY-SETTLE-FAIL" });

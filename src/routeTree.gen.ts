@@ -55,7 +55,6 @@ import { Route as AdminTenantsIdRouteImport } from './routes/admin.tenants.$id'
 import { Route as AdminUnitsIndexRouteImport } from './routes/admin.units.index'
 import { Route as AdminUnitsIdRouteImport } from './routes/admin.units.$id'
 import { Route as ApiPublicEvolutionWebhookRouteImport } from './routes/api/public/evolution-webhook'
-import { Route as ApiPublicMyfatoorahWebhookRouteImport } from './routes/api/public/myfatoorah-webhook'
 import { Route as ApiPublicResendWebhookRouteImport } from './routes/api/public/resend-webhook'
 import { Route as PortalPaymentsCallbackRouteImport } from './routes/portal_.payments.callback'
 import { Route as AdminContractsIdCloseoutRouteImport } from './routes/admin.contracts_.$id.closeout'
@@ -63,6 +62,7 @@ import { Route as AdminTenantsIdIndexRouteImport } from './routes/admin.tenants.
 import { Route as AdminTenantsIdDocumentsRouteImport } from './routes/admin.tenants.$id.documents'
 import { Route as ApiOauthGoogleCallbackRouteImport } from './routes/api/oauth/google/callback'
 import { Route as PortalPaymentsCallbackPreqRouteImport } from './routes/portal_.payments.callback_.$preq'
+import { Route as ApiPublicWebhooksProviderConnectionIdRouteImport } from './routes/api/public/webhooks/$provider.$connectionId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -298,12 +298,6 @@ const ApiPublicEvolutionWebhookRoute =
     path: '/api/public/evolution-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicMyfatoorahWebhookRoute =
-  ApiPublicMyfatoorahWebhookRouteImport.update({
-    id: '/api/public/myfatoorah-webhook',
-    path: '/api/public/myfatoorah-webhook',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiPublicResendWebhookRoute = ApiPublicResendWebhookRouteImport.update({
   id: '/api/public/resend-webhook',
   path: '/api/public/resend-webhook',
@@ -339,6 +333,12 @@ const PortalPaymentsCallbackPreqRoute =
   PortalPaymentsCallbackPreqRouteImport.update({
     id: '/portal_/payments/callback_/$preq',
     path: '/portal/payments/callback/$preq',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicWebhooksProviderConnectionIdRoute =
+  ApiPublicWebhooksProviderConnectionIdRouteImport.update({
+    id: '/api/public/webhooks/$provider/$connectionId',
+    path: '/api/public/webhooks/$provider/$connectionId',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -384,7 +384,6 @@ export interface FileRoutesByFullPath {
   '/admin/tenants/$id': typeof AdminTenantsIdRouteWithChildren
   '/admin/units/$id': typeof AdminUnitsIdRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
-  '/api/public/myfatoorah-webhook': typeof ApiPublicMyfatoorahWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
   '/portal/payments/callback': typeof PortalPaymentsCallbackRoute
   '/admin/maintenance/': typeof AdminMaintenanceIndexRoute
@@ -397,6 +396,7 @@ export interface FileRoutesByFullPath {
   '/api/oauth/google/callback': typeof ApiOauthGoogleCallbackRoute
   '/portal/payments/callback/$preq': typeof PortalPaymentsCallbackPreqRoute
   '/admin/tenants/$id/': typeof AdminTenantsIdIndexRoute
+  '/api/public/webhooks/$provider/$connectionId': typeof ApiPublicWebhooksProviderConnectionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -436,7 +436,6 @@ export interface FileRoutesByTo {
   '/admin/settings/users': typeof AdminSettingsUsersRoute
   '/admin/units/$id': typeof AdminUnitsIdRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
-  '/api/public/myfatoorah-webhook': typeof ApiPublicMyfatoorahWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
   '/portal/payments/callback': typeof PortalPaymentsCallbackRoute
   '/admin/maintenance': typeof AdminMaintenanceIndexRoute
@@ -449,6 +448,7 @@ export interface FileRoutesByTo {
   '/api/oauth/google/callback': typeof ApiOauthGoogleCallbackRoute
   '/portal/payments/callback/$preq': typeof PortalPaymentsCallbackPreqRoute
   '/admin/tenants/$id': typeof AdminTenantsIdIndexRoute
+  '/api/public/webhooks/$provider/$connectionId': typeof ApiPublicWebhooksProviderConnectionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -493,7 +493,6 @@ export interface FileRoutesById {
   '/admin/tenants/$id': typeof AdminTenantsIdRouteWithChildren
   '/admin/units/$id': typeof AdminUnitsIdRoute
   '/api/public/evolution-webhook': typeof ApiPublicEvolutionWebhookRoute
-  '/api/public/myfatoorah-webhook': typeof ApiPublicMyfatoorahWebhookRoute
   '/api/public/resend-webhook': typeof ApiPublicResendWebhookRoute
   '/portal_/payments/callback': typeof PortalPaymentsCallbackRoute
   '/admin/maintenance/': typeof AdminMaintenanceIndexRoute
@@ -506,6 +505,7 @@ export interface FileRoutesById {
   '/api/oauth/google/callback': typeof ApiOauthGoogleCallbackRoute
   '/portal_/payments/callback_/$preq': typeof PortalPaymentsCallbackPreqRoute
   '/admin/tenants/$id/': typeof AdminTenantsIdIndexRoute
+  '/api/public/webhooks/$provider/$connectionId': typeof ApiPublicWebhooksProviderConnectionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -551,7 +551,6 @@ export interface FileRouteTypes {
     | '/admin/tenants/$id'
     | '/admin/units/$id'
     | '/api/public/evolution-webhook'
-    | '/api/public/myfatoorah-webhook'
     | '/api/public/resend-webhook'
     | '/portal/payments/callback'
     | '/admin/maintenance/'
@@ -564,6 +563,7 @@ export interface FileRouteTypes {
     | '/api/oauth/google/callback'
     | '/portal/payments/callback/$preq'
     | '/admin/tenants/$id/'
+    | '/api/public/webhooks/$provider/$connectionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -603,7 +603,6 @@ export interface FileRouteTypes {
     | '/admin/settings/users'
     | '/admin/units/$id'
     | '/api/public/evolution-webhook'
-    | '/api/public/myfatoorah-webhook'
     | '/api/public/resend-webhook'
     | '/portal/payments/callback'
     | '/admin/maintenance'
@@ -616,6 +615,7 @@ export interface FileRouteTypes {
     | '/api/oauth/google/callback'
     | '/portal/payments/callback/$preq'
     | '/admin/tenants/$id'
+    | '/api/public/webhooks/$provider/$connectionId'
   id:
     | '__root__'
     | '/'
@@ -659,7 +659,6 @@ export interface FileRouteTypes {
     | '/admin/tenants/$id'
     | '/admin/units/$id'
     | '/api/public/evolution-webhook'
-    | '/api/public/myfatoorah-webhook'
     | '/api/public/resend-webhook'
     | '/portal_/payments/callback'
     | '/admin/maintenance/'
@@ -672,6 +671,7 @@ export interface FileRouteTypes {
     | '/api/oauth/google/callback'
     | '/portal_/payments/callback_/$preq'
     | '/admin/tenants/$id/'
+    | '/api/public/webhooks/$provider/$connectionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -685,11 +685,11 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   PortalAuthRoute: typeof PortalAuthRoute
   ApiPublicEvolutionWebhookRoute: typeof ApiPublicEvolutionWebhookRoute
-  ApiPublicMyfatoorahWebhookRoute: typeof ApiPublicMyfatoorahWebhookRoute
   ApiPublicResendWebhookRoute: typeof ApiPublicResendWebhookRoute
   PortalPaymentsCallbackRoute: typeof PortalPaymentsCallbackRoute
   ApiOauthGoogleCallbackRoute: typeof ApiOauthGoogleCallbackRoute
   PortalPaymentsCallbackPreqRoute: typeof PortalPaymentsCallbackPreqRoute
+  ApiPublicWebhooksProviderConnectionIdRoute: typeof ApiPublicWebhooksProviderConnectionIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1016,13 +1016,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicEvolutionWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/myfatoorah-webhook': {
-      id: '/api/public/myfatoorah-webhook'
-      path: '/api/public/myfatoorah-webhook'
-      fullPath: '/api/public/myfatoorah-webhook'
-      preLoaderRoute: typeof ApiPublicMyfatoorahWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/resend-webhook': {
       id: '/api/public/resend-webhook'
       path: '/api/public/resend-webhook'
@@ -1070,6 +1063,13 @@ declare module '@tanstack/react-router' {
       path: '/portal/payments/callback/$preq'
       fullPath: '/portal/payments/callback/$preq'
       preLoaderRoute: typeof PortalPaymentsCallbackPreqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/webhooks/$provider/$connectionId': {
+      id: '/api/public/webhooks/$provider/$connectionId'
+      path: '/api/public/webhooks/$provider/$connectionId'
+      fullPath: '/api/public/webhooks/$provider/$connectionId'
+      preLoaderRoute: typeof ApiPublicWebhooksProviderConnectionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -1201,11 +1201,12 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   PortalAuthRoute: PortalAuthRoute,
   ApiPublicEvolutionWebhookRoute: ApiPublicEvolutionWebhookRoute,
-  ApiPublicMyfatoorahWebhookRoute: ApiPublicMyfatoorahWebhookRoute,
   ApiPublicResendWebhookRoute: ApiPublicResendWebhookRoute,
   PortalPaymentsCallbackRoute: PortalPaymentsCallbackRoute,
   ApiOauthGoogleCallbackRoute: ApiOauthGoogleCallbackRoute,
   PortalPaymentsCallbackPreqRoute: PortalPaymentsCallbackPreqRoute,
+  ApiPublicWebhooksProviderConnectionIdRoute:
+    ApiPublicWebhooksProviderConnectionIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

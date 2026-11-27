@@ -9,6 +9,7 @@ import {
   createNotificationDispatchHandler,
   type NotificationDispatchDependencies,
 } from "./notification";
+import { createInboundHandlers } from "./inbound";
 import { createSyncHandlers } from "./sync";
 
 /** خريطة معالجات جزئية: بعض الأنواع مسجَّلة وبعضها مقصود غيابه. */
@@ -29,6 +30,7 @@ export function handlerMaps(deps: NotificationDispatchDependencies): HandlerMap[
     createCronHandlers(),
     createBulkHandlers(),
     createSyncHandlers(),
+    createInboundHandlers(),
     eventHandlers,
   ];
 }

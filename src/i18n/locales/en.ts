@@ -7,6 +7,7 @@ import { notificationChannel } from "./en/notificationChannel";
 import { landingSettings } from "./en/landingSettings";
 import { audit } from "./en/audit";
 import { jobs } from "./en/jobs";
+import { publicPages } from "./en/publicPages";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -28,4 +29,5 @@ export const en: Record<string, string> = {
   ...landingSettings,
   ...audit,
   ...jobs,
+  ...publicPages,
 };

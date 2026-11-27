@@ -13,6 +13,7 @@ import { I18nProvider } from "../i18n/provider";
 import { getPublicSupabaseConfig } from "../fns/publicRuntimeConfig";
 import type { PublicSupabaseConfig } from "../fns/publicRuntimeConfig";
 import { getPublicBranding } from "../fns/publicBranding";
+import { NotFoundPage } from "./not-found";
 import type { ReactNode } from "react";
 import { useEffect, useMemo } from "react";
 import appCss from "../styles.css?url";
@@ -27,30 +28,6 @@ function supabaseConfigScript(config: PublicSupabaseConfig): string {
   // <-escape so env values can never break out of the inline <script>.
   const serialized = JSON.stringify(config).replace(/</g, "\\u003c");
   return `window.__SUPABASE_CONFIG=${serialized};`;
-}
-
-function NotFoundComponent() {
-  return (
-    <main
-      id="main-content"
-      className="flex min-h-screen items-center justify-center bg-background px-4"
-    >
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">
-          الصفحة غير موجودة / Page not found
-        </h2>
-        <div className="mt-6">
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            الرئيسية / Home
-          </a>
-        </div>
-      </div>
-    </main>
-  );
 }
 
 /**
@@ -199,7 +176,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   }),
   shellComponent: RootShell,
   component: RootComponent,
-  notFoundComponent: NotFoundComponent,
+  notFoundComponent: NotFoundPage,
   errorComponent: ErrorComponent,
 });
 

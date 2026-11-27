@@ -7,6 +7,7 @@ import { notificationChannel } from "./ar/notificationChannel";
 import { landingSettings } from "./ar/landingSettings";
 import { audit } from "./ar/audit";
 import { jobs } from "./ar/jobs";
+import { publicPages } from "./ar/publicPages";
 
 /**
  * كتالوج الترجمة العربية — اللغة الافتراضية للمنتج.
@@ -31,4 +32,5 @@ export const ar: Record<string, string> = {
   ...landingSettings,
   ...audit,
   ...jobs,
+  ...publicPages,
 };

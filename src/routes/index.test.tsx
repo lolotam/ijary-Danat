@@ -12,7 +12,7 @@
  * cut without a type error, so each is exercised here. Data hooks are mocked;
  * the sections, dialogs and Radix primitives are real.
  */
-import { act, type ReactElement } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -75,8 +75,10 @@ vi.mock("@/hooks/useLandingSettings", () => ({
   useLandingCategories: () => ({ data: [{ id: "c1", name_ar: "أغذية", name_en: "Food" }] }),
 }));
 
-const { Route } = await import("@/routes/index");
-const Page = (Route as unknown as { options: { component: () => ReactElement } }).options.component;
+// The route component is now a host-based dispatcher (T087); the landing page
+// it used to render is preserved as the exported `LandingPage` (off for every
+// company until US13) and stays exactly what these interactions exercise.
+const { LandingPage: Page } = await import("@/routes/index");
 
 let container: HTMLDivElement;
 let root: Root;

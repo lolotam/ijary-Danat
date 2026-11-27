@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { KeyRound, Lock, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { RequiredMark } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
+import { brandNameFor, brandStyleFor, getPublicBranding } from "@/fns/publicBranding";
 import { usePortalIdentity } from "@/hooks/usePortalData";
 import { useI18n } from "@/i18n/provider";
 
@@ -16,21 +17,28 @@ const FALLBACK_BACKGROUND = "/landing/hero.png";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
-  head: () => ({
-    meta: [{ title: "Admin Management Portal — Danat Al Mustaqbal" }],
+  // Branding is read from the host's company on the server — never from a
+  // query parameter — so the page cannot be made to name another company.
+  loader: async () => ({ branding: await getPublicBranding() }),
+  head: ({ loaderData }) => ({
+    meta: [
+      {
+        title: loaderData
+          ? `Admin Management Portal — ${loaderData.branding.nameEn}`
+          : "Admin Management Portal",
+      },
+    ],
   }),
   component: AuthPage,
 });
 
 function AuthPage() {
-  const { t, dir, toggle } = useI18n();
+  const { t, dir, toggle, locale } = useI18n();
   const { signInWithPassword, signOut, user, loading } = useAuth();
   const identity = usePortalIdentity();
   const navigate = useNavigate();
-  const rootContext = useRouteContext({ from: "__root__" }) as
-    | { branding?: { portalBgUrl?: string | null } }
-    | undefined;
-  const backgroundUrl = rootContext?.branding?.portalBgUrl || FALLBACK_BACKGROUND;
+  const { branding } = Route.useLoaderData();
+  const backgroundUrl = branding.portalBgUrl || FALLBACK_BACKGROUND;
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -91,7 +99,11 @@ function AuthPage() {
   ];
 
   return (
-    <div dir={dir} className="relative min-h-dvh overflow-hidden bg-ink text-white">
+    <div
+      dir={dir}
+      style={brandStyleFor(branding)}
+      className="relative min-h-dvh overflow-hidden bg-ink text-white"
+    >
       <img
         src={backgroundUrl}
         alt=""
@@ -101,7 +113,7 @@ function AuthPage() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,181,167,0.14),transparent_30rem),linear-gradient(110deg,rgba(11,37,35,0.72),rgba(11,37,35,0.96)_68%)]" />
 
       <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-6">
-        <BrandLogo name={t("brand.name")} onDark />
+        <BrandLogo name={brandNameFor(branding, locale)} onDark />
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <button

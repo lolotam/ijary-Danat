@@ -208,8 +208,8 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T083 [US3] Implement GoTrue admin helpers with synthetic auth emails in `src/platform/authAdmin.server.ts`; use them from `src/fns/createAppUser.ts`, `updateAppUser.ts`, `deleteAppUser.ts`; make `src/lib/userConflicts.server.ts` and `phoneConflicts.server.ts` check within the company
 - [x] T084 [US3] Resolve identifiers within the host's company in `src/fns/signInWithIdentifier.ts`, `src/auth/loginIdentity.ts` and `src/auth/AuthProvider.tsx`
 - [ ] T085 [US3] Application password reset in `src/fns/passwordReset.ts` and `src/routes/reset-password.tsx`, sending through a `notification.dispatch` job
-- [ ] T086 [US3] Branded sign-in: `src/fns/publicBranding.ts` by host; `src/routes/auth.tsx` and `src/routes/portal_.auth.tsx`
-- [ ] T087 [US3] Temporary platform page, redirect of a company root to sign-in, and a not-found page in `src/routes/index.tsx` and `src/routes/not-found.tsx`; landing section off for every company
+- [x] T086 [US3] Branded sign-in: `src/fns/publicBranding.ts` by host; `src/routes/auth.tsx` and `src/routes/portal_.auth.tsx`
+- [x] T087 [US3] Temporary platform page, redirect of a company root to sign-in, and a not-found page in `src/routes/index.tsx` and `src/routes/not-found.tsx`; landing section off for every company
 - [ ] T088 [US3] ⛔ BLOCKED(owner: Cloudflare API token for `ijary.app`, Dokploy access) VERIFY that Dokploy accepts a wildcard domain with DNS-01; write `deploy/ijary/traefik-wildcard.yml` and the steps in `deploy/ijary/README.md`; fallback Cloudflare origin certificate (research.md R5)
 - [ ] T089 [US3] Wildcard redirect allow-list and CORS origins for GoTrue and the API in `deploy/ijary/supabase.env.example`
 - [ ] T090 [US3] Gate: quickstart.md Phase 2 steps 3 to 6

@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { AuditFiltersPanel } from "@/components/admin/audit/AuditFiltersPanel";
@@ -24,6 +25,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { SortableHead, useTableSort } from "@/components/admin/SortableTable";
 
 export const Route = createFileRoute("/admin/audit")({
+  beforeLoad: () => guardModuleRoute("audit"),
   component: AuditLogPage,
 });
 

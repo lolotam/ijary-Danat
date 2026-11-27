@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { Download, Plus, Upload } from "lucide-react";
 import { useForm, type Resolver } from "react-hook-form";
 import { usePostHog } from "posthog-js/react";
@@ -67,7 +68,10 @@ import {
   type MaintenanceFormValues,
 } from "@/lib/maintenanceForm";
 
-export const Route = createFileRoute("/admin/maintenance/")({ component: MaintenancePage });
+export const Route = createFileRoute("/admin/maintenance/")({
+  beforeLoad: () => guardModuleRoute("maintenance"),
+  component: MaintenancePage,
+});
 
 /**
  * شاشة طلبات الصيانة: الفلاتر، الجدول، الاستيراد والتصدير، والإضافة والتعديل والعرض.

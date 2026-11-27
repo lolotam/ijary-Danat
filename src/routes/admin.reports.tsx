@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { Download, Printer, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +42,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { auditPrint } from "@/lib/exportAudit";
 
 export const Route = createFileRoute("/admin/reports")({
+  beforeLoad: () => guardModuleRoute("reports"),
   component: ReportsPage,
 });
 

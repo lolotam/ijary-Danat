@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { MODULE_KEYS, type ModuleKey } from "@/company/modules";
 import type { JobKind } from "@/jobs/catalog";
@@ -222,18 +222,22 @@ describe("runJob (T064)", () => {
     expect(state.handlerRuns).toBe(1);
   });
 
-  test("a switched-off section skips the job instead of running it", async () => {
+  test("a switched-off section skips the job instead of running it and logs once", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
     const { ports, handlerFor, state } = createFakePorts({
       row: requestRow(),
       enabledSections: MODULE_KEYS.filter((key) => key !== "invoices"),
       handler: async () => ({ sent: true }),
     });
 
-    await createRunJob(ports, handlerFor)(attemptFor());
+    await expect(createRunJob(ports, handlerFor)(attemptFor())).resolves.toBeUndefined();
 
     expect(state.request.status).toBe("skipped");
     expect(state.request.skipReason).toBe("module_disabled");
     expect(state.handlerRuns).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("module_disabled");
+    infoSpy.mockRestore();
   });
 
   test("a successful job records the handler result", async () => {

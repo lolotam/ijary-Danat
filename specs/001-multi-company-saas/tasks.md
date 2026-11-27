@@ -264,9 +264,9 @@ An independent review of `24090cf..4abc6cc` (`waleed_general_reviewer`) returned
 - [x] T107 [US5] Write migration `db/migrations/320_company_modules.sql`: `company_modules`, `module_enabled()`, the `has_permission` change, `get_my_modules()` (data-model.md: `company_modules.module_key`; research.md R10)
 - [x] T108 [US5] Section keys and the permission-to-section map in `src/company/modules.ts`
 - [ ] T109 [US5] `platformSetModules` in `src/platform/modules.ts` and `src/components/platform/ModuleSwitches.tsx`
-- [ ] T110 [US5] `myModules` in `src/fns/myModules.ts` and `src/hooks/useModules.ts` (cache at most 60 seconds)
-- [ ] T111 [US5] Build navigation and dashboard from enabled sections in `src/components/admin/AdminSidebar.tsx` and `src/lib/cardRegistry.ts`; add `src/company/requireModule.ts` and call it in the `beforeLoad` of each `src/routes/admin.*.tsx` section route
-- [ ] T112 [US5] Skip a switched-off section's jobs in `src/worker/runJob.ts` using the section field of `src/jobs/catalog.ts`
+- [x] T110 [US5] `myModules` in `src/fns/myModules.ts` and `src/hooks/useModules.ts` (cache at most 60 seconds)
+- [x] T111 [US5] Build navigation and dashboard from enabled sections in `src/components/admin/AdminSidebar.tsx` and `src/lib/cardRegistry.ts`; add `src/company/requireModule.ts` and call it in the `beforeLoad` of each `src/routes/admin.*.tsx` section route
+- [x] T112 [US5] Skip a switched-off section's jobs in `src/worker/runJob.ts` using the section field of `src/jobs/catalog.ts`
 - [ ] T113 [US5] Gate: quickstart.md Phase 2 step 7; record SC-007
 
 **Checkpoint**: A hidden section is unreachable by every route.

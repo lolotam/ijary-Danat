@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { FilePlus2, PieChart, ShieldCheck, TrendingUp, Undo2, Wallet } from "lucide-react";
 
 import { ModuleHeader, Pager, TableState } from "@/components/admin/Phase2Ui";
@@ -49,7 +50,10 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useI18n } from "@/i18n/provider";
 import { PERMISSIONS } from "@/lib/permissions";
 
-export const Route = createFileRoute("/admin/payments")({ component: PaymentsPage });
+export const Route = createFileRoute("/admin/payments")({
+  beforeLoad: () => guardModuleRoute("payments"),
+  component: PaymentsPage,
+});
 
 /**
  * Full payments — the original screen, now one section of Payment and Refund.

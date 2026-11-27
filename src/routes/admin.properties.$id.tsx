@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { ArrowLeft, Building2, Eye, Plus, Printer } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,7 +34,10 @@ import { formatAmount } from "@/lib/money";
 import { countUnitsByType } from "@/lib/unitTypeCounts";
 import { auditPrint } from "@/lib/exportAudit";
 
-export const Route = createFileRoute("/admin/properties/$id")({ component: PropertyDetailPage });
+export const Route = createFileRoute("/admin/properties/$id")({
+  beforeLoad: () => guardModuleRoute("properties"),
+  component: PropertyDetailPage,
+});
 
 function PropertyDetailPage() {
   const { id } = Route.useParams();

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { useFieldArray, useForm, type FieldPath, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -46,6 +47,7 @@ import {
 } from "@/components/admin/closeout/closeoutShared";
 
 export const Route = createFileRoute("/admin/contracts_/$id/closeout")({
+  beforeLoad: () => guardModuleRoute("contracts"),
   component: CloseoutWizard,
 });
 

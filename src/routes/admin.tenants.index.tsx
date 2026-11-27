@@ -1,5 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import {
   AlertTriangle,
   Download,
@@ -82,6 +83,7 @@ const listViewSchema = z.enum(TENANT_LIST_VIEWS).catch(DEFAULT_TENANT_LIST_VIEW)
 const EMPTY_TENANT_IDS: Set<string> = new Set();
 
 export const Route = createFileRoute("/admin/tenants/")({
+  beforeLoad: () => guardModuleRoute("tenants"),
   component: TenantsPage,
   /**
    * يتحقق من معامل `view` في الرابط ويعيده إلى التبويب الافتراضي عند أي قيمة غير معروفة.

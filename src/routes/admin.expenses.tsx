@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { Download, FileSpreadsheet, Plus, Tags, Upload } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -61,7 +62,10 @@ import {
   type ExpenseForm,
 } from "@/lib/expenseForm";
 
-export const Route = createFileRoute("/admin/expenses")({ component: ExpensesPage });
+export const Route = createFileRoute("/admin/expenses")({
+  beforeLoad: () => guardModuleRoute("expenses"),
+  component: ExpensesPage,
+});
 
 /**
  * شاشة المصروفات: الفلاتر، الجدول، التصدير، والإضافة والتعديل والحذف.

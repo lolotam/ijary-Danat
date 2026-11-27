@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { documentDownloadName } from "@/lib/documentDownloadName";
 import { downloadStoredFile } from "@/lib/downloadStoredFile";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { Download, Eye, FileSpreadsheet, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,7 +54,10 @@ import { downloadCsv } from "@/lib/csv";
 import { PERMISSIONS } from "@/lib/permissions";
 import { downloadXls } from "@/lib/xlsx";
 
-export const Route = createFileRoute("/admin/deposits")({ component: DepositsPage });
+export const Route = createFileRoute("/admin/deposits")({
+  beforeLoad: () => guardModuleRoute("deposits"),
+  component: DepositsPage,
+});
 
 function DepositsPage() {
   const { t, locale } = useI18n();

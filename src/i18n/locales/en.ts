@@ -9,6 +9,7 @@ import { audit } from "./en/audit";
 import { jobs } from "./en/jobs";
 import { publicPages } from "./en/publicPages";
 import { passwordReset } from "./en/passwordReset";
+import { modules } from "./en/modules";
 
 /**
  * كتالوج الترجمة الإنجليزية — يجب أن يطابق مفاتيح `ar.ts` حرفياً.
@@ -32,4 +33,5 @@ export const en: Record<string, string> = {
   ...jobs,
   ...publicPages,
   ...passwordReset,
+  ...modules,
 };

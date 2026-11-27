@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { Download, Eye, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,7 +57,10 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { sortPropertiesByCodeNatural } from "@/lib/propertyDisplayName";
 import { showError } from "@/lib/toastError";
 
-export const Route = createFileRoute("/admin/units/")({ component: UnitsPage });
+export const Route = createFileRoute("/admin/units/")({
+  beforeLoad: () => guardModuleRoute("units"),
+  component: UnitsPage,
+});
 
 function UnitsPage() {
   const { t, locale } = useI18n();

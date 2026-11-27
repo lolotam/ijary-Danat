@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { ArrowLeft, Printer } from "lucide-react";
 
 import { TableState } from "@/components/admin/Phase2Ui";
@@ -30,7 +31,10 @@ import { formatAmount, formatKwd } from "@/lib/money";
 import { PERMISSIONS } from "@/lib/permissions";
 import { auditPrint } from "@/lib/exportAudit";
 
-export const Route = createFileRoute("/admin/units/$id")({ component: UnitDetailPage });
+export const Route = createFileRoute("/admin/units/$id")({
+  beforeLoad: () => guardModuleRoute("units"),
+  component: UnitDetailPage,
+});
 
 function UnitDetailPage() {
   const { id } = Route.useParams();

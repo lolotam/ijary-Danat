@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import {
   Banknote,
   CalendarClock,
@@ -79,6 +80,7 @@ const archiveViewSchema = z.enum(["current", "archived", "all"]).catch("current"
 const LIST_LIMIT = 1000;
 
 export const Route = createFileRoute("/admin/contracts")({
+  beforeLoad: () => guardModuleRoute("contracts"),
   component: ContractsPage,
   // `view` is optional on the type so existing <Link to="/admin/contracts"> keep
   // compiling; .catch("current") still supplies the runtime default.

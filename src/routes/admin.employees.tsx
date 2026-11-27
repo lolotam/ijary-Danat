@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 
 import { ModuleHeader } from "@/components/admin/Phase2Ui";
 import { Toaster } from "@/components/ui/sonner";
@@ -7,7 +8,10 @@ import { useI18n } from "@/i18n/provider";
 import { EmployeeTab } from "@/components/admin/employees/EmployeeTab";
 import { SalaryTab } from "@/components/admin/employees/SalaryTab";
 
-export const Route = createFileRoute("/admin/employees")({ component: EmployeesPage });
+export const Route = createFileRoute("/admin/employees")({
+  beforeLoad: () => guardModuleRoute("employees"),
+  component: EmployeesPage,
+});
 
 /**
  * شاشة الموظفين: تبويبا الموظفين والرواتب.

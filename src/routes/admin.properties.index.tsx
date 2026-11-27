@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { Download, LayoutGrid, Plus, Table as TableIcon, Upload } from "lucide-react";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
@@ -53,7 +54,10 @@ import { propertyFormSchema, type PropertyFormValues } from "@/lib/propertyForm"
 import { showError } from "@/lib/toastError";
 import { PropertyFormDialog } from "@/components/admin/properties/PropertyFormDialog";
 
-export const Route = createFileRoute("/admin/properties/")({ component: PropertiesPage });
+export const Route = createFileRoute("/admin/properties/")({
+  beforeLoad: () => guardModuleRoute("properties"),
+  component: PropertiesPage,
+});
 
 const propertyDefaults: PropertyFormValues = {
   name_ar: "",

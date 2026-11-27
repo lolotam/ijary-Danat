@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { toast } from "sonner";
 
 import { LeadsTable } from "@/components/admin/inbox/LeadsTable";
@@ -42,6 +43,7 @@ import { useGmailInbox } from "@/components/admin/inbox/useGmailInbox";
 type LeadStatus = "new" | "contacted" | "accepted" | "rejected";
 
 export const Route = createFileRoute("/admin/inbox")({
+  beforeLoad: () => guardModuleRoute("inbox"),
   // `?message=<id>` highlights a row and `?tab=<source>` selects the tab that
   // holds it. The header bell links to entries from all four sources, so
   // without the tab it would land every one of them on Tenant messages.

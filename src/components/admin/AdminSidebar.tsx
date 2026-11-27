@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { BrandMark } from "@/components/BrandLogo";
+import type { ModuleKey } from "@/company/modules";
 import {
   Sidebar,
   SidebarContent,
@@ -28,6 +29,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useModules } from "@/hooks/useModules";
 import { useI18n } from "@/i18n/provider";
 
 type ItemKey =
@@ -48,38 +50,59 @@ type ItemKey =
   | "admin.audit"
   | "admin.settings";
 
-interface NavItem {
+export interface NavItem {
   key: ItemKey;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** مفتاح القسم المطلوب إظهار العنصر؛ غيابه يعني أن العنصر دائم الظهور. */
+  module?: ModuleKey;
 }
 
-const primary: NavItem[] = [
+export const PRIMARY_NAV_ITEMS: readonly NavItem[] = [
   { key: "admin.dashboard", to: "/admin", icon: LayoutDashboard },
-  { key: "admin.invoices", to: "/admin/invoices", icon: FileText },
-  { key: "admin.tenants", to: "/admin/tenants", icon: Users },
-  { key: "admin.propertiesBuildings", to: "/admin/properties", icon: Building2 },
-  { key: "admin.units", to: "/admin/units", icon: Home },
-  // Maintenance module is hidden from the nav for now (route/code kept):
-  // { key: "admin.maintenance", to: "/admin/maintenance", icon: Wrench },
-  { key: "admin.contracts", to: "/admin/contracts", icon: ScrollText },
-  { key: "admin.payments", to: "/admin/payments", icon: CreditCard },
-  { key: "admin.employees", to: "/admin/employees", icon: BadgeDollarSign },
-  { key: "admin.deposits", to: "/admin/deposits", icon: Banknote },
-  { key: "admin.expenses", to: "/admin/expenses", icon: Receipt },
-  { key: "admin.electricity", to: "/admin/electricity", icon: Zap },
+  { key: "admin.invoices", to: "/admin/invoices", icon: FileText, module: "invoices" },
+  { key: "admin.tenants", to: "/admin/tenants", icon: Users, module: "tenants" },
+  {
+    key: "admin.propertiesBuildings",
+    to: "/admin/properties",
+    icon: Building2,
+    module: "properties",
+  },
+  { key: "admin.units", to: "/admin/units", icon: Home, module: "units" },
+  { key: "admin.contracts", to: "/admin/contracts", icon: ScrollText, module: "contracts" },
+  { key: "admin.payments", to: "/admin/payments", icon: CreditCard, module: "payments" },
+  { key: "admin.employees", to: "/admin/employees", icon: BadgeDollarSign, module: "employees" },
+  { key: "admin.deposits", to: "/admin/deposits", icon: Banknote, module: "deposits" },
+  { key: "admin.expenses", to: "/admin/expenses", icon: Receipt, module: "expenses" },
+  { key: "admin.electricity", to: "/admin/electricity", icon: Zap, module: "electricity" },
 ];
 
-const secondary: NavItem[] = [
-  { key: "admin.inbox", to: "/admin/inbox", icon: Inbox },
-  { key: "admin.reports", to: "/admin/reports", icon: BarChart3 },
-  { key: "admin.audit", to: "/admin/audit", icon: ShieldCheck },
+export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
+  { key: "admin.inbox", to: "/admin/inbox", icon: Inbox, module: "inbox" },
+  { key: "admin.reports", to: "/admin/reports", icon: BarChart3, module: "reports" },
+  { key: "admin.audit", to: "/admin/audit", icon: ShieldCheck, module: "audit" },
   { key: "admin.settings", to: "/admin/settings", icon: Settings },
 ];
 
+/**
+ * يصفّي عناصر الشريط الجانبي لإخفاء الأقسام المعطّلة للشركة مع إبقاء العناصر الدائمة.
+ */
+export function filterNavItems(
+  items: readonly NavItem[],
+  isModuleEnabled: (key: ModuleKey) => boolean,
+): NavItem[] {
+  return items.filter((item) => !item.module || isModuleEnabled(item.module));
+}
+
+/**
+ * الشريط الجانبي للوحة الإدارة: يعرض فقط الأقسام المفعّلة للشركة الحالية.
+ */
 export function AdminSidebar() {
   const { t, dir } = useI18n();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { isModuleEnabled } = useModules();
+  const primary = filterNavItems(PRIMARY_NAV_ITEMS, isModuleEnabled);
+  const secondary = filterNavItems(SECONDARY_NAV_ITEMS, isModuleEnabled);
 
   const isActive = (to: string) =>
     to === "/admin" ? pathname === "/admin" : pathname === to || pathname.startsWith(`${to}/`);

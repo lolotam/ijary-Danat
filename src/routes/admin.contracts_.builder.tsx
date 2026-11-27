@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -36,6 +37,7 @@ export function validateBuilderSearch(search: Record<string, unknown>): { contra
 }
 
 export const Route = createFileRoute("/admin/contracts_/builder")({
+  beforeLoad: () => guardModuleRoute("contracts"),
   validateSearch: validateBuilderSearch,
   component: ContractBuilderPage,
 });

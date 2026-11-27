@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 
 import { ModuleHeader } from "@/components/admin/Phase2Ui";
 import { ChargesTab } from "@/components/admin/electricity/ChargesTab";
@@ -11,6 +12,7 @@ import { useI18n } from "@/i18n/provider";
 import { PERMISSIONS } from "@/lib/permissions";
 
 export const Route = createFileRoute("/admin/electricity")({
+  beforeLoad: () => guardModuleRoute("electricity"),
   component: ElectricityPage,
 });
 

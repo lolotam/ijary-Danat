@@ -146,6 +146,7 @@ export function createRunJob(ports: RunJobPorts, handlerFor: HandlerLookup): Pro
     const skipReason = await skipReasonFor(ports, row, spec);
     if (skipReason) {
       await ports.markSkipped(ref, skipReason);
+      logJobSkipped(row, spec.section, skipReason);
       return;
     }
 
@@ -219,6 +220,15 @@ async function skipReasonFor(
   if (section === null) return null;
   const enabled = await ports.sectionEnabled(row.companyId, section);
   return enabled ? null : "module_disabled";
+}
+
+/**
+ * يسجّل تخطي المهمة مرةً واحدةً عند إغلاق قسمها أو تعليق شركتها.
+ */
+function logJobSkipped(row: JobRequestRow, section: ModuleKey | null, reason: SkipReason): void {
+  console.info(
+    `[worker] skipped job ${row.id} (${row.kind}) for company ${row.companyId}: ${reason}${section ? ` (${section})` : ""}`,
+  );
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { guardModuleRoute } from "@/company/requireModule";
 import { ArrowLeft, CalendarClock, FileSearch, PlayCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,6 +57,7 @@ import { isContractEnded, tenantDisplayName } from "@/lib/tenantDisplayName";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const Route = createFileRoute("/admin/invoices")({
+  beforeLoad: () => guardModuleRoute("invoices"),
   component: InvoicesPage,
   /** يستبعد معرّفات المباني المشوّهة قبل وصولها إلى استعلامات الفواتير. */
   validateSearch: (

@@ -10,9 +10,17 @@ import { EMAIL_FONT_STACK } from "@/lib/documentFonts";
 
 export type EmailLocale = "ar" | "en";
 
+/**
+ * ألوان القالب واسم المنصة الافتراضي.
+ *
+ * The names are the platform's, not a company's: they are only what the header
+ * shows when no send path substituted the company's own name (see
+ * `applyEmailBrandName`). They used to be one company's name, printed on every
+ * company's mail.
+ */
 export const BRAND = {
-  name_ar: "دانة المستقبل العقارية",
-  name_en: "Danat Al Mustaqbal Real Estate",
+  name_ar: "إيجاري",
+  name_en: "IJARY",
   primary: "#0f3d2e",
   accent: "#d4a44c",
   bg: "#f5f2ec",
@@ -33,13 +41,51 @@ export const BRAND = {
 export const EMAIL_LOGO_MARKER = "<!--EMAIL_LOGO-->";
 
 /**
- * اسم الشركة كما يظهر في ترويسة البريد.
+ * علامتا موضع اسم الشركة في ترويسة البريد، يستبدل مسار الإرسال ما بينهما.
  *
- * Exported so the send path can use it as the logo's `alt` text without copying
- * the string — a client that blocks images must still read who sent the mail.
+ * A pair rather than one marker, so the platform name between them still
+ * reads correctly in a document that never reaches the send path. Same reason
+ * as `EMAIL_LOGO_MARKER`: sixteen senders build the HTML without knowing the
+ * company, and the send path is the one place every email provably reaches.
+ */
+export const EMAIL_BRAND_NAME_OPEN = "<!--EMAIL_BRAND_NAME-->";
+export const EMAIL_BRAND_NAME_CLOSE = "<!--/EMAIL_BRAND_NAME-->";
+
+const BRAND_NAME_SLOT = /<!--EMAIL_BRAND_NAME-->[\s\S]*?<!--\/EMAIL_BRAND_NAME-->/g;
+
+/**
+ * اسم المنصة الافتراضي في ترويسة البريد قبل استبداله باسم الشركة.
+ *
+ * Also the fallback `alt` text of the logo where no company name is known.
  */
 export function emailBrandName(locale: EmailLocale): string {
   return locale === "ar" ? BRAND.name_ar : BRAND.name_en;
+}
+
+/**
+ * يرجع موضع اسم الشركة جاهزاً للإدراج في نص الرسالة، باسم المنصة حتى يُستبدل.
+ *
+ * Lets a body sentence name the sending company without the builder knowing
+ * it: the send path fills every slot, header and body alike.
+ */
+export function emailBrandSlot(locale: EmailLocale): string {
+  return `${EMAIL_BRAND_NAME_OPEN}${escapeHtml(emailBrandName(locale))}${EMAIL_BRAND_NAME_CLOSE}`;
+}
+
+/**
+ * يضع اسم الشركة المرسلة في ترويسة البريد ونصه مكان اسم المنصة الافتراضي.
+ *
+ * Pure and synchronous: the template preview runs it in the browser too. A
+ * blank or missing name keeps the platform default rather than an empty
+ * header (a branding row read without its name columns must not throw). The
+ * markers stay around the new name, so substituting again (a resend after the
+ * company renamed itself) replaces it rather than nesting.
+ */
+export function applyEmailBrandName(html: string, brandName: string | null | undefined): string {
+  const name = brandName?.trim() ?? "";
+  if (!name || !html.includes(EMAIL_BRAND_NAME_OPEN)) return html;
+  const slot = `${EMAIL_BRAND_NAME_OPEN}${escapeHtml(name)}${EMAIL_BRAND_NAME_CLOSE}`;
+  return html.replace(BRAND_NAME_SLOT, () => slot);
 }
 
 export interface TemplateResult {
@@ -54,7 +100,6 @@ export interface TemplateResult {
 export function wrapLayout(locale: EmailLocale, title: string, body: string): string {
   const dir = locale === "ar" ? "rtl" : "ltr";
   const lang = locale;
-  const brandName = locale === "ar" ? BRAND.name_ar : BRAND.name_en;
   const footerNote =
     locale === "ar"
       ? "هذه رسالة تلقائية من نظام إدارة الإيجارات. للتواصل يرجى الاتصال بمكتب الشركة."
@@ -83,7 +128,7 @@ export function wrapLayout(locale: EmailLocale, title: string, body: string): st
       <table role="presentation" class="email-shell" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,0.06);">
         <tr>
           <td class="email-pad" style="background:${BRAND.primary};padding:24px 28px;color:#ffffff;">
-            ${EMAIL_LOGO_MARKER}<div style="font-size:20px;font-weight:700;letter-spacing:0.3px;">${escapeHtml(brandName)}</div>
+            ${EMAIL_LOGO_MARKER}<div style="font-size:20px;font-weight:700;letter-spacing:0.3px;">${emailBrandSlot(locale)}</div>
             <div style="font-size:12px;opacity:0.85;margin-top:4px;">${escapeHtml(title)}</div>
           </td>
         </tr>

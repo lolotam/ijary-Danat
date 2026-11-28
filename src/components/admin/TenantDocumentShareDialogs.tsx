@@ -14,7 +14,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import type { Tenant, TenantDocument } from "@/hooks/useTenants";
+import { useI18n } from "@/i18n/provider";
 import {
   buildMailtoUrl,
   buildWhatsAppUrl,
@@ -32,10 +34,25 @@ export interface UseShareDialogStateArgs {
   t: Translate;
 }
 
+/**
+ * يبني عنوان رسالة المشاركة الافتراضي باسم الشركة المرسلة.
+ *
+ * The default subject used to name one fixed company for every company's
+ * mail; it now names the host's company, in the staff member's language.
+ */
+function defaultShareSubject(locale: string, companyName: string): string {
+  return locale === "ar" ? `مستندات من ${companyName}` : `Documents from ${companyName}`;
+}
+
+/**
+ * يدير حالة نافذتي مشاركة المستندات عبر واتساب والبريد.
+ */
 export function useShareDialogState({ selectedDocs, tenant, t }: UseShareDialogStateArgs) {
+  const { locale } = useI18n();
+  const companyName = useHostBrandName();
   const [shareOpen, setShareOpen] = useState<ShareChannel | null>(null);
   const [shareRecipient, setShareRecipient] = useState("");
-  const [shareSubject, setShareSubject] = useState("Documents from Danat Al Mustaqbal");
+  const [shareSubject, setShareSubject] = useState(() => defaultShareSubject(locale, companyName));
   const [shareBusy, setShareBusy] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
@@ -79,7 +96,9 @@ export function useShareDialogState({ selectedDocs, tenant, t }: UseShareDialogS
         return;
       }
       const labels = {
-        intro: t("documents.shareIntro"),
+        // The neutral intro ("Your documents:") gains the sender's name, so
+        // a renter reading the message knows which company sent the links.
+        intro: `${companyName} — ${t("documents.shareIntro")}`,
         expiryNote: t("documents.linksExpireNote"),
       };
       const url =

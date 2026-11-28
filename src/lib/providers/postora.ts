@@ -190,7 +190,7 @@ async function postoraFetch(options: PostoraFetchOptions): Promise<{
  *
  * Send an approved WhatsApp template through Postora's partner API. Deliberately
  * NOT a drop-in replacement for sendWithWhatsApp: it takes an idempotency key,
- * because Postora requires one on every send and the whole point is that Danat's
+ * because Postora requires one on every send and the whole point is that IJARY's
  * own retry loop cannot double-message a tenant.
  */
 export async function sendWithPostora(

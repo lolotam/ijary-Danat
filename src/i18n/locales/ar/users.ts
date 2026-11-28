@@ -280,10 +280,10 @@ export const users: Record<string, string> = {
   "portal.reminder.understood": "تم التبليغ",
   "portal.disabled.title": "بوابة المستأجر غير مفعّلة",
   "portal.disabled.description":
-    "تم إيقاف الوصول إلى البوابة لهذا الحساب. يرجى التواصل مع إدارة دانة المستقبل العقارية.",
+    "تم إيقاف الوصول إلى البوابة لهذا الحساب. يرجى التواصل مع إدارة الشركة.",
   "portal.noTabs.title": "لا توجد أقسام متاحة",
   "portal.noTabs.description":
-    "لم يتم تفعيل أي قسم من أقسام البوابة لهذا الحساب. يرجى التواصل مع إدارة دانة المستقبل العقارية.",
+    "لم يتم تفعيل أي قسم من أقسام البوابة لهذا الحساب. يرجى التواصل مع إدارة الشركة.",
   "portal.notFound.title": "المستأجر غير موجود",
   "portal.notFound.description":
     "تعذّر العثور على بيانات هذا المستأجر. ربما تم حذفه أو أن الرابط غير صحيح.",
@@ -363,7 +363,7 @@ export const users: Record<string, string> = {
   "portal.shop.descriptionAr": "الوصف بالعربية",
   "portal.shop.descriptionEn": "الوصف بالإنجليزية",
   "portal.shop.logo": "شعار المتجر — شريط العلامات",
-  "portal.shop.logoHint": "يظهر في قسم «العلامات في دانة الجهراء»",
+  "portal.shop.logoHint": "يظهر في قسم «العلامات التجارية»",
   "portal.shop.logoEmpty": "لا يوجد شعار",
   "portal.shop.logoUploaded": "تم رفع الشعار",
   "portal.shop.cover": "صورة بطاقة المتجر — دليل المحلات",

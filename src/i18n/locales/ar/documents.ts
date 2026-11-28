@@ -55,7 +55,7 @@ export const documents: Record<string, string> = {
   "documents.displayNamePlaceholder": "اتركه فارغًا لاستخدام اسم الملف",
   "documents.totalCount": "{{count}} مستند",
   "documents.totalSize": "الحجم الكلي: {{kb}} ك.ب",
-  "documents.shareIntro": "مستندات من دانة المستقبل العقارية:",
+  "documents.shareIntro": "مستنداتك:",
   "attachment.none": "لا يوجد مرفق",
   "attachment.previewUnavailable": "لا تتوفر معاينة لهذا النوع من الملفات.",
   "attachment.loadFailed": "تعذّر تحميل المعاينة",

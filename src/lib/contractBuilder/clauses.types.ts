@@ -1,3 +1,4 @@
+import type { ContractIssuer } from "./issuer";
 import type { ContractBuilderValues } from "./schema";
 
 /** حقول التواصل الخاصة بإنشاء الحساب، وهي محذوفة من سياق البنود عمداً. */
@@ -27,12 +28,12 @@ export type ClauseText = {
 };
 
 export type ContractCopy = {
-  companyName: string;
-  officeAddress: string;
-  footer: string;
+  /** Footer band: the issuing company's address and phone. */
+  footer(issuer: ContractIssuer): string;
   title: string;
   opening(ctx: ClauseContext): string;
-  firstParty: string;
+  /** First-party line naming the issuing company and its seat. */
+  firstParty(issuer: ContractIssuer): string;
   secondPartyHeading: string;
   /** Second-party lines by mode, always ending with `capacityStatement`. */
   secondParty(ctx: ClauseContext): string[];

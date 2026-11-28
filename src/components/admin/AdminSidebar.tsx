@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useModules } from "@/hooks/useModules";
 import { useI18n } from "@/i18n/provider";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 
 type ItemKey =
   | "admin.dashboard"
@@ -99,6 +100,7 @@ export function filterNavItems(
  */
 export function AdminSidebar() {
   const { t, dir } = useI18n();
+  const brandName = useHostBrandName();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { isModuleEnabled } = useModules();
   const primary = filterNavItems(PRIMARY_NAV_ITEMS, isModuleEnabled);
@@ -112,12 +114,12 @@ export function AdminSidebar() {
       <SidebarContent>
         <div className="flex items-center gap-2.5 border-b border-sidebar-border px-3 py-5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
           <BrandMark
-            alt={t("sidebar.danatFuture")}
+            alt={brandName}
             onDark
             className="size-12 rounded-xl group-data-[collapsible=icon]:size-9"
           />
           <span className="truncate text-[20px] font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-            {t("sidebar.danatFuture")}
+            {brandName}
           </span>
         </div>
         <nav aria-label="إدارة النظام / Admin navigation">

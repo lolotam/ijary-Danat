@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { useAuth } from "@/auth/AuthProvider";
 import { useI18n } from "@/i18n/provider";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import { usePermissions } from "@/hooks/usePermissions";
 import { requirePasswordChange } from "@/components/auth/passwordChangeGuard";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -46,6 +47,7 @@ function AdminLayout() {
   const { user, loading, signOut } = useAuth();
   const permissions = usePermissions();
   const { t, dir, toggle } = useI18n();
+  const brandName = useHostBrandName();
   const navigate = useNavigate();
 
   // Staff-only shell: any authenticated non-staff (e.g. tenant portal sessions)
@@ -116,7 +118,7 @@ function AdminLayout() {
           <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-border/70 bg-background/90 px-3 shadow-[0_1px_0_rgb(116_88_23_/_0.06)] backdrop-blur-xl pt-[env(safe-area-inset-top)] sm:px-5">
             <div className="flex min-w-0 items-center gap-2">
               <SidebarTrigger className="shrink-0 pointer-coarse:size-11" />
-              <BrandLogo name={t("brand.name")} className="hidden sm:flex" />
+              <BrandLogo name={brandName} className="hidden sm:flex" />
             </div>
             <div className="flex items-center gap-2">
               <InboxBell />

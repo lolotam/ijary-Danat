@@ -99,12 +99,14 @@ function BodyField({
   // the admin reviews a document that differs from what goes out. Falls back to
   // the app logo exactly as `emailLogoFor` does on the server.
   const emailLogo = company.data?.email_logo_url ?? company.data?.logo_url ?? null;
+  // Same name the send path puts in the header (`brandNameFor`).
+  const companyName = (locale === "ar" ? company.data?.name_ar : company.data?.name_en) ?? "";
 
   const previewHtml = useMemo(() => {
     const rendered = renderTemplate(value, sampleVariablesFor(type)) ?? "";
     const document = renderEmailDocument(locale, label, rendered);
-    return applyEmailLogo(document, emailLogo, emailBrandName(locale));
-  }, [value, locale, label, type, emailLogo]);
+    return applyEmailLogo(document, emailLogo, companyName || emailBrandName(locale));
+  }, [value, locale, label, type, emailLogo, companyName]);
 
   return (
     <div className="space-y-2 sm:col-span-2">

@@ -1,6 +1,7 @@
 import { ArrowRight, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import type { LandingPageSettingsWithMedia } from "@/hooks/useLandingSettings";
 import { useI18n } from "@/i18n/provider";
 import { PAGE_SHELL } from "./landingLayout";
@@ -15,6 +16,7 @@ interface AboutSectionProps {
  */
 export function AboutSection({ settings, isSectionEnabled }: AboutSectionProps) {
   const { t, dir } = useI18n();
+  const companyName = useHostBrandName();
 
   return (
     <section id="about" className={`py-24 ${PAGE_SHELL}`}>
@@ -24,7 +26,7 @@ export function AboutSection({ settings, isSectionEnabled }: AboutSectionProps) 
           <div className="aspect-[4/5] overflow-hidden rounded-2xl border border-border shadow-2xl relative">
             <img
               src={settings?.about_primary?.storage_path || "/landing/feature.png"}
-              alt="Danat Al Jahra architectural render"
+              alt={companyName}
               className="h-full w-full object-cover transition-transform duration-1000 hover:scale-105 motion-reduce:transition-none motion-reduce:hover:scale-100"
               loading="lazy"
               decoding="async"
@@ -34,7 +36,7 @@ export function AboutSection({ settings, isSectionEnabled }: AboutSectionProps) 
           <div className="absolute -bottom-6 -end-6 md:-bottom-8 md:-end-8 w-2/3 aspect-video rounded-xl overflow-hidden border border-[#C98A24]/40 shadow-2xl hidden sm:block">
             <img
               src={settings?.about_secondary?.storage_path || "/landing/hero.png"}
-              alt="Danat Al Jahra complex"
+              alt={companyName}
               className="h-full w-full object-cover"
               loading="lazy"
               decoding="async"

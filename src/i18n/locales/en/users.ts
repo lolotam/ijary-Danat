@@ -290,10 +290,10 @@ export const users: Record<string, string> = {
   "portal.reminder.understood": "Reported",
   "portal.disabled.title": "Tenant portal disabled",
   "portal.disabled.description":
-    "Portal access is disabled for this account. Please contact Danat Al Mustaqbal Real Estate management.",
+    "Portal access is disabled for this account. Please contact the company's management.",
   "portal.noTabs.title": "No sections available",
   "portal.noTabs.description":
-    "No portal sections are enabled for this account. Please contact Danat Al Mustaqbal Real Estate management.",
+    "No portal sections are enabled for this account. Please contact the company's management.",
   "portal.notFound.title": "Tenant not found",
   "portal.notFound.description":
     "This tenant's record could not be loaded. It may have been removed, or the preview link is invalid.",
@@ -377,7 +377,7 @@ export const users: Record<string, string> = {
   "portal.shop.descriptionAr": "Arabic description",
   "portal.shop.descriptionEn": "English description",
   "portal.shop.logo": "Shop logo — brands carousel",
-  "portal.shop.logoHint": 'Shown in "Brands at Danat Al Jahra" carousel',
+  "portal.shop.logoHint": 'Shown in the "Brands" carousel',
   "portal.shop.logoEmpty": "No logo",
   "portal.shop.logoUploaded": "Logo uploaded",
   "portal.shop.cover": "Shop card image — shop explorer",

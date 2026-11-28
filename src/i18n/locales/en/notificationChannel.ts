@@ -8,7 +8,7 @@ export const notificationChannel: Record<string, string> = {
   "notificationProvider.whatsapp_cloud_api": "WhatsApp Cloud API",
   "notificationProvider.twilio": "Twilio WhatsApp",
   "notificationProvider.postora": "Postora WhatsApp",
-  "notificationProvider.evolution_api": "Danat-Future API WhatsApp (QR)",
+  "notificationProvider.evolution_api": "WhatsApp (QR code)",
   "reports.title": "Reports",
   "reports.subtitle":
     "Filterable operational reports with print, export, and scheduled email delivery.",
@@ -314,8 +314,7 @@ export const notificationChannel: Record<string, string> = {
   "ownedPageKpis.occupiedTotal": "Occupied / total",
   "ownedPageKpis.tenants": "Tenants",
   "ownedPageKpis.activeTotal": "Active / total",
-  "adminDashboard.liveOverviewOfKeyMetrics":
-    "Live overview of key metrics for Danat Al Mustaqbal Real Estate.",
+  "adminDashboard.liveOverviewOfKeyMetrics": "Live overview of key metrics.",
   "adminDashboard.monthlyInvoices": "Monthly invoices",
   "adminDashboard.month": "Month",
   "adminDashboard.year": "Year",
@@ -331,7 +330,7 @@ export const notificationChannel: Record<string, string> = {
   "invoicePrint.paid": "Paid",
   "invoicePrint.contractAmount": "Contract amount",
   "invoicePrint.discount": "Discount",
-  "closeoutStatement.danatAlMustaqbalRealEstate": "Danat Al Mustaqbal Real Estate",
+  "closeoutStatement.danatAlMustaqbalRealEstate": "The company",
   "closeoutStatement.portalDisabled": "Portal disabled",
   "closeoutStatement.noPortalChangeViaClose": "No portal change via close-out (see tenant status)",
   "closeoutStatement.archived": "archived",

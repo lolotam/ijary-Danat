@@ -50,12 +50,12 @@ export const TEMPLATE_VARIABLES: Partial<Record<NotificationType, TemplateVariab
     // while the sender still fills them.
     v("unit", "الوحدة", "Unit", "A-12 — شقة بغرفتين"),
     v("days_until", "الأيام المتبقية", "Days remaining", "9"),
-    v("company_name", "اسم الشركة", "Company name", "دانة المستقبل العقارية"),
+    v("company_name", "اسم الشركة", "Company name", "شركة المثال العقارية"),
   ],
   document_send: [
     v("tenant_name", "اسم المستأجر", "Tenant name", "أحمد المطيري"),
     v("unit_name", "الوحدة", "Unit", "شقة 12"),
-    v("property_name", "العقار", "Property", "برج دانة"),
+    v("property_name", "العقار", "Property", "برج المثال"),
     v("invoice_number", "رقم الفاتورة", "Invoice number", "INV-2026-0042"),
     v("period", "الفترة", "Period", "2026-08"),
     v("issue_date", "تاريخ الإصدار", "Issue date", "2026-08-01"),
@@ -92,7 +92,7 @@ export const TEMPLATE_VARIABLES: Partial<Record<NotificationType, TemplateVariab
     v("password", "كلمة المرور", "Password", "••••••••"),
     v("email", "البريد", "Email", "ahmed@example.com"),
     v("mobile", "الجوال", "Mobile", "+965 5000 0000"),
-    v("login_url", "رابط الدخول", "Login URL", "https://danat-future.com/portal"),
+    v("login_url", "رابط الدخول", "Login URL", "https://company.ijary.app/portal"),
   ],
   due_reminder: [
     v("tenant_name", "اسم المستأجر", "Tenant name", "أحمد المطيري"),
@@ -154,7 +154,7 @@ export const TEMPLATE_VARIABLES: Partial<Record<NotificationType, TemplateVariab
   ],
   company_info: [
     v("tenant_name", "اسم المستأجر", "Tenant name", "أحمد المطيري"),
-    v("company_name", "اسم الشركة", "Company name", "دانة المستقبل العقارية"),
+    v("company_name", "اسم الشركة", "Company name", "شركة المثال العقارية"),
   ],
   invoice_disputed: [
     v("tenant_name", "اسم المستأجر", "Tenant name", "أحمد المطيري"),
@@ -173,7 +173,7 @@ export const TEMPLATE_VARIABLES: Partial<Record<NotificationType, TemplateVariab
       "settings_url",
       "رابط إعدادات التكامل",
       "Integrations settings URL",
-      "https://danat-future.com/admin/settings/integrations",
+      "https://company.ijary.app/admin/settings/integrations",
     ),
   ],
 };
@@ -195,7 +195,7 @@ export const TEMPLATE_VARIABLES: Partial<Record<NotificationType, TemplateVariab
  */
 export const FREE_TEXT_VARIABLES: TemplateVariableSpec[] = [
   v("tenant_name", "اسم المستأجر", "Tenant name", "أحمد المطيري"),
-  v("company_name", "اسم الشركة", "Company name", "دانة المستقبل العقارية"),
+  v("company_name", "اسم الشركة", "Company name", "شركة المثال العقارية"),
   v("invoice_amount", "مبلغ الفاتورة", "Invoice amount", "250.000 KWD"),
   v("due_date", "تاريخ الاستحقاق", "Due date", "2026-08-10"),
   v("outstanding", "المبلغ المستحق", "Outstanding", "500.000 KWD"),
@@ -207,7 +207,7 @@ export const FREE_TEXT_VARIABLES: TemplateVariableSpec[] = [
   v("end_date", "تاريخ انتهاء العقد", "Contract end date", "2026-12-31"),
   v("unit", "الوحدة", "Unit", "A-12 — شقة بغرفتين"),
   v("days_until", "الأيام المتبقية", "Days remaining", "9"),
-  v("pay_now_url", "رابط الدفع", "Payment link", "https://danat-future.com/portal/invoices"),
+  v("pay_now_url", "رابط الدفع", "Payment link", "https://company.ijary.app/portal/invoices"),
 ];
 
 /** The preview's substitution map for one type. */

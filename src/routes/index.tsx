@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, redirect, useRouteContext } from "@tanstack/react-router";
+import { createFileRoute, redirect, useLoaderData } from "@tanstack/react-router";
 
 import { AboutSection } from "@/components/landing/AboutSection";
 import { AnnouncementStrip } from "@/components/landing/AnnouncementStrip";
@@ -96,7 +96,7 @@ export const Route = createFileRoute("/")({
  */
 function RootPage() {
   const { decision } = Route.useLoaderData();
-  const { branding } = useRouteContext({ from: "__root__" }) as { branding: PublicBranding };
+  const { branding } = useLoaderData({ from: "__root__" }) as { branding: PublicBranding };
   if (decision.page === "landing") return <LandingPage />;
   if (decision.page === "notFound") return <NotFoundPage />;
   return <MarketingPage branding={branding} />;

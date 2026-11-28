@@ -73,7 +73,7 @@ export const contractBuilder: Record<string, string> = {
   "contractBuilder.field.paci_no": "PACI No.",
   "contractBuilder.notice.roof_units_excluded":
     "The contract includes a roof unit; it is left out of the investment contract text, and the monthly value covers all units",
-  "brand.name": "Danat Future",
+  "brand.name": "IJARY",
   "brand.tagline": "Property, lease, and payment management — unified.",
   "nav.home": "Home",
   "nav.about": "About",
@@ -118,16 +118,16 @@ export const contractBuilder: Record<string, string> = {
   "footer.terms": "Terms of Service",
   "privacy.title": "Privacy Policy",
   "terms.title": "Terms of Service",
-  "landing.purpose.badge": "Application Purpose & Identity — Danat Future (Danat-future)",
-  "landing.purpose.title": "Purpose of Danat Future (Danat-future) Application",
+  "landing.purpose.badge": "Application Purpose & Identity — IJARY",
+  "landing.purpose.title": "Purpose of the IJARY Application",
   "landing.purpose.sub":
-    "Danat Future (Danat-future) is an enterprise real estate application built for property managers, unit operators, and tenants to handle lease agreements, monthly rent invoicing, and tenant inquiry management.",
-  "landing.purpose.card1.title": "Property & Lease Management in Danat Future",
+    "IJARY is an enterprise real estate application built for property managers, unit operators, and tenants to handle lease agreements, monthly rent invoicing, and tenant inquiry management.",
+  "landing.purpose.card1.title": "Property & Lease Management in IJARY",
   "landing.purpose.card1.body":
     "Generate lease contracts, issue monthly rent invoices, track payment schedules, and handle property maintenance.",
   "landing.purpose.card2.title": "Google OAuth & Gmail Integration Disclosure",
   "landing.purpose.card2.body":
-    "Danat Future (Danat-future) integrates with Google OAuth (Gmail API) to allow property managers to sync incoming tenant leasing inquiries and support emails directly into the Danat Future Support Inbox (/admin/inbox). Google user data is strictly used for tenant communication and is never shared, sold, or used for advertising.",
+    "IJARY integrates with Google OAuth (Gmail API) to allow property managers to sync incoming tenant leasing inquiries and support emails directly into the Support Inbox (/admin/inbox). Google user data is strictly used for tenant communication and is never shared, sold, or used for advertising.",
   "landing.purpose.card3.title": "Secure KNET & Online Payments",
   "landing.purpose.card3.body":
     "Process online rent payments via MyFatoorah / KNET with instant digital receipts and secure accounting logs.",
@@ -143,7 +143,7 @@ export const contractBuilder: Record<string, string> = {
   "auth.error.generic": "Could not sign you in. Please try again.",
   "auth.error.deactivated": "Account is deactivated. Please contact the administrator.",
   "auth.backHome": "Back to home",
-  "portalAuth.marketing.headline": "Your digital gateway to your Danat Al Mustaqbal lease",
+  "portalAuth.marketing.headline": "Your digital gateway to your lease",
   "portalAuth.marketing.subline":
     "View your contract and invoices and settle payments anytime, anywhere — with a full receipt history and reminders before every due date.",
   "portalAuth.marketing.perk1": "Invoices and receipts available around the clock",
@@ -153,7 +153,7 @@ export const contractBuilder: Record<string, string> = {
   "portalAuth.title": "Tenant Portal",
   "portalAuth.sub": "Sign in to view your lease, invoices, and make payments.",
   "portalAuth.note":
-    "Portal accounts are issued by Danat Al Mustaqbal administration. Contact us if you have not received your credentials.",
+    "Portal accounts are issued by the company's administration. Contact us if you have not received your credentials.",
   "adminAuth.badge": "Administration sign-in",
   "adminAuth.title": "Admin Management Portal",
   "adminAuth.sub": "Restricted to administration staff.",
@@ -267,7 +267,7 @@ export const contractBuilder: Record<string, string> = {
   "settings.integrations.disconnected": "Gmail disconnected.",
   "settings.integrations.notConnectedHelp":
     "No mailbox is connected. Press Connect Gmail to grant access.",
-  "settings.integrations.evolution": "WhatsApp (Danat-Future API)",
+  "settings.integrations.evolution": "WhatsApp (QR code)",
   "settings.integrations.evolutionDescription":
     "Pair a WhatsApp number by scanning a QR code to send notifications, reminders and chat with tenants. Unofficial gateway — heavy bulk sending can get the number banned.",
   "settings.integrations.evolutionNumber": "Connected number",
@@ -306,16 +306,16 @@ export const contractBuilder: Record<string, string> = {
   "landing.info.stores": "Commercial Shops",
   "landing.info.parking": "Ample Parking Spaces",
   "landing.info.hours": "Open Daily",
-  "landing.info.location": "Jahra, Kuwait",
+  "landing.info.location": "Kuwait",
   "landing.about.cta": "Explore the Complex",
-  "landing.brands.title": "Brands at Danat Al Jahra",
+  "landing.brands.title": "Our Brands",
   "landing.brands.cta": "View All Shops",
   "landing.explorer.title": "Explore Our Shops",
   "landing.explorer.search": "Search for a shop...",
   "landing.explorer.all": "All",
   "landing.explorer.empty": "No shops match your search.",
   "landing.explorer.quickView": "Quick View",
-  "landing.facilities.title": "Why Visit Danat Al Jahra?",
+  "landing.facilities.title": "Why Visit Us?",
   "landing.facilities.subtitle": "Premium facilities and unified shopping experience",
   "landing.facilities.f1.title": "Shopping & Daily Services",
   "landing.facilities.f1.desc":
@@ -325,8 +325,7 @@ export const contractBuilder: Record<string, string> = {
   "landing.facilities.f3.title": "Beauty & Wellness Clubs",
   "landing.facilities.f3.desc": "Ladies beauty salons and men's active gyms with world-class gear.",
   "landing.facilities.f4.title": "Highly Active Location",
-  "landing.facilities.f4.desc":
-    "Ideally situated in central Jahra with fast access from highway roads.",
+  "landing.facilities.f4.desc": "Easy to reach from major highways.",
   "landing.facilities.f5.title": "Spacious Car Parking",
   "landing.facilities.f5.desc": "Comfortable parking zones ensuring smooth entry to the complex.",
   "landing.facilities.f6.title": "Safe Family Environment",
@@ -340,8 +339,8 @@ export const contractBuilder: Record<string, string> = {
   "landing.location.parking": "Parking",
   "landing.location.googleMaps": "Google Maps",
   "landing.location.call": "Call Phone",
-  "landing.leasing.title": "Bring Your Brand to Danat Al Jahra",
-  "landing.leasing.subtitle": "Join a thirving commercial hub serving the Jahra community.",
+  "landing.leasing.title": "Bring Your Brand to Us",
+  "landing.leasing.subtitle": "Join a thriving commercial hub.",
   "landing.leasing.cta": "Contact Us",
   "landing.leasing.whatsapp": "Chat on WhatsApp",
   "landing.leasing.form.title": "Contact Us",

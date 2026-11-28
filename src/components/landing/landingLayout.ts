@@ -1,4 +1,5 @@
 import { useCompany } from "@/hooks/useCompany";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import type { CommercialBrand } from "@/hooks/useLandingSettings";
 import { useMapEmbed } from "@/hooks/useMapEmbed";
 import { useI18n } from "@/i18n/provider";
@@ -88,8 +89,11 @@ export interface LandingContact {
  * follow, so the embed src is resolved rather than guessed.
  */
 export function useLandingContact(): LandingContact {
-  const { t, locale } = useI18n();
+  const { locale } = useI18n();
   const { data: company } = useCompany();
+  // The last resort is the host's public name, not a fixed company's: the
+  // company row may still be loading when the page first paints.
+  const hostBrandName = useHostBrandName();
   const companyAddress =
     (locale === "ar" ? company?.address_ar : company?.address_en) ||
     company?.address_ar ||
@@ -110,7 +114,7 @@ export function useLandingContact(): LandingContact {
     (locale === "ar" ? company?.name_ar : company?.name_en) ||
     company?.name_ar ||
     company?.name_en ||
-    t("landingPage.danatAlJahra");
+    hostBrandName;
   return {
     companyAddress,
     companyPhone,

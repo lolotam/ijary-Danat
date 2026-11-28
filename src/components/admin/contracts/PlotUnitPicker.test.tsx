@@ -7,7 +7,11 @@ import { afterEach, describe, expect, test } from "vitest";
 import { t } from "@/i18n/dictionary";
 import type { Locale } from "@/i18n/dictionary";
 import { buildContractHtml } from "@/lib/contractBuilder/html";
-import { FIXTURE_PLOT, validContractValues } from "@/lib/contractBuilder/schema.fixture";
+import {
+  FIXTURE_ISSUER,
+  FIXTURE_PLOT,
+  validContractValues,
+} from "@/lib/contractBuilder/schema.fixture";
 import type { ContractBuilderValues } from "@/lib/contractBuilder/schema";
 import type { SelectableUnitRow } from "@/lib/contractBuilder/units";
 import { PlotUnitPicker, type PickerProperty } from "./PlotUnitPicker";
@@ -153,7 +157,7 @@ describe("selection and printed contract", () => {
       const html = buildContractHtml(
         { ...form.getValues(), plots: [{ ...FIXTURE_PLOT }] },
         locale,
-        "data:,",
+        FIXTURE_ISSUER,
       );
       for (const label of ["مؤجر", "شاغر", "Occupied", "Vacant"]) {
         expect(html).not.toContain(label);

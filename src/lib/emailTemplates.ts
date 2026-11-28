@@ -1,8 +1,10 @@
 /**
- * Branded HTML email templates for Danat Al Mustaqbal Real Estate.
+ * Branded HTML email templates for IJARY companies.
  *
  * All templates are Arabic-first (RTL) with English fallback. They use
  * inline styles for maximum client compatibility (Gmail, Outlook, Apple Mail).
+ * The header carries the platform name until the send path substitutes the
+ * sending company's own name and logo (`applyEmailLogo`).
  */
 
 // The builders live in ./emailTemplates/, one file per message family; this
@@ -27,6 +29,9 @@ import {
 } from "./emailTemplates/layout";
 
 export {
+  applyEmailBrandName,
+  EMAIL_BRAND_NAME_CLOSE,
+  EMAIL_BRAND_NAME_OPEN,
   EMAIL_LOGO_MARKER,
   emailBrandName,
   renderEmailDocument,

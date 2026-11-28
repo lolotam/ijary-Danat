@@ -55,7 +55,7 @@ export const documents: Record<string, string> = {
   "documents.displayNamePlaceholder": "Leave blank to use file name",
   "documents.totalCount": "{{count}} documents",
   "documents.totalSize": "Total size: {{kb}} KB",
-  "documents.shareIntro": "Documents from Danat Al Mustaqbal:",
+  "documents.shareIntro": "Your documents:",
   "attachment.none": "No attachment",
   "attachment.previewUnavailable": "Preview not available for this file type.",
   "attachment.loadFailed": "Failed to load preview",

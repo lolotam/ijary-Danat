@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  applyEmailBrandName,
+  EMAIL_BRAND_NAME_CLOSE,
+  EMAIL_BRAND_NAME_OPEN,
   invoiceDocumentTemplate,
   renderEmailDocument,
   tenantCredentialsTemplate,
@@ -47,6 +50,14 @@ describe("credential email templates", () => {
       expect(tpl.text).toContain(BASE.email);
       expect(tpl.text).toContain(BASE.username);
       expect(tpl.text).toContain(BASE.password);
+    });
+
+    test("the built-in intro names the sending company, not a fixed one", () => {
+      expect(tpl.html).not.toContain("دانة");
+      expect(tpl.html).not.toContain("Danat");
+      const named = applyEmailBrandName(tpl.html, "شركة النخبة");
+      // Header and intro both carry the sending company once substituted.
+      expect(named.split("شركة النخبة").length - 1).toBe(2);
     });
 
     test("credential values are marked LTR so they survive an RTL layout", () => {
@@ -196,8 +207,28 @@ describe("renderEmailDocument", () => {
   test("wraps inner content in the branded shell", () => {
     const html = renderEmailDocument("en", "Receipt", "<p>Hello</p>");
     expect(html).toContain("<p>Hello</p>");
-    expect(html).toContain("Danat Al Mustaqbal Real Estate");
     expect(html).toContain('dir="ltr"');
+  });
+
+  test("the header carries the platform name until the send path names the company", () => {
+    const html = renderEmailDocument("en", "Receipt", "<p>Hello</p>");
+    expect(html).toContain(`${EMAIL_BRAND_NAME_OPEN}IJARY${EMAIL_BRAND_NAME_CLOSE}`);
+    expect(html).not.toContain("Danat");
+
+    const named = applyEmailBrandName(html, "Gulf <Estates>");
+    expect(named).toContain("Gulf &lt;Estates&gt;");
+    expect(named).not.toContain(">IJARY<");
+    // Substituting again replaces the name instead of nesting a second one.
+    expect(applyEmailBrandName(named, "Renamed Co")).toContain(
+      `${EMAIL_BRAND_NAME_OPEN}Renamed Co${EMAIL_BRAND_NAME_CLOSE}`,
+    );
+    expect(applyEmailBrandName(named, "Renamed Co")).not.toContain("Gulf");
+  });
+
+  test("a blank or missing company name keeps the platform default", () => {
+    const html = renderEmailDocument("ar", "إيصال", "<p>مرحبا</p>");
+    expect(applyEmailBrandName(html, "  ")).toBe(html);
+    expect(applyEmailBrandName(html, undefined)).toBe(html);
   });
 
   test("shell is fluid on narrow screens (no fixed 600px width only)", () => {
@@ -229,7 +260,7 @@ describe("renderEmailDocument", () => {
     // Only a body that STARTS as a document opts out. A paragraph mentioning
     // <html> in prose must not accidentally lose the brand shell.
     const body = "<p>use &lt;html&gt; carefully</p>";
-    expect(renderEmailDocument("en", "T", body)).toContain("Danat Al Mustaqbal");
+    expect(renderEmailDocument("en", "T", body)).toContain(EMAIL_BRAND_NAME_OPEN);
   });
 });
 

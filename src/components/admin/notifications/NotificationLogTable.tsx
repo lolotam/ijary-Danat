@@ -87,7 +87,7 @@ export function NotificationLogTable({
    * أزرار إعادة المحاولة / إلغاء لطابور الإشعارات.
    *
    * `needs_review` is retryable on purpose. The drain job parks rows there for
-   * conditions a human resolves outside Danat — a quota that resets, an
+   * conditions a human resolves outside IJARY — a quota that resets, an
    * administrator who re-authorizes — and their failure_reason tells staff to
    * re-queue afterwards. Without this button there was no way to do that, which
    * made a parked row harder to recover than an ordinary failure.

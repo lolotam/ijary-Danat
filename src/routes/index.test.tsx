@@ -32,6 +32,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   createFileRoute: () => (options: unknown) => ({ options }),
   Link: ({ children }: { children: unknown }) => children,
 }));
+vi.mock("@/hooks/useHostBrandName", () => ({ useHostBrandName: () => "Acme Estates" }));
 vi.mock("@/hooks/useCompany", () => ({
   useCompany: () => ({ data: { name_en: "Danat", phone: "+96511111111" } }),
 }));

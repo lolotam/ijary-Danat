@@ -1,6 +1,13 @@
 import { escapeHtml } from "@/lib/html";
 import { EMAIL_FONT_STACK } from "@/lib/documentFonts";
-import { BRAND, button, wrapLayout, type EmailLocale, type TemplateResult } from "./layout";
+import {
+  BRAND,
+  button,
+  emailBrandSlot,
+  wrapLayout,
+  type EmailLocale,
+  type TemplateResult,
+} from "./layout";
 
 /**
  * رسائل بيانات الدخول: حساب بوابة المستأجر وحساب نظام الإدارة.
@@ -112,10 +119,10 @@ export function tenantCredentialsTemplate(params: {
     (isAr
       ? `
       <p>مرحباً ${escapeHtml(tenantName)}،</p>
-      <p>تم إنشاء حسابك في بوابة المستأجر الخاصة بشركة دانة المستقبل العقارية. يمكنك من خلال البوابة متابعة عقدك، فواتيرك، ومدفوعاتك.</p>`
+      <p>تم إنشاء حسابك في بوابة المستأجر لدى ${emailBrandSlot(locale)}. يمكنك من خلال البوابة متابعة عقدك، فواتيرك، ومدفوعاتك.</p>`
       : `
       <p>Hello ${escapeHtml(tenantName)},</p>
-      <p>An account has been created for you on the Danat Al Mustaqbal tenant portal. From the portal you can review your contract, invoices, and payment history.</p>`);
+      <p>An account has been created for you on the ${emailBrandSlot(locale)} tenant portal. From the portal you can review your contract, invoices, and payment history.</p>`);
   const body = isAr
     ? `
       ${opening}

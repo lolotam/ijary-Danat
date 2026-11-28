@@ -86,7 +86,7 @@ export const POSTORA_NEEDS_REVIEW: Readonly<Record<string, string>> = {
   account_needs_reauth:
     "Postora's WhatsApp connection needs an administrator to re-authorize. No retry can fix that. Re-authorize the WhatsApp account in Postora, then re-queue if still needed.",
   idempotency_conflict:
-    "The same idempotency key was sent with a different request body. Because Danat uses the notification row id as the key, this row's content changed between attempts. Retrying would resend the same conflicting body. Inspect the row history and either cancel it or enqueue a fresh notification.",
+    "The same idempotency key was sent with a different request body. Because IJARY uses the notification row id as the key, this row's content changed between attempts. Retrying would resend the same conflicting body. Inspect the row history and either cancel it or enqueue a fresh notification.",
 };
 
 /**

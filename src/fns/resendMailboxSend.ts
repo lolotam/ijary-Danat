@@ -4,11 +4,10 @@ import { z } from "zod";
 import { companyClient } from "@/company/companyClient.server";
 import { requireRequestCompany } from "@/company/requestCompany.server";
 import { plainTextFrom } from "@/fns/gmailSend";
-import { emailLogoFor } from "@/fns/publicBranding";
+import { brandNameFor, emailLogoFor } from "@/fns/publicBranding";
 import { readPublicBranding } from "@/fns/publicBranding.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { applyEmailLogo } from "@/lib/emailLogo";
-import { emailBrandName } from "@/lib/emailTemplates";
 import type { Json } from "@/integrations/supabase/database.types";
 import { sendWithResend } from "@/lib/providers/resend";
 import { recordSentResendMessage } from "@/lib/recordSentResendMessage";
@@ -154,12 +153,13 @@ export const resendMailboxSend = createServerFn({ method: "POST" })
     // shell has a place to put a logo.
     const branding = await readPublicBranding();
     // Arabic because a composed message has no locale of its own and Arabic is
-    // the product's primary language. It reaches the reader only as the logo's
-    // `alt` text, when the image is blocked.
+    // the product's primary language. It reaches the reader as the company name
+    // in the branded header, and as the logo's `alt` text when the image is
+    // blocked.
     const html = applyEmailLogo(
       data.html?.trim() ? data.html : text,
       emailLogoFor(branding),
-      emailBrandName("ar"),
+      brandNameFor(branding, "ar"),
     );
 
     const result = await sendWithResend({

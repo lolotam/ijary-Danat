@@ -2,6 +2,7 @@ import { renderBold, stripBoldMarkers } from "./boldMarkers";
 import { CONTRACT_COPY_AR } from "./clauses.ar";
 import { CONTRACT_COPY_EN } from "./clauses.en";
 import type { ClauseContext, ClauseText, ContractCopy } from "./clauses.types";
+import type { ContractIssuer } from "./issuer";
 import {
   amountInWordsAr,
   amountInWordsEn,
@@ -15,8 +16,6 @@ import { PRINTED_DOCUMENT_CSS } from "@/lib/printedDocument";
 import { CAIRO_PUBLIC_FONTS_BASE, PDF_FONT_STACK, cairoFontFace } from "@/lib/documentFonts";
 import { toFils, totalValueFils, type ContractBuilderValues, type ContractLocale } from "./schema";
 import { formatUnitList, spansSeveralPlots } from "./units";
-
-export const CONTRACT_LOGO_PUBLIC_URL = "/contract-builder/danat-logo.png";
 
 const ESCAPE_MAP: Record<string, string> = {
   "&": "&amp;",
@@ -243,17 +242,22 @@ function pageShell(
   of: number,
   inner: string,
   copy: ContractCopy,
-  logoSrc: string,
+  issuer: ContractIssuer,
   dense = false,
 ): string {
+  // No logo set, or the server could not fetch it: no <img> at all, rather
+  // than a broken image or another company's logo.
+  const logo = issuer.logoUrl
+    ? `<img src="${esc(issuer.logoUrl)}" alt="${esc(issuer.name)}" />`
+    : "";
   return `<section class="doc-page contract-sheet contract-sheet--p${n}${dense ? " contract-sheet--dense" : ""}">
   <header class="contract-header">
-    <img src="${esc(logoSrc)}" alt="${esc(copy.companyName)}" />
-    <div class="contract-company">${esc(copy.companyName)}</div>
+    ${logo}
+    <div class="contract-company">${esc(issuer.name)}</div>
   </header>
   <div class="contract-body">${inner}</div>
   <footer class="contract-footer-band">
-    <span>${esc(copy.footer)}</span>
+    <span>${esc(copy.footer(issuer))}</span>
     <span>${esc(copy.pageCounter(n, of))}</span>
   </footer>
 </section>`;
@@ -300,10 +304,10 @@ function renderSecondPartySignatures(ctx: ClauseContext, copy: ContractCopy): st
 /**
  * يبني صفحة التوقيعات: الطرف الأول ثم كتل الطرف الثاني.
  */
-function renderSignatures(ctx: ClauseContext, copy: ContractCopy): string {
+function renderSignatures(ctx: ClauseContext, copy: ContractCopy, issuer: ContractIssuer): string {
   const first = `<div class="signature-block">
     <div>${esc(copy.signatures.firstParty)}</div>
-    <div>${esc(copy.companyName)}</div>
+    <div>${esc(issuer.name)}</div>
     <div>${esc(copy.signatures.name)}</div>
     <div>${esc(copy.signatures.signature)}</div>
   </div>`;
@@ -316,14 +320,14 @@ function renderSignatures(ctx: ClauseContext, copy: ContractCopy): string {
  * Opening, second-party lines and the preamble carry marked values. The
  * title, first-party letterhead and headings are fixed copy and stay plain.
  */
-function renderFrontMatter(ctx: ClauseContext, copy: ContractCopy): string {
+function renderFrontMatter(ctx: ClauseContext, copy: ContractCopy, issuer: ContractIssuer): string {
   const second = copy
     .secondParty(ctx)
     .map((line) => `<p>${escB(line)}</p>`)
     .join("");
   return `<h1 class="contract-title">${esc(copy.title)}</h1>
 <p>${escB(copy.opening(ctx))}</p>
-<p>${esc(copy.firstParty)}</p>
+<p>${esc(copy.firstParty(issuer))}</p>
 <p>${esc(copy.secondPartyHeading)}</p>
 ${second}
 <h2 class="contract-title">${esc(copy.preambleTitle)}</h2>
@@ -374,37 +378,39 @@ export function pageOneIsDense(
 }
 
 /**
- * يبني مقطع HTML لخمس صفحات A4 من قيم العقد واللغة ومصدر الشعار.
+ * يبني مقطع HTML لخمس صفحات A4 من قيم العقد واللغة والشركة صاحبة العقد ومصدر الشعار.
  *
  * Sentinels are stripped here, before any clause reads a string, so a value
- * typed with a bold marker cannot open a tag of its own.
+ * typed with a bold marker cannot open a tag of its own. The issuer is
+ * stripped too: it comes from the company's settings, which staff can edit.
  */
 export function buildContractHtml(
   values: ContractBuilderValues,
   locale: ContractLocale,
-  logoSrc: string,
+  issuerInput: ContractIssuer,
 ): string {
   const copy = locale === "ar" ? CONTRACT_COPY_AR : CONTRACT_COPY_EN;
   const ctx = buildClauseContext(stripBoldMarkersDeep(values), locale);
+  const issuer = stripBoldMarkersDeep(issuerInput);
   const all = copy.clauses(ctx);
   // Clause 3 moved off page 1 so the parties block can grow (company mode,
   // multi-plot unit lists); the rest is balanced by measured clause heights.
   const dense = pageOneIsDense(ctx, copy, locale);
   const pageOneClauses = dense ? [0] : [0, 1];
   const pageTwoClauses = dense ? [1, 2, 3, 4] : [2, 3, 4];
-  const page1 = `${renderFrontMatter(ctx, copy)}${pageOneClauses.map((i) => renderClause(all[i]!)).join("")}`;
+  const page1 = `${renderFrontMatter(ctx, copy, issuer)}${pageOneClauses.map((i) => renderClause(all[i]!)).join("")}`;
   const page2 = pageTwoClauses.map((i) => renderClause(all[i]!)).join("");
   const page3 = [5, 6, 7, 8, 9].map((i) => renderClause(all[i]!)).join("");
   const page4 = [10, 11, 12, 13].map((i) => renderClause(all[i]!)).join("");
-  const page5 = `${[14, 15, 16, 17].map((i) => renderClause(all[i]!)).join("")}${renderSignatures(ctx, copy)}`;
+  const page5 = `${[14, 15, 16, 17].map((i) => renderClause(all[i]!)).join("")}${renderSignatures(ctx, copy, issuer)}`;
   const of = 5;
   // The browser base `/fonts` is what the preview iframe and the served app
   // resolve; wrapHtmlForPdf rewrites it to an absolute file:// URL before the
   // server renders the temp file (decision D6).
   return `<style>${cairoFontFace(CAIRO_PUBLIC_FONTS_BASE)}${PRINTED_DOCUMENT_CSS}${contractBuilderCss}${locale === "en" ? EN_CSS : ""}</style>
-${pageShell(1, of, page1, copy, logoSrc, dense)}
-${pageShell(2, of, page2, copy, logoSrc, dense)}
-${pageShell(3, of, page3, copy, logoSrc)}
-${pageShell(4, of, page4, copy, logoSrc)}
-${pageShell(5, of, page5, copy, logoSrc)}`;
+${pageShell(1, of, page1, copy, issuer, dense)}
+${pageShell(2, of, page2, copy, issuer, dense)}
+${pageShell(3, of, page3, copy, issuer)}
+${pageShell(4, of, page4, copy, issuer)}
+${pageShell(5, of, page5, copy, issuer)}`;
 }

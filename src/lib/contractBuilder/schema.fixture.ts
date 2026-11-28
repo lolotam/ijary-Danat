@@ -6,6 +6,7 @@ import {
   type ContractPlot,
   type ContractUnitLine,
 } from "./schema";
+import type { ContractIssuer } from "./issuer";
 
 const FIXTURE_PERSON: ContractPerson = {
   full_name: "شريك محمد خاتم العجمي",
@@ -35,6 +36,26 @@ export const FIXTURE_COMPANY: ContractCompany = {
   signatory_nationality: "كويتي",
   signatory_civil_id: "285010100123",
   signatory_address: "العيون قطعة 3 شارع 5 منزل 12",
+};
+
+/**
+ * الشركة صاحبة العقد في الاختبارات؛ أطوالها قريبة من ترويسة حقيقية حتى يبقى قياس الصفحات صادقاً.
+ */
+export const FIXTURE_ISSUER: ContractIssuer = {
+  name: "شركة المثال للاستثمار العقاري",
+  address: "الكويت – شرق – قطعة 20 – قسيمة 25 – مكتب 9",
+  phone: "22223333",
+  logoUrl: null,
+};
+
+/** صورة PNG بحجم بكسل واحد، تكفي لاختبار مكان الشعار دون ملف حقيقي. */
+const ONE_PIXEL_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+/** الطرف الأول نفسه بشعار مضمَّن، كما يصل إلى مولّد PDF. */
+export const FIXTURE_ISSUER_WITH_LOGO: ContractIssuer = {
+  ...FIXTURE_ISSUER,
+  logoUrl: ONE_PIXEL_PNG,
 };
 
 /**

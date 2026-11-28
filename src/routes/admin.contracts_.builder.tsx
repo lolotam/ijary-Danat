@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute } from "@tanstack/react-router";
 import { guardModuleRoute } from "@/company/requireModule";
@@ -10,6 +10,7 @@ import { ContractPreview } from "@/components/admin/contracts/ContractPreview";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { renderContractPdf } from "@/fns/renderContractPdf";
+import { useCompany } from "@/hooks/useCompany";
 import { useContract } from "@/hooks/useContracts";
 import { useContractUnits } from "@/hooks/useContractRelations";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -18,6 +19,7 @@ import { useUnitsForProperties } from "@/hooks/useUnits";
 import { useTenant } from "@/hooks/useTenants";
 import { useI18n } from "@/i18n/provider";
 import { contractPdfFilename } from "@/lib/contractBuilder/filename";
+import { contractIssuerFromCompany } from "@/lib/contractBuilder/issuer";
 import {
   localizedTradeName,
   prefillFromContract,
@@ -143,6 +145,8 @@ export function ContractBuilderEditor({ contractId }: { contractId: string | nul
   // of them, and the default page of 10 would be exactly full today.
   const properties = useProperties({ pageSize: 500 });
   const plotUnits = useUnitsForProperties(values.plots.map((plot) => plot.id));
+  const company = useCompany();
+  const issuer = useMemo(() => contractIssuerFromCompany(company.data ?? null), [company.data]);
   return (
     <div className="space-y-4">
       <Toaster richColors position="top-center" />
@@ -175,7 +179,7 @@ export function ContractBuilderEditor({ contractId }: { contractId: string | nul
         </form>
         <section className="space-y-2">
           <h2>{t("contractBuilder.preview")}</h2>
-          <ContractPreview values={values} locale={values.language} />
+          <ContractPreview values={values} locale={values.language} issuer={issuer} />
         </section>
       </div>
     </div>

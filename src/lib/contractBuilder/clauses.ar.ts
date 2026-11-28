@@ -1,12 +1,28 @@
 import { v } from "./boldMarkers";
 import type { ClauseContext, ClauseText, ContractCopy } from "./clauses.types";
+import type { ContractIssuer } from "./issuer";
 import { formatKwdFromFils, toFils, totalValueFils } from "./schema";
 
 export type { ClauseContext, ClauseText, ContractCopy } from "./clauses.types";
 
-const COMPANY = "شركة دانة المستقبل العقارية";
-const OFFICE = "الجهراء – القيصرية – قطعة 20 – قسيمة 25 – مكتب 9";
-const FOOTER = "الجهراء – القيصرية – قطعة 20 – قسيمة 25 – مكتب 9 – تلفاكس: 24567177";
+/**
+ * يبني سطر الطرف الأول من بيانات الشركة صاحبة العقد.
+ *
+ * The seat sentence is dropped when the company has no address on file,
+ * rather than printing "الكائن مقرها : ." with nothing after it.
+ */
+function firstParty(issuer: ContractIssuer): string {
+  const seat = issuer.address ? ` الكائن مقرها : ${issuer.address}.` : "";
+  return `أولاً: السادة/ ${issuer.name}.${seat} ويشار إليه في هذا العقد بـ(الطرف الأول)`;
+}
+
+/**
+ * يبني شريط التذييل من عنوان الشركة وهاتفها، متجاوزاً الحقل الفارغ.
+ */
+function footer(issuer: ContractIssuer): string {
+  const phone = issuer.phone ? `هاتف: ${issuer.phone}` : "";
+  return [issuer.address, phone].filter(Boolean).join(" – ");
+}
 
 /**
  * يكتب إجمالي قيمة العقد رقماً من الفلس، لا من ضرب عشري عائم.
@@ -229,12 +245,10 @@ function pageCounter(n: number, of: number): string {
 }
 
 export const CONTRACT_COPY_AR: ContractCopy = {
-  companyName: COMPANY,
-  officeAddress: OFFICE,
-  footer: FOOTER,
+  footer,
   title: "عقد استثمار",
   opening,
-  firstParty: `أولاً: السادة/ ${COMPANY}. الكائن مقرها : ${OFFICE}. ويشار إليه في هذا العقد بـ(الطرف الأول)`,
+  firstParty,
   secondPartyHeading: "ثانياً:",
   secondParty,
   capacityStatement: CAPACITY,

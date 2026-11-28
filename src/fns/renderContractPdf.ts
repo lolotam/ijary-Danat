@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { readContractIssuer } from "@/fns/contractIssuer.server";
 import { buildContractHtml } from "@/lib/contractBuilder/html";
-import { CONTRACT_LOGO_DATA_URI } from "@/lib/contractBuilder/logo.server";
 import { contractBuilderSchema } from "@/lib/contractBuilder/schema";
 import { contractPdfFilename } from "@/lib/contractBuilder/filename";
 export { contractPdfFilename } from "@/lib/contractBuilder/filename";
@@ -38,8 +38,9 @@ export const renderContractPdf = createServerFn({ method: "POST" })
       refusal: "You do not have permission to read contracts.",
     });
 
+    const issuer = await readContractIssuer();
     const pdf = await renderHtmlToPdf(
-      wrapHtmlForPdf(buildContractHtml(data.values, data.locale, CONTRACT_LOGO_DATA_URI), {
+      wrapHtmlForPdf(buildContractHtml(data.values, data.locale, issuer), {
         arabic: data.locale === "ar",
       }),
     );

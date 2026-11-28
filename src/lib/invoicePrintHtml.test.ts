@@ -123,6 +123,18 @@ describe("the printed invoice's dates", () => {
     expect(html).not.toContain("Issue date");
   });
 
+  test("prints the company's own name, and no fixed company name when it is missing", () => {
+    const row = invoice();
+    const own = buildInvoicePrintHtml(row, company, "ar", breakdownFor(row));
+    expect(own).toContain(company.name_ar);
+
+    const missing = buildInvoicePrintHtml(row, null, "ar", breakdownFor(row));
+    // "دانة المستقبل" was the fallback printed for every company; the renter
+    // fixture's own name ("شركة الدانة") rightly still appears.
+    expect(missing).not.toContain("دانة المستقبل");
+    expect(missing).not.toContain(company.name_ar);
+  });
+
   test("an unpaid invoice has no payment date yet", () => {
     const row = invoice();
     const html = buildInvoicePrintHtml(row, company, "ar", breakdownFor(row));

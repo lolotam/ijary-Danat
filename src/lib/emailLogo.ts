@@ -1,4 +1,4 @@
-import { EMAIL_LOGO_MARKER } from "@/lib/emailTemplates";
+import { applyEmailBrandName, EMAIL_LOGO_MARKER } from "@/lib/emailTemplates";
 import { escapeHtml } from "@/lib/html";
 
 export { EMAIL_LOGO_MARKER };
@@ -19,6 +19,20 @@ export { EMAIL_LOGO_MARKER };
  * belongs at the send path, which every email provably reaches.
  */
 export function applyEmailLogo(
+  html: string,
+  logoUrl: string | null | undefined,
+  brandName: string,
+): string {
+  // The header name is substituted on the same pass, with the same name the
+  // logo's alt text carries, so every caller that brands the logo also names
+  // the sending company in the header.
+  return applyLogoMarker(applyEmailBrandName(html, brandName), logoUrl, brandName);
+}
+
+/**
+ * يستبدل علامة الشعار وحدها بصورة الشعار أو يزيلها.
+ */
+function applyLogoMarker(
   html: string,
   logoUrl: string | null | undefined,
   brandName: string,

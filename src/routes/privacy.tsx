@@ -15,15 +15,25 @@ import {
 import { useI18n } from "@/i18n/provider";
 import { BrandLogo } from "@/components/BrandLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { brandNameFor, getPublicBranding } from "@/fns/publicBranding";
 
 export const Route = createFileRoute("/privacy")({
   ssr: false,
-  head: () => ({
+  // The host's company names the page, read on the server from the host —
+  // never a fixed company — and the platform host gets the platform name.
+  loader: async () => ({ branding: await getPublicBranding() }),
+  head: ({ loaderData }) => ({
     meta: [
-      { title: "سياسة الخصوصية | Privacy Policy — Danat Al Mustaqbal" },
+      {
+        title: loaderData
+          ? `سياسة الخصوصية | Privacy Policy — ${loaderData.branding.nameEn}`
+          : "سياسة الخصوصية | Privacy Policy",
+      },
       {
         name: "description",
-        content: "سياسة الخصوصية وحماية البيانات في شركة دانة المستقبل العقارية",
+        content: loaderData
+          ? `سياسة الخصوصية وحماية البيانات لدى ${loaderData.branding.nameAr}`
+          : "سياسة الخصوصية وحماية البيانات",
       },
     ],
   }),
@@ -31,9 +41,11 @@ export const Route = createFileRoute("/privacy")({
 });
 
 function PrivacyPage() {
-  const { t, locale, dir, toggle } = useI18n();
+  const { t, locale, toggle } = useI18n();
   const isAr = locale === "ar";
   const year = new Date().getFullYear();
+  const { branding } = Route.useLoaderData();
+  const name = brandNameFor(branding, locale) || t("brand.name");
 
   return (
     <div className="dark min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
@@ -41,7 +53,7 @@ function PrivacyPage() {
       <header className="sticky top-0 z-50 border-b border-primary/20 bg-card/90 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
-            <BrandLogo name={t("brand.name")} />
+            <BrandLogo name={name} />
           </Link>
 
           <div className="flex items-center gap-3">
@@ -76,8 +88,8 @@ function PrivacyPage() {
           </h1>
           <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             {isAr
-              ? "نلتزم في شركة دانة المستقبل العقارية بحماية خصوصيتك وأمن بياناتك الشخصية والمالية وفقاً للقوانين واللوائح المعمول بها في دولة الكويت."
-              : "At Danat Al Mustaqbal Real Estate, we are committed to protecting your privacy and securing your personal and financial data in accordance with applicable laws in the State of Kuwait."}
+              ? `نلتزم في ${name} بحماية خصوصيتك وأمن بياناتك الشخصية والمالية وفقاً للقوانين واللوائح المعمول بها في دولة الكويت.`
+              : `At ${name}, we are committed to protecting your privacy and securing your personal and financial data in accordance with applicable laws in the State of Kuwait.`}
           </p>
           <div className="pt-2 text-xs text-muted-foreground/80">
             <span>{isAr ? "آخر تحديث: يوليو 2026" : "Last updated: July 2026"}</span>
@@ -98,8 +110,8 @@ function PrivacyPage() {
             </h2>
             <p className="text-sm sm:text-base leading-relaxed text-foreground">
               {isAr
-                ? "توضح هذه السياسة كيفية جمع واستخدام وحماية البيانات والمعلومات عند استخدامك لمنصة وموقع دانة المستقبل العقارية (Danat Al Mustaqbal Real Estate Management Platform)، سواء كنت زائرًا للموقع، أو مستأجرًا، أو ممثلاً تجاريًا."
-                : "This policy outlines how Danat Al Mustaqbal Real Estate Management Platform collects, uses, and protects your information when you visit our portal or use our real estate and tenant services."}
+                ? `توضح هذه السياسة كيفية جمع واستخدام وحماية البيانات والمعلومات عند استخدامك لمنصة وموقع ${name}، سواء كنت زائرًا للموقع، أو مستأجرًا، أو ممثلاً تجاريًا.`
+                : `This policy outlines how ${name} collects, uses, and protects your information when you visit our portal or use our real estate and tenant services.`}
             </p>
           </section>
 
@@ -234,24 +246,20 @@ function PrivacyPage() {
             </h2>
             <p className="text-sm sm:text-base leading-relaxed text-foreground">
               {isAr
-                ? "يحق للمستأجرين والمستخدمين الاطلاع على بياناتهم المسجلة، وطلب تحديثها، أو تقديم طلب استفسار عبر إدارة شركة دانة المستقبل العقارية في أي وقت."
+                ? `يحق للمستأجرين والمستخدمين الاطلاع على بياناتهم المسجلة، وطلب تحديثها، أو تقديم طلب استفسار عبر إدارة ${name} في أي وقت.`
                 : "Tenants and authorized users reserve the right to inspect their registered records, request corrections, or contact administration regarding stored details."}
             </p>
           </section>
 
           {/* CONTACT FOOTER IN CARD */}
-          <div className="pt-6 border-t border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
+          {/* No fixed contact address here: it used to be one company's mailbox,
+              shown on every company's page. */}
+          <div className="pt-6 border-t border-primary/20 text-xs text-muted-foreground">
             <p>
               {isAr
-                ? "لأي استفسارات بخصوص سياسة الخصوصية، يرجى التواصل معنا:"
-                : "For privacy inquiries, please contact our administration:"}
+                ? `لأي استفسارات بخصوص سياسة الخصوصية، يرجى التواصل مع إدارة ${name}.`
+                : `For privacy inquiries, please contact the administration of ${name}.`}
             </p>
-            <a
-              href="mailto:info@danat-future.com"
-              className="px-4 py-2 rounded-lg border border-primary/30 bg-primary/10 text-accent font-bold hover:bg-primary hover:text-primary-foreground transition-all"
-            >
-              info@danat-future.com
-            </a>
           </div>
         </div>
       </main>
@@ -261,11 +269,11 @@ function PrivacyPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="grid gap-8 md:grid-cols-12 pb-8 border-b border-primary/15">
             <div className="md:col-span-5 space-y-3">
-              <BrandLogo name={t("brand.name")} />
+              <BrandLogo name={name} />
               <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
                 {isAr
-                  ? "شركة دانة المستقبل العقارية — إدارة العقارات والمجمعات التجارية والحلول الرقمية المتكاملة."
-                  : "Danat Al Mustaqbal Real Estate — Property management and digital real estate solutions."}
+                  ? `${name} — إدارة العقارات والمجمعات التجارية والحلول الرقمية المتكاملة.`
+                  : `${name} — Property management and digital real estate solutions.`}
               </p>
             </div>
             <div className="md:col-span-3 space-y-2 text-xs">
@@ -292,16 +300,12 @@ function PrivacyPage() {
             </div>
             <div className="md:col-span-4 space-y-2 text-xs">
               <h4 className="font-bold text-white text-sm mb-3">{isAr ? "التواصل" : "Contact"}</h4>
-              <p className="text-muted-foreground">
-                {isAr ? "دولة الكويت — الجهراء" : "State of Kuwait — Al Jahra"}
-              </p>
-              <p className="text-muted-foreground">Email: info@danat-future.com</p>
+              <p className="text-muted-foreground">{isAr ? "دولة الكويت" : "State of Kuwait"}</p>
             </div>
           </div>
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
             <p>
-              © {year} — {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"} | Danat Al Mustaqbal
-              Real Estate.
+              © {year} — {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"} | {name}
             </p>
             <div className="flex items-center gap-4">
               <Link to="/privacy" className="text-accent hover:underline">

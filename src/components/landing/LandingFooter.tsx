@@ -138,7 +138,7 @@ export function LandingFooter({ contact, navigationItems }: LandingFooterProps) 
 
         <div className="flex flex-col items-center justify-between gap-4 pt-8 text-sm font-medium text-[#a9a18e] sm:flex-row">
           <p>
-            © {new Date().getFullYear()} — {t("footer.rights")} | Danat Al Mustaqbal Real Estate.
+            © {new Date().getFullYear()} — {t("footer.rights")} | {companyDisplayName}
           </p>
           <div className="flex items-center gap-4 text-xs">
             <Link to="/privacy" className="transition-colors hover:text-[#f2cd60]">

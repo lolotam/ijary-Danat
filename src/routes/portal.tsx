@@ -31,6 +31,7 @@ import {
 import { usePortalIdentity } from "@/hooks/usePortalData";
 import { usePortalTabAccess } from "@/hooks/usePortalTabs";
 import { useI18n } from "@/i18n/provider";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import { portalTabForPath, type PortalTabKey } from "@/lib/portalTabs";
 import { tenantDisplayName } from "@/lib/tenantDisplayName";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,7 @@ function PortalLayout() {
   const { tenant: viewTenantId, contract: contractId } = Route.useSearch();
   const identity = usePortalIdentity(viewTenantId);
   const { dir, locale, setLocale, t, toggle } = useI18n();
+  const brandName = useHostBrandName();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const tenantRecord = identity.data?.tenant ?? null;
@@ -330,10 +332,7 @@ function PortalLayout() {
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <Link to="/portal" search={linkSearch} className="min-w-0 shrink-0">
-            <BrandLogo
-              name={t("brand.name")}
-              subName={tenantDisplayName(identity.data.tenant, locale)}
-            />
+            <BrandLogo name={brandName} subName={tenantDisplayName(identity.data.tenant, locale)} />
           </Link>
           <AnnouncementBanner />
           <ReminderPopupDialog tenantId={identity.data.tenant.id} />

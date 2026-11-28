@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n/provider";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import type { visibleLandingNavigation } from "@/lib/landingNavigation";
 import { PAGE_SHELL } from "./landingLayout";
 
@@ -37,6 +38,7 @@ export function LandingHeader({
   setMobileMenuOpen,
 }: LandingHeaderProps) {
   const { t, toggle } = useI18n();
+  const brandName = useHostBrandName();
   const { theme } = useTheme();
   const auth = useAuth();
   const isDark = theme === "dark";
@@ -63,11 +65,7 @@ export function LandingHeader({
       }`}
     >
       <div className={`flex items-center justify-between ${PAGE_SHELL}`}>
-        <BrandLogo
-          name={t("landingPage.danatFuture")}
-          subName={t("landingPage.realEstatePlatform")}
-          onDark={isDark}
-        />
+        <BrandLogo name={brandName} subName={t("landingPage.realEstatePlatform")} onDark={isDark} />
 
         {/* Desktop Nav — centered, bold */}
         <nav

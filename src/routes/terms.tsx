@@ -11,15 +11,25 @@ import {
 import { useI18n } from "@/i18n/provider";
 import { BrandLogo } from "@/components/BrandLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { brandNameFor, getPublicBranding } from "@/fns/publicBranding";
 
 export const Route = createFileRoute("/terms")({
   ssr: false,
-  head: () => ({
+  // The host's company names the page, read on the server from the host —
+  // never a fixed company — and the platform host gets the platform name.
+  loader: async () => ({ branding: await getPublicBranding() }),
+  head: ({ loaderData }) => ({
     meta: [
-      { title: "الشروط والأحكام | Terms of Service — Danat Al Mustaqbal" },
+      {
+        title: loaderData
+          ? `الشروط والأحكام | Terms of Service — ${loaderData.branding.nameEn}`
+          : "الشروط والأحكام | Terms of Service",
+      },
       {
         name: "description",
-        content: "الشروط والأحكام لاستخدام منصة وبوابة دانة المستقبل العقارية",
+        content: loaderData
+          ? `الشروط والأحكام لاستخدام منصة وبوابة ${loaderData.branding.nameAr}`
+          : "الشروط والأحكام",
       },
     ],
   }),
@@ -27,9 +37,11 @@ export const Route = createFileRoute("/terms")({
 });
 
 function TermsPage() {
-  const { t, locale, dir, toggle } = useI18n();
+  const { t, locale, toggle } = useI18n();
   const isAr = locale === "ar";
   const year = new Date().getFullYear();
+  const { branding } = Route.useLoaderData();
+  const name = brandNameFor(branding, locale) || t("brand.name");
 
   return (
     <div className="dark min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
@@ -37,7 +49,7 @@ function TermsPage() {
       <header className="sticky top-0 z-50 border-b border-primary/20 bg-card/90 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
-            <BrandLogo name={t("brand.name")} />
+            <BrandLogo name={name} />
           </Link>
 
           <div className="flex items-center gap-3">
@@ -74,8 +86,8 @@ function TermsPage() {
           </h1>
           <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             {isAr
-              ? "تحكم هذه الاتفاقية استخدامك لمنصة دانة المستقبل العقارية وبوابة خدمات المستأجرين والخدمات الإلكترونية ذات الصلة."
-              : "These Terms of Service govern your access to and use of Danat Al Mustaqbal Real Estate Management Platform and tenant services."}
+              ? `تحكم هذه الاتفاقية استخدامك لمنصة ${name} وبوابة خدمات المستأجرين والخدمات الإلكترونية ذات الصلة.`
+              : `These Terms of Service govern your access to and use of the ${name} platform and tenant services.`}
           </p>
           <div className="pt-2 text-xs text-muted-foreground/80">
             <span>{isAr ? "آخر تحديث: يوليو 2026" : "Last updated: July 2026"}</span>
@@ -96,8 +108,8 @@ function TermsPage() {
             </h2>
             <p className="text-sm sm:text-base leading-relaxed text-foreground">
               {isAr
-                ? "دخولك أو استخدامك لمنصة وموقع دانة المستقبل العقارية يعتبر إقرارًا وموافقة كاملة منك على الالتزام بهذه الشروط والأحكام. إذا كنت لا توافق على أي بند، فيرجى التوقف عن استخدام الخدمات."
-                : "By accessing or using the Danat Al Mustaqbal Real Estate platform and services, you agree to be bound by these terms. If you disagree with any part, you may not access our services."}
+                ? `دخولك أو استخدامك لمنصة وموقع ${name} يعتبر إقرارًا وموافقة كاملة منك على الالتزام بهذه الشروط والأحكام. إذا كنت لا توافق على أي بند، فيرجى التوقف عن استخدام الخدمات.`
+                : `By accessing or using the ${name} platform and services, you agree to be bound by these terms. If you disagree with any part, you may not access our services.`}
             </p>
           </section>
 
@@ -111,8 +123,8 @@ function TermsPage() {
             </h2>
             <p className="text-sm sm:text-base leading-relaxed text-foreground">
               {isAr
-                ? "تقدم منصة دانة المستقبل العقارية خدمات إلكترونية شاملة تشمل:"
-                : "Danat Al Mustaqbal Real Estate provides integrated real estate management solutions, including:"}
+                ? `تقدم منصة ${name} خدمات إلكترونية شاملة تشمل:`
+                : `${name} provides integrated real estate management solutions, including:`}
             </p>
             <ul className="grid gap-2 text-sm sm:text-base text-muted-foreground">
               <li className="flex items-center gap-2">
@@ -214,8 +226,8 @@ function TermsPage() {
             </h2>
             <p className="text-sm sm:text-base leading-relaxed text-foreground">
               {isAr
-                ? "جميع الحقوق الفكرية، والعلامات التجارية، والشعارات، والتصاميم، والأكواد المصدرية الخاصة بشركة دانة المستقبل العقارية هي ملك حصري للشركة ومحمية بموجب قوانين الملكية الفكرية."
-                : "All intellectual property rights, trade names, logos, branding assets, and system software of Danat Al Mustaqbal are exclusive property protected under applicable Kuwaiti law."}
+                ? `جميع الحقوق الفكرية، والعلامات التجارية، والشعارات، والتصاميم، والأكواد المصدرية الخاصة بـ${name} هي ملك حصري لأصحابها ومحمية بموجب قوانين الملكية الفكرية.`
+                : `All intellectual property rights, trade names, logos, branding assets, and system software of ${name} are exclusive property protected under applicable Kuwaiti law.`}
             </p>
           </section>
 
@@ -235,18 +247,14 @@ function TermsPage() {
           </section>
 
           {/* CONTACT FOOTER IN CARD */}
-          <div className="pt-6 border-t border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
+          {/* No fixed contact address here: it used to be one company's mailbox,
+              shown on every company's page. */}
+          <div className="pt-6 border-t border-primary/20 text-xs text-muted-foreground">
             <p>
               {isAr
-                ? "لأي استفسارات قانونية أو إدارية بخصوص الشروط والأحكام:"
-                : "For legal or administration inquiries regarding these terms:"}
+                ? `لأي استفسارات قانونية أو إدارية بخصوص الشروط والأحكام، يرجى التواصل مع إدارة ${name}.`
+                : `For legal or administration inquiries regarding these terms, please contact the administration of ${name}.`}
             </p>
-            <a
-              href="mailto:info@danat-future.com"
-              className="px-4 py-2 rounded-lg border border-primary/30 bg-primary/10 text-accent font-bold hover:bg-primary hover:text-primary-foreground transition-all"
-            >
-              info@danat-future.com
-            </a>
           </div>
         </div>
       </main>
@@ -256,11 +264,11 @@ function TermsPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="grid gap-8 md:grid-cols-12 pb-8 border-b border-primary/15">
             <div className="md:col-span-5 space-y-3">
-              <BrandLogo name={t("brand.name")} />
+              <BrandLogo name={name} />
               <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
                 {isAr
-                  ? "شركة دانة المستقبل العقارية — إدارة العقارات والمجمعات التجارية والحلول الرقمية المتكاملة."
-                  : "Danat Al Mustaqbal Real Estate — Property management and digital real estate solutions."}
+                  ? `${name} — إدارة العقارات والمجمعات التجارية والحلول الرقمية المتكاملة.`
+                  : `${name} — Property management and digital real estate solutions.`}
               </p>
             </div>
             <div className="md:col-span-3 space-y-2 text-xs">
@@ -287,16 +295,12 @@ function TermsPage() {
             </div>
             <div className="md:col-span-4 space-y-2 text-xs">
               <h4 className="font-bold text-white text-sm mb-3">{isAr ? "التواصل" : "Contact"}</h4>
-              <p className="text-muted-foreground">
-                {isAr ? "دولة الكويت — الجهراء" : "State of Kuwait — Al Jahra"}
-              </p>
-              <p className="text-muted-foreground">Email: info@danat-future.com</p>
+              <p className="text-muted-foreground">{isAr ? "دولة الكويت" : "State of Kuwait"}</p>
             </div>
           </div>
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
             <p>
-              © {year} — {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"} | Danat Al Mustaqbal
-              Real Estate.
+              © {year} — {isAr ? "جميع الحقوق محفوظة" : "All rights reserved"} | {name}
             </p>
             <div className="flex items-center gap-4">
               <Link to="/privacy" className="hover:text-accent hover:underline">

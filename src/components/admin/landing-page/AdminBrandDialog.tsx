@@ -51,7 +51,7 @@ import { Plus } from "lucide-react";
  * يحدّد العقار الذي تتبعه محلات صفحة الهبوط، اعتماداً على المحلات الموجودة فعلاً
  * لا على كود عقار مكتوب داخل الشيفرة.
  *
- * Property codes are renameable business identifiers, not keys — the Jahra
+ * Property codes are renameable business identifiers, not keys — a company's
  * properties get renumbered when the business renumbers them. A hardcoded
  * `.eq("code", "PROP-JAHRA")` does not fail loudly when that happens; it returns
  * null, and the previous fallback then pushed the literal string `"PROP-JAHRA"`

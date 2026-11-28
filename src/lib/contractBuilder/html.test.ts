@@ -6,7 +6,12 @@ import { CONTRACT_COPY_EN } from "./clauses.en";
 import { buildClauseContext, buildContractHtml, esc, pageOneIsDense } from "./html";
 import { wrapHtmlForPdf } from "@/lib/serverPdf";
 import { formatKwdFromFils, toFils, type ContractLocale } from "./schema";
-import { FIXTURE_COMPANY, validCompanyContractValues, validContractValues } from "./schema.fixture";
+import {
+  FIXTURE_COMPANY,
+  FIXTURE_ISSUER,
+  validCompanyContractValues,
+  validContractValues,
+} from "./schema.fixture";
 
 const PHRASES: Array<[clause: number, page: number, phrase: string]> = [
   [1, 1, "متمماً ومكملاً"],
@@ -33,7 +38,7 @@ const PHRASES: Array<[clause: number, page: number, phrase: string]> = [
  * يلفّ مقطع العقد بغلاف PDF الحقيقي ويقسم الصفحات على class="doc-page".
  */
 function wrappedAr(overrides?: Parameters<typeof validContractValues>[0]): string {
-  return wrapHtmlForPdf(buildContractHtml(validContractValues(overrides), "ar", "data:,"), {
+  return wrapHtmlForPdf(buildContractHtml(validContractValues(overrides), "ar", FIXTURE_ISSUER), {
     arabic: true,
   });
 }
@@ -148,7 +153,7 @@ describe("buildContractHtml", () => {
       ],
     });
     const page1 = pagesOf(
-      wrapHtmlForPdf(buildContractHtml(values, "ar", "data:,"), { arabic: true }),
+      wrapHtmlForPdf(buildContractHtml(values, "ar", FIXTURE_ISSUER), { arabic: true }),
     )[1]!;
     expect(page1).toContain(values.contract_date);
     for (const person of values.persons) {
@@ -174,16 +179,61 @@ describe("buildContractHtml", () => {
       ],
     });
     const page5 = pagesOf(
-      wrapHtmlForPdf(buildContractHtml(values, "ar", "data:,"), { arabic: true }),
+      wrapHtmlForPdf(buildContractHtml(values, "ar", FIXTURE_ISSUER), { arabic: true }),
     )[5]!;
     expect((page5.match(/data-testid="signature-block"/g) ?? []).length).toBe(2);
   });
 
-  test("every page contains the fax number", () => {
+  test("every page carries the issuing company's name, address and phone", () => {
     const pages = pagesOf(wrappedAr());
     for (let page = 1; page <= 5; page += 1) {
-      expect(pages[page]).toContain("24567177");
+      expect(pages[page]).toContain(FIXTURE_ISSUER.name);
+      expect(pages[page]).toContain(FIXTURE_ISSUER.address);
+      expect(pages[page]).toContain(FIXTURE_ISSUER.phone);
     }
+  });
+
+  test.each([["ar"], ["en"]] as const)(
+    "prints the contract's own company as first party, not a fixed one (%s)",
+    (locale) => {
+      const issuer = {
+        name: "Other Co",
+        address: "Hawalli office 3",
+        phone: "25550000",
+        logoUrl: null,
+      };
+      const html = buildContractHtml(validContractValues({ language: locale }), locale, issuer);
+      const page1 = pagesOf(html)[1]!;
+      expect(page1).toContain(locale === "ar" ? "السادة/ Other Co" : "Messrs. / Other Co");
+      expect(page1).toContain("Hawalli office 3");
+      expect(pagesOf(html)[5]).toContain("<div>Other Co</div>");
+      expect(html).not.toContain(FIXTURE_ISSUER.name);
+      expect(html).not.toContain("24567177");
+    },
+  );
+
+  test("a company without address or phone prints no empty seat or phone label", () => {
+    const issuer = { name: "Bare Co", address: "", phone: "", logoUrl: null };
+    const html = buildContractHtml(validContractValues(), "ar", issuer);
+    expect(html).not.toContain("الكائن مقرها");
+    expect(html).not.toContain("هاتف:");
+    expect(html).toContain("أولاً: السادة/ Bare Co. ويشار إليه");
+  });
+
+  test("every page header carries the company's own logo, and none when it has none", () => {
+    const logo = "data:image/png;base64,QUJD";
+    const withLogo = buildContractHtml(validContractValues(), "ar", {
+      ...FIXTURE_ISSUER,
+      logoUrl: logo,
+    });
+    const pages = pagesOf(withLogo);
+    for (let page = 1; page <= 5; page += 1) {
+      expect(pages[page]).toContain(`<img src="${logo}" alt="${FIXTURE_ISSUER.name}" />`);
+    }
+    expect(withLogo).not.toContain("danat-logo");
+
+    const without = buildContractHtml(validContractValues(), "ar", FIXTURE_ISSUER);
+    expect(without).not.toContain("<img");
   });
 
   test("the page-5 counter string appears once", () => {
@@ -218,15 +268,17 @@ describe("buildContractHtml", () => {
       activity: "retail of blankets",
       trade_name: "Best Choice",
     });
-    let html = wrapHtmlForPdf(buildContractHtml(latin, "en", "data:,"), { arabic: false });
-    // Footer contains the office address, so it must be stripped first or
-    // "تلفاكس" is left behind after the address substring is removed.
+    let html = wrapHtmlForPdf(buildContractHtml(latin, "en", FIXTURE_ISSUER), {
+      arabic: false,
+    });
+    // The issuer's Arabic legal identity is the only Arabic allowed; the footer
+    // holds the address, so it is stripped first.
     html = html
-      .split(CONTRACT_COPY_EN.footer)
+      .split(CONTRACT_COPY_EN.footer(FIXTURE_ISSUER))
       .join("")
-      .split(CONTRACT_COPY_EN.companyName)
+      .split(FIXTURE_ISSUER.name)
       .join("")
-      .split(CONTRACT_COPY_EN.officeAddress)
+      .split(FIXTURE_ISSUER.address)
       .join("");
     expect(html).not.toMatch(/[؀-ۿ]/);
   });
@@ -244,7 +296,7 @@ describe("buildContractHtml", () => {
       buildContractHtml(
         validContractValues({ persons: [{ ...person, full_name: "<b>x</b>" }] }),
         "ar",
-        "data:,",
+        FIXTURE_ISSUER,
       ),
       { arabic: true },
     );
@@ -253,9 +305,12 @@ describe("buildContractHtml", () => {
   });
 
   test("page 5 has a single company signature block naming the signatory", () => {
-    const html = wrapHtmlForPdf(buildContractHtml(validCompanyContractValues(), "ar", "data:,"), {
-      arabic: true,
-    });
+    const html = wrapHtmlForPdf(
+      buildContractHtml(validCompanyContractValues(), "ar", FIXTURE_ISSUER),
+      {
+        arabic: true,
+      },
+    );
     const page5 = pagesOf(html)[5]!;
     const blocks = page5.match(/data-testid="signature-block"[\s\S]*?<\/div>\s*<\/div>/g) ?? [];
     expect(blocks).toHaveLength(1);
@@ -269,7 +324,9 @@ describe("buildContractHtml", () => {
   ] as const)("page 1 carries the %s legal capacity statement in both modes", (locale, copy) => {
     for (const values of [validContractValues(), validCompanyContractValues()]) {
       const page1 = pagesOf(
-        wrapHtmlForPdf(buildContractHtml(values, locale, "data:,"), { arabic: locale === "ar" }),
+        wrapHtmlForPdf(buildContractHtml(values, locale, FIXTURE_ISSUER), {
+          arabic: locale === "ar",
+        }),
       )[1]!;
       expect(page1).toContain(copy.capacityStatement);
     }
@@ -286,7 +343,7 @@ describe("buildContractHtml", () => {
         contact_email: "nobody-printed@example.test",
       };
       for (const values of [validContractValues(contact), validCompanyContractValues(contact)]) {
-        const html = wrapHtmlForPdf(buildContractHtml(values, locale, "data:,"), {
+        const html = wrapHtmlForPdf(buildContractHtml(values, locale, FIXTURE_ISSUER), {
           arabic: locale === "ar",
         });
         expect(html).not.toContain("99887701");
@@ -317,7 +374,7 @@ describe("buildContractHtml", () => {
         },
       ],
     });
-    const html = buildContractHtml(values, locale, "data:,");
+    const html = buildContractHtml(values, locale, FIXTURE_ISSUER);
     expect(html).toContain(`<strong>${esc(fullName)}</strong>`);
     expect(html).toContain(`<strong>${formatKwdFromFils(toFils(values.monthly_value))}</strong>`);
     expect(html).toContain(`<strong>${esc(values.contract_date)}</strong>`);
@@ -327,7 +384,11 @@ describe("buildContractHtml", () => {
     ["ar", "أقر الطرفان"],
     ["en", "Both parties acknowledge"],
   ] as const)("fixed copy stays outside <strong> (%s)", (locale, phrase) => {
-    const html = buildContractHtml(validContractValues({ language: locale }), locale, "data:,");
+    const html = buildContractHtml(
+      validContractValues({ language: locale }),
+      locale,
+      FIXTURE_ISSUER,
+    );
     expect(html).toContain(phrase);
     const strongContents = [...html.matchAll(/<strong>([\s\S]*?)<\/strong>/g)].map(
       (match) => match[1],
@@ -339,7 +400,7 @@ describe("buildContractHtml", () => {
   test.each([["ar"], ["en"]] as const)(
     "multi-plot unit lists bold each value, not the fixed copy (%s)",
     (locale) => {
-      const html = buildContractHtml(multiPlotValues(locale), locale, "data:,");
+      const html = buildContractHtml(multiPlotValues(locale), locale, FIXTURE_ISSUER);
       if (locale === "ar") {
         expect(html).toContain("<strong>3</strong> (الرقم الآلي <strong>111</strong>)");
         expect(html).toContain("في <strong>مجمع دانة -1</strong>");
@@ -425,13 +486,13 @@ describe("buildContractHtml", () => {
           },
         ],
       });
-      const taintedHtml = buildContractHtml(individual, locale, "data:,");
+      const taintedHtml = buildContractHtml(individual, locale, FIXTURE_ISSUER);
       expect(taintedHtml).not.toContain(BOLD_OPEN);
       expect(taintedHtml).not.toContain(BOLD_CLOSE);
       expect(taintedHtml).toContain("<strong>NameAxB</strong>");
       expect(taintedHtml).toContain("<strong>111AxB</strong>");
       expect(countStrong(taintedHtml)).toBe(
-        countStrong(buildContractHtml(clean, locale, "data:,")),
+        countStrong(buildContractHtml(clean, locale, FIXTURE_ISSUER)),
       );
       const companyHtml = buildContractHtml(
         validCompanyContractValues({
@@ -441,7 +502,7 @@ describe("buildContractHtml", () => {
           units,
         }),
         locale,
-        "data:,",
+        FIXTURE_ISSUER,
       );
       expect(companyHtml).not.toContain(BOLD_OPEN);
       expect(companyHtml).not.toContain(BOLD_CLOSE);
@@ -458,7 +519,7 @@ describe("buildContractHtml", () => {
       const values = justUnderDenseValues(locale);
       const ctx = buildClauseContext(values, locale);
       expect(pageOneIsDense(ctx, copy, locale)).toBe(false);
-      expect(buildContractHtml(values, locale, "data:,")).not.toMatch(
+      expect(buildContractHtml(values, locale, FIXTURE_ISSUER)).not.toMatch(
         /contract-sheet--p1 contract-sheet--dense/,
       );
       const measured = [
@@ -485,7 +546,7 @@ describe("buildContractHtml", () => {
         ],
       });
       const page5 = pagesOf(
-        wrapHtmlForPdf(buildContractHtml(values, locale, "data:,"), {
+        wrapHtmlForPdf(buildContractHtml(values, locale, FIXTURE_ISSUER), {
           arabic: locale === "ar",
         }),
       )[5]!;
@@ -506,7 +567,7 @@ describe("buildContractHtml", () => {
       const html = buildContractHtml(
         validCompanyContractValues({ language: locale }),
         locale,
-        "data:,",
+        FIXTURE_ISSUER,
       );
       expect(html).toContain(`<strong>${esc(FIXTURE_COMPANY.company_name)}</strong>`);
       expect(html).toContain(`<strong>${esc(FIXTURE_COMPANY.signatory_name)}</strong>`);
@@ -518,7 +579,7 @@ describe("buildContractHtml", () => {
 
   test("signatures sit after the last clause with room below, not pinned to the footer", () => {
     const rule = cssRule(
-      buildContractHtml(validContractValues(), "ar", "data:,"),
+      buildContractHtml(validContractValues(), "ar", FIXTURE_ISSUER),
       ".contract-signatures",
     );
     expect(rule).toContain("margin-bottom: auto");
@@ -527,7 +588,7 @@ describe("buildContractHtml", () => {
 
   test("the header logo keeps the owner's 60px height", () => {
     const rule = cssRule(
-      buildContractHtml(validContractValues(), "ar", "data:,"),
+      buildContractHtml(validContractValues(), "ar", FIXTURE_ISSUER),
       ".contract-header img",
     );
     expect(rule).toContain("height: 60px");

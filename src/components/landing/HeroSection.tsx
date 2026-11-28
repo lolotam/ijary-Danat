@@ -3,6 +3,7 @@ import { ArrowRight, MapPin, Sparkles } from "lucide-react";
 import { HeroTitle } from "@/components/landing/HeroTitle";
 import { TypedText } from "@/components/landing/TypedText";
 import { Button } from "@/components/ui/button";
+import { useHostBrandName } from "@/hooks/useHostBrandName";
 import type { LandingPageSettingsWithMedia } from "@/hooks/useLandingSettings";
 import { useI18n } from "@/i18n/provider";
 
@@ -16,11 +17,13 @@ interface HeroSectionProps {
  */
 export function HeroSection({ settings, isSectionEnabled }: HeroSectionProps) {
   const { t } = useI18n();
+  const companyName = useHostBrandName();
 
   // Hero headings type themselves in; `TypedText` owns that animation and the
   // sr-only copy that keeps the full title visible to crawlers and assistive
   // tech while the animated span is still filling in.
-  const heroTitle = settings?.hero_title || t("landingPage.danatAlJahra");
+  // With no title set, the hero names the host's company rather than a fixed one.
+  const heroTitle = settings?.hero_title || companyName;
   const heroSubtitle =
     settings?.hero_subtitle || t("landingPage.yourEverydayDestinationForShopping");
 

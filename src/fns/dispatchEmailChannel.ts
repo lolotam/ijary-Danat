@@ -1,5 +1,5 @@
 import { resolveEmailSender, type EmailSenderProvider } from "@/fns/emailSender.server";
-import { emailLogoFor } from "@/fns/publicBranding";
+import { brandNameFor, emailLogoFor } from "@/fns/publicBranding";
 import { readPublicBranding } from "@/fns/publicBranding.server";
 import {
   stringArray,
@@ -12,7 +12,6 @@ import {
 import type { Tables } from "@/integrations/supabase/database.types";
 import { splitEmailAddresses } from "@/lib/addressList";
 import { applyEmailLogo } from "@/lib/emailLogo";
-import { emailBrandName } from "@/lib/emailTemplates";
 import { sendWithResend } from "@/lib/providers/resend";
 import { sendWithSmtp } from "@/lib/providers/smtp";
 import {
@@ -189,7 +188,7 @@ export async function sendEmailChannel(input: ChannelInput): Promise<ChannelOutc
   const htmlBody = applyEmailLogo(
     notification.body ?? "",
     emailLogoFor(branding),
-    emailBrandName(notification.locale === "en" ? "en" : "ar"),
+    brandNameFor(branding, notification.locale === "en" ? "en" : "ar"),
   );
   const sent = await sendWithFallback(sender.providers, {
     body: htmlBody,

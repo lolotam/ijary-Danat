@@ -43,7 +43,9 @@ export function buildInvoicePrintHtml(
   breakdown: InvoicePaymentBreakdown,
 ): string {
   const t = translatorFor(locale);
-  const companyName = company?.name_ar || company?.name_en || "دانة المستقبل العقارية";
+  // No fixed fallback name: a company row not loaded yet prints blank rather
+  // than another company's name on this company's invoice.
+  const companyName = company?.name_ar || company?.name_en || "";
   const footer =
     locale === "ar"
       ? (company?.invoice_footer_ar ?? company?.invoice_footer_en ?? "")

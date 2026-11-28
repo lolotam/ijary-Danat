@@ -5,9 +5,8 @@ import { expect, test } from "vitest";
 import { CONTRACT_COPY_AR } from "./clauses.ar";
 import { CONTRACT_COPY_EN } from "./clauses.en";
 import { buildClauseContext, buildContractHtml, pageOneIsDense } from "./html";
-import { CONTRACT_LOGO_DATA_URI } from "./logo.server";
 import { CONTRACT_LIMITS, type SecondPartyType } from "./schema";
-import { validContractValues } from "./schema.fixture";
+import { FIXTURE_ISSUER_WITH_LOGO, validContractValues } from "./schema.fixture";
 import { renderHtmlToPdf, resolveChromiumPath, wrapHtmlForPdf } from "@/lib/serverPdf";
 
 /**
@@ -121,7 +120,7 @@ run.each([
   { timeout: 180_000 },
   async (locale, mode) => {
     const html = wrapHtmlForPdf(
-      buildContractHtml(atLimits(locale, mode), locale, CONTRACT_LOGO_DATA_URI),
+      buildContractHtml(atLimits(locale, mode), locale, FIXTURE_ISSUER_WITH_LOGO),
       { arabic: locale === "ar" },
     );
     expect(await pdfPageCount(await renderWithSpawnRetry(html))).toBe(5);
@@ -148,7 +147,7 @@ run.each([["ar"], ["en"]] as const)(
   { timeout: 180_000 },
   async (locale) => {
     const values = justUnderDenseThreshold(locale);
-    const html = buildContractHtml(values, locale, CONTRACT_LOGO_DATA_URI);
+    const html = buildContractHtml(values, locale, FIXTURE_ISSUER_WITH_LOGO);
     expect(html).not.toMatch(/<section[^>]*contract-sheet--dense/);
     const pdf = await renderWithSpawnRetry(wrapHtmlForPdf(html, { arabic: locale === "ar" }));
     expect(await pdfPageCount(pdf)).toBe(5);

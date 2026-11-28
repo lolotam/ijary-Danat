@@ -153,7 +153,7 @@ describe("the notification log's two presentations", () => {
     "offers a retry action on a %s row",
     (state) => {
       // needs_review is the one that matters: the drain job parks rows there for
-      // conditions a human fixes outside Danat (a quota that resets, an admin who
+      // conditions a human fixes outside IJARY (a quota that resets, an admin who
       // re-authorizes), and their failure_reason tells staff to re-queue. Without
       // this button a parked row was harder to recover than an ordinary failure.
       expect(renderWithState(state)).toContain("notifications.retry");

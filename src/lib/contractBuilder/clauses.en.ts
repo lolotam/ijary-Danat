@@ -1,14 +1,31 @@
 import { v } from "./boldMarkers";
 import type { ClauseContext, ClauseText, ContractCopy } from "./clauses.types";
+import type { ContractIssuer } from "./issuer";
 import { formatKwdFromFils, toFils, totalValueFils } from "./schema";
 
 export type { ClauseContext, ClauseText, ContractCopy } from "./clauses.types";
 
-// Fixed legal identity stays Arabic on the English document, matching the
-// scans' letterhead and the html.test.ts "no Arabic outside company/address" rule.
-const COMPANY = "شركة دانة المستقبل العقارية";
-const OFFICE = "الجهراء – القيصرية – قطعة 20 – قسيمة 25 – مكتب 9";
-const FOOTER = "الجهراء – القيصرية – قطعة 20 – قسيمة 25 – مكتب 9 – تلفاكس: 24567177";
+// The issuing company's legal identity stays Arabic on the English document
+// (see contractIssuerFromCompany), matching the scans' letterhead and the
+// html.test.ts "no Arabic outside company/address" rule.
+
+/**
+ * يبني سطر الطرف الأول الإنجليزي من بيانات الشركة صاحبة العقد.
+ *
+ * The seat sentence is dropped when the company has no address on file.
+ */
+function firstParty(issuer: ContractIssuer): string {
+  const seat = issuer.address ? ` Whose premises are at: ${issuer.address}.` : "";
+  return `First: Messrs. / ${issuer.name}.${seat} hereinafter referred to in this contract as (the First Party)`;
+}
+
+/**
+ * يبني شريط التذييل الإنجليزي من عنوان الشركة وهاتفها، متجاوزاً الحقل الفارغ.
+ */
+function footer(issuer: ContractIssuer): string {
+  const phone = issuer.phone ? `Tel: ${issuer.phone}` : "";
+  return [issuer.address, phone].filter(Boolean).join(" – ");
+}
 
 /**
  * يكتب إجمالي قيمة العقد رقماً من الفلس، لا من ضرب عشري عائم.
@@ -226,12 +243,10 @@ function pageCounter(n: number, of: number): string {
 }
 
 export const CONTRACT_COPY_EN: ContractCopy = {
-  companyName: COMPANY,
-  officeAddress: OFFICE,
-  footer: FOOTER,
+  footer,
   title: "Investment Contract",
   opening,
-  firstParty: `First: Messrs. / ${COMPANY}. Whose premises are at: ${OFFICE}. hereinafter referred to in this contract as (the First Party)`,
+  firstParty,
   secondPartyHeading: "Second:",
   secondParty,
   capacityStatement: CAPACITY,

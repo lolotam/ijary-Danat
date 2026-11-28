@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
+import { getPublicBranding } from "@/fns/publicBranding";
 import { useConfirmPayment } from "@/hooks/useConfirmPayment";
 import { usePortalIdentity } from "@/hooks/usePortalData";
 import { useI18n } from "@/i18n/provider";
@@ -60,8 +61,17 @@ function gatewayIdsFromSearch(search: Record<string, unknown>, pathPaymentReques
 export const Route = createFileRoute("/portal_/payments/callback")({
   ssr: false,
   validateSearch: (search: Record<string, unknown>) => gatewayIdsFromSearch(search),
-  head: () => ({
-    meta: [{ title: "Payment confirmation — Danat Al Mustaqbal" }],
+  // The tab names the host's company, read on the server from the host; the
+  // title used to name one fixed company on every company's portal.
+  loader: async () => ({ branding: await getPublicBranding() }),
+  head: ({ loaderData }) => ({
+    meta: [
+      {
+        title: loaderData
+          ? `Payment confirmation — ${loaderData.branding.nameEn}`
+          : "Payment confirmation",
+      },
+    ],
   }),
   component: QueryPaymentCallbackPage,
 });

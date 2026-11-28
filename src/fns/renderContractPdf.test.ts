@@ -42,6 +42,15 @@ vi.mock("@/lib/serverPdf", async () => {
   };
 });
 
+// The issuer is read from the request company's row; the test has no request,
+// so it stands in with the fixture company and its inlined logo.
+vi.mock("@/fns/contractIssuer.server", async () => {
+  const fixture = await vi.importActual<typeof import("@/lib/contractBuilder/schema.fixture")>(
+    "@/lib/contractBuilder/schema.fixture",
+  );
+  return { readContractIssuer: async () => fixture.FIXTURE_ISSUER_WITH_LOGO };
+});
+
 const { contractPdfFilename, renderContractPdf, renderContractPdfInput } =
   await import("./renderContractPdf");
 

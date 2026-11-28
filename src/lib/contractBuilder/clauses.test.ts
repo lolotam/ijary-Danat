@@ -13,7 +13,12 @@ import {
   durationWordsEn,
 } from "./numberToWords";
 import { toFils, totalValueFils, type ContractBuilderValues } from "./schema";
-import { FIXTURE_COMPANY, validCompanyContractValues, validContractValues } from "./schema.fixture";
+import {
+  FIXTURE_COMPANY,
+  FIXTURE_ISSUER,
+  validCompanyContractValues,
+  validContractValues,
+} from "./schema.fixture";
 import { formatUnitList, spansSeveralPlots } from "./units";
 
 /**
@@ -47,12 +52,10 @@ function makeCtx(
 /** يجمع نصوص النسخة لضمان بقاء الهروب من HTML مسؤولية القالب وحده. */
 function allStrings(copy: ContractCopy, ctx: ClauseContext): string[] {
   return [
-    copy.companyName,
-    copy.officeAddress,
-    copy.footer,
+    copy.footer(FIXTURE_ISSUER),
     copy.title,
     copy.opening(ctx),
-    copy.firstParty,
+    copy.firstParty(FIXTURE_ISSUER),
     copy.secondPartyHeading,
     ...copy.secondParty(ctx),
     copy.preambleTitle,

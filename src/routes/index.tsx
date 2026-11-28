@@ -34,53 +34,28 @@ import { visibleLandingNavigation } from "@/lib/landingNavigation";
 
 import { getRootPageDecision } from "@/company/rootPageDecision";
 import { MarketingPage } from "@/components/platform/MarketingPage";
-import { type PublicBranding } from "@/fns/publicBranding";
+import { getPublicBranding, type PublicBranding } from "@/fns/publicBranding";
 import { NotFoundPage } from "./not-found";
 
 /**
- * ترويسة صفحة الهبوط: بياناتها التسويقية كما هي، لتُعرض فقط حين يكون قسم
- * صفحة الهبوط مفعّلاً لشركة (US13).
+ * يبني ترويسة صفحة الهبوط من اسم الشركة المالكة للمضيف فقط (US13).
+ *
+ * The head used to hard-code Danat Al Jahra's name, address and opening hours,
+ * so every company's landing page announced another business to search
+ * engines and link previews. The name now comes from the host's own branding,
+ * the same source the sign-in page uses.
  */
-const LANDING_HEAD = {
-  meta: [
-    { title: "Danat Future (Danat-future) — Real Estate & Property Management Platform" },
-    {
-      name: "description",
-      content:
-        "Danat Al Jahra — your everyday destination for shopping, dining, and services in the heart of Jahra, Kuwait. دانة الجهراء — وجهتك اليومية للتسوق والخدمات في قلب الجهراء.",
-    },
-    { property: "og:type", content: "website" },
-    { property: "og:title", content: "Danat Al Jahra — دانة الجهراء" },
-    {
-      property: "og:description",
-      content: "Your everyday destination for shopping and services in the heart of Jahra, Kuwait.",
-    },
-    { property: "og:image", content: "/landing/hero.png" },
-    { name: "twitter:card", content: "summary_large_image" },
-  ],
-  scripts: [
-    {
-      type: "application/ld+json",
-      children: JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "ShoppingCenter",
-        name: "Danat Al Jahra",
-        alternateName: "دانة الجهراء",
-        address: {
-          "@type": "PostalAddress",
-          streetAddress: "Marzouq Al-Mutaib St, Block 2",
-          addressLocality: "Jahra",
-          addressCountry: "KW",
-        },
-        openingHours: "Mo-Su 08:00-23:30",
-        parentOrganization: {
-          "@type": "Organization",
-          name: "Danat Al Mustaqbal Real Estate",
-        },
-      }),
-    },
-  ],
-};
+function landingHead(branding: PublicBranding) {
+  const title = `${branding.nameEn} — ${branding.nameAr}`;
+  return {
+    meta: [
+      { title },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: title },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  };
+}
 
 /**
  * ترويسة الصفحة المؤقتة للمنصة: اسم المنصة ووصفها فقط، بلا أي محتوى لشركة.
@@ -108,10 +83,11 @@ export const Route = createFileRoute("/")({
     // Redirected from the loader so SSR answers with the sign-in page directly
     // and no company ever sees a flash of the wrong page.
     if (decision.page === "signIn") throw redirect({ to: "/auth" });
-    return { decision };
+    const branding = decision.page === "landing" ? await getPublicBranding() : null;
+    return { decision, branding };
   },
   head: ({ loaderData }) =>
-    loaderData?.decision.page === "landing" ? LANDING_HEAD : PLATFORM_HEAD,
+    loaderData?.branding ? landingHead(loaderData.branding) : PLATFORM_HEAD,
   component: RootPage,
 });
 

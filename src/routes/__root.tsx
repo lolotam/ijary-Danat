@@ -111,24 +111,16 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "Danat" },
-      { title: "Danat Future (Danat-future) — Real Estate & Property Management Platform" },
+      { name: "apple-mobile-web-app-title", content: "IJARY" },
+      { title: "IJARY — Estate Rental Management Platform" },
       {
         name: "description",
         content:
           "منصة متكاملة لإدارة العقارات، العقود، الفواتير، والتحصيل. Integrated real-estate operations platform for property, lease, invoicing, and collections.",
       },
-      { name: "author", content: "Danat Al Mustaqbal Real Estate" },
-      // Meta Business domain verification. A public claim token, not a secret,
-      // which is why it lives in source. It sits in the shared head config so
-      // it is served on the site root — the URL Meta actually fetches.
-      {
-        name: "facebook-domain-verification",
-        content: "up2j0uygy7kwwnr5xhusrvk4qwslyv",
-      },
       {
         property: "og:title",
-        content: "دانة المستقبل العقارية | Danat Al Mustaqbal Real Estate",
+        content: "إيجاري | IJARY — Estate Rental Management Platform",
       },
       {
         property: "og:description",
@@ -137,21 +129,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "دانة المستقبل العقارية | Danat Al Mustaqbal Real Estate" },
+      { name: "twitter:title", content: "إيجاري | IJARY — Estate Rental Management Platform" },
       {
         name: "twitter:description",
         content:
           "منصة متكاملة لإدارة العقارات، العقود، الفواتير، والتحصيل. Integrated real-estate operations platform for property, lease, invoicing, and collections.",
-      },
-      {
-        property: "og:image",
-        content:
-          "https://storage.googleapis.com/gpt-engineer-file-uploads/gE8nBnZ3uthTT4sDKwDyIDiigom2/social-images/social-1784153377096-From_Klickpin.com-_988680924538704344-pin-id-988680924538704344-story-1.webp",
-      },
-      {
-        name: "twitter:image",
-        content:
-          "https://storage.googleapis.com/gpt-engineer-file-uploads/gE8nBnZ3uthTT4sDKwDyIDiigom2/social-images/social-1784153377096-From_Klickpin.com-_988680924538704344-pin-id-988680924538704344-story-1.webp",
       },
     ],
     links: [
